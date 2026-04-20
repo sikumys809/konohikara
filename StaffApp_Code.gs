@@ -39,6 +39,15 @@ const SHIFT_TIMES = {
 };
 
 function doGet(e) {
+  // ?page=admin なら管理画面、それ以外はスタッフアプリ
+  const page = (e && e.parameter && e.parameter.page) ? e.parameter.page : 'staff';
+  
+  if (page === 'admin') {
+    return HtmlService.createHtmlOutputFromFile('Admin')
+      .setTitle('コノヒカラ シフト管理 - 管理画面')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('コノヒカラ シフト管理')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);

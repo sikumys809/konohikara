@@ -1518,12 +1518,27 @@ function isMonthLocked(targetYM) {
   if (!sheet) return false;
   
   const data = sheet.getDataRange().getValues();
+  let latestLocked = false;
+  let found = false;
+  
+  // 最後に見つかった行のロック状態を採用 (型安全比較)
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(targetYM)) {
-      return String(data[i][1]).toUpperCase() === 'TRUE';
+    if (_ymMatches(data[i][0], targetYM)) {
+      latestLocked = String(data[i][1]).toUpperCase() === 'TRUE';
+      found = true;
     }
   }
-  return false;
+  return found ? latestLocked : false;
+}
+
+
+// 年月比較ヘルパー (Date型・文字列型の両方に対応)
+function _ymMatches(cellVal, targetYM) {
+  if (cellVal instanceof Date) {
+    const ym = Utilities.formatDate(cellVal, 'Asia/Tokyo', 'yyyy-MM');
+    return ym === String(targetYM);
+  }
+  return String(cellVal).trim() === String(targetYM).trim();
 }
 
 
@@ -1538,18 +1553,26 @@ function _setMonthLock(targetYM, locked, admin, memo) {
     sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#4a148c').setFontColor('#ffffff');
   }
   
+  // A列(対象年月)を強制的に文字列書式に (Date変換防止)
+  sheet.getRange('A2:A1000').setNumberFormat('@');
+  // B列(ロック状態)も文字列に
+  sheet.getRange('B2:B1000').setNumberFormat('@');
+  
   const data = sheet.getDataRange().getValues();
   const now = new Date();
   let targetRow = -1;
   
+  // 既存行を探す (型安全比較)
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(targetYM)) {
+    if (_ymMatches(data[i][0], targetYM)) {
       targetRow = i + 1;
-      break;
+      // break せず、最後の行を採用 (重複行がある場合の対策)
     }
   }
   
   if (targetRow > 0) {
+    // 既存行を更新 (A列も文字列で再書込して統一)
+    sheet.getRange(targetRow, 1).setValue(String(targetYM));
     sheet.getRange(targetRow, 2).setValue(locked ? 'TRUE' : 'FALSE');
     if (locked) {
       sheet.getRange(targetRow, 3).setValue(admin.staff_id);
@@ -1562,8 +1585,9 @@ function _setMonthLock(targetYM, locked, admin, memo) {
     }
     sheet.getRange(targetRow, 7).setValue(memo || '');
   } else {
+    // 新規行を追加
     sheet.appendRow([
-      targetYM,
+      String(targetYM),
       locked ? 'TRUE' : 'FALSE',
       locked ? admin.staff_id : '',
       locked ? admin.name : '',
@@ -1572,6 +1596,10 @@ function _setMonthLock(targetYM, locked, admin, memo) {
       memo || '',
     ]);
     const newRowIdx = sheet.getLastRow();
+    // A列・B列を文字列固定
+    sheet.getRange(newRowIdx, 1).setNumberFormat('@');
+    sheet.getRange(newRowIdx, 1).setValue(String(targetYM));
+    sheet.getRange(newRowIdx, 2).setNumberFormat('@');
     if (locked) {
       sheet.getRange(newRowIdx, 5).setNumberFormat('yyyy-MM-dd HH:mm:ss');
     }
@@ -1596,11 +1624,13 @@ function getLockStatus(adminStaffId, targetYM) {
   }
   
   const data = sheet.getDataRange().getValues();
+  // 最後に一致する行を返す (重複行がある場合は最新を採用)
+  let result = null;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(targetYM)) {
+    if (_ymMatches(data[i][0], targetYM)) {
       const locked = String(data[i][1]).toUpperCase() === 'TRUE';
       const lockedAt = data[i][4];
-      return {
+      result = {
         success: true,
         locked: locked,
         lockedBy: data[i][3] || '',
@@ -1610,7 +1640,7 @@ function getLockStatus(adminStaffId, targetYM) {
       };
     }
   }
-  return { success: true, locked: false };
+  return result || { success: true, locked: false };
 }
 
 
@@ -1688,12 +1718,23 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
     
     const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
     const key = dateKey + '_' + row[2];
+    
+    // Date型を時刻文字列に正規化 (JSON化失敗対策)
+    const startVal = row[9];
+    const endVal = row[10];
+    const startStr = (startVal instanceof Date) 
+      ? Utilities.formatDate(startVal, 'Asia/Tokyo', 'HH:mm')
+      : String(startVal || '');
+    const endStr = (endVal instanceof Date) 
+      ? Utilities.formatDate(endVal, 'Asia/Tokyo', 'HH:mm')
+      : String(endVal || '');
+    
     shifts[key] = {
-      staff_name: row[7] || '',
-      shift_type: row[8] || '',
-      start: row[9] || '',
-      end: row[10] || '',
-      status: row[12] || '仮',
+      staff_name: String(row[7] || ''),
+      shift_type: String(row[8] || ''),
+      start: startStr,
+      end: endStr,
+      status: String(row[12] || '仮'),
     };
   }
   
@@ -1751,4 +1792,66 @@ function getFacilitiesWithShifts(adminStaffId, targetYM) {
   }
   
   return { success: true, facilities: Array.from(facSet).sort() };
+}
+
+
+
+// ============================================
+// T_月次ロック 重複行クリーンアップ (手動実行用)
+// 同じ年月の複数行を1行にまとめる (最新の状態を保持)
+// ============================================
+
+function cleanupMonthLockSheet() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_月次ロック');
+  if (!sheet) {
+    Logger.log('T_月次ロックシートが見つかりません');
+    return;
+  }
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) {
+    Logger.log('データなし');
+    return;
+  }
+  
+  // 年月ごとの最新行を保持
+  const latestByYM = {};
+  for (let i = 1; i < data.length; i++) {
+    let ymKey;
+    const cellVal = data[i][0];
+    if (cellVal instanceof Date) {
+      ymKey = Utilities.formatDate(cellVal, 'Asia/Tokyo', 'yyyy-MM');
+    } else {
+      ymKey = String(cellVal).trim();
+    }
+    if (!ymKey) continue;
+    
+    // 既存エントリより後の行で上書き (最新を採用)
+    latestByYM[ymKey] = data[i];
+  }
+  
+  // データ部分を全部クリア
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, 7).clearContent();
+  }
+  
+  // A列・B列を文字列書式に
+  sheet.getRange('A2:A1000').setNumberFormat('@');
+  sheet.getRange('B2:B1000').setNumberFormat('@');
+  
+  // 最新行のみ書き戻す
+  const ymKeys = Object.keys(latestByYM).sort();
+  if (ymKeys.length > 0) {
+    const rows = ymKeys.map(k => {
+      const r = latestByYM[k];
+      return [String(k), String(r[1]).toUpperCase(), r[2] || '', r[3] || '', r[4] || '', r[5] || '', r[6] || ''];
+    });
+    sheet.getRange(2, 1, rows.length, 7).setValues(rows);
+  }
+  
+  SpreadsheetApp.flush();
+  Logger.log('クリーンアップ完了: ' + ymKeys.length + '年月分を整理');
+  return { success: true, count: ymKeys.length, yms: ymKeys };
 }

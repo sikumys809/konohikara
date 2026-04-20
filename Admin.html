@@ -479,6 +479,145 @@
   </div>
 </div>
 
+<!-- ========== シフト作成ビュー ========== -->
+<div id="view-shift" class="hidden" style="padding: 0;">
+  <div style="padding: 20px;">
+    <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
+    <h2 style="margin-top: 16px;">📅 シフト作成</h2>
+    
+    <!-- コントロール -->
+    <div style="display: flex; gap: 12px; align-items: center; margin: 20px 0; flex-wrap: wrap;">
+      <label>対象月:</label>
+      <select id="shiftTargetYM" onchange="loadShiftCalendar()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;">
+        <option value="">選択してください</option>
+      </select>
+      <button id="runEngineBtn" onclick="executeEngine()" style="padding: 8px 20px; background: #4a148c; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+        ⚡ 自動割当実行
+      </button>
+      <button onclick="loadShiftCalendar()" style="padding: 8px 20px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
+        🔄 再読込
+      </button>
+    </div>
+    
+    <!-- シフト作成画面のロック状態バナー -->
+    <div id="shiftLockBanner" style="margin-bottom: 16px; display: none;"></div>
+    
+    <!-- サマリー -->
+    <div id="shiftSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
+    
+    <!-- エンジン実行状態 -->
+    <div id="engineStatus" style="margin-bottom: 20px;"></div>
+    
+    <!-- カレンダー -->
+    <div id="shiftCalendarWrapper" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;">
+      <div id="shiftCalendar" style="padding: 20px; color: #6b7280;">対象月を選択してください</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== シフト確定(承認)ビュー ========== -->
+<div id="view-approve" class="hidden" style="padding: 0;">
+  <div style="padding: 20px;">
+    <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
+    <h2 style="margin-top: 16px;">✅ シフト確定</h2>
+    <p style="color: #6b7280; margin: 8px 0 16px 0;">仮シフトを確定する最終承認プロセスです。確定後は編集不可になります。</p>
+    
+    <!-- コントロール -->
+    <div style="display: flex; gap: 12px; align-items: center; margin: 20px 0; flex-wrap: wrap;">
+      <label>対象月:</label>
+      <select id="approveTargetYM" onchange="loadApprovalCalendar()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;">
+        <option value="">選択してください</option>
+      </select>
+      <button id="approveBtn" onclick="confirmApproval()" style="padding: 8px 20px; background: #059669; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; display: none;">
+        ✓ 全て確定する
+      </button>
+      <button id="revertBtn" onclick="confirmRevert()" style="padding: 8px 20px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; display: none;">
+        ↶ 確定解除
+      </button>
+      <button id="unlockBtn" onclick="confirmUnlock()" style="padding: 8px 20px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; display: none;">
+        🔓 ロック解除(修正用)
+      </button>
+      <button onclick="loadApprovalCalendar()" style="padding: 8px 20px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
+        🔄 再読込
+      </button>
+    </div>
+    
+    <!-- ロック状態バナー -->
+    <div id="lockStatusBanner" style="margin-bottom: 16px; display: none;"></div>
+    
+    <!-- PDF出力セクション -->
+    <div id="pdfSection" style="margin-bottom: 20px; padding: 16px; background: #f3e8ff; border-radius: 8px; display: none;">
+      <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #4a148c;">📄 PDF出力 (印刷用シフト表)</h3>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select id="pdfFacilitySelect" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; min-width: 200px;">
+          <option value="">施設を選択...</option>
+        </select>
+        <button onclick="openPdfView()" style="padding: 8px 16px; background: #4a148c; color: white; border: none; border-radius: 6px; cursor: pointer;">
+          📄 PDF表示 (新タブ)
+        </button>
+        <button onclick="openAllFacilitiesPdf()" style="padding: 8px 16px; background: #6366f1; color: white; border: none; border-radius: 6px; cursor: pointer;">
+          📚 全施設まとめて表示
+        </button>
+        <span style="font-size: 11px; color: #6b7280;">新タブで開き、Cmd+Pで「横向き」を選んで保存</span>
+      </div>
+    </div>
+    
+    <!-- サマリー -->
+    <div id="approveSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
+    
+    <!-- 処理状態 -->
+    <div id="approveStatus" style="margin-bottom: 20px;"></div>
+    
+    <!-- カレンダー -->
+    <div id="approveCalendarWrapper" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;">
+      <div id="approveCalendar" style="padding: 20px; color: #6b7280;">対象月を選択してください</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ========== シフト編集モーダル ========== -->
+<div id="slotEditModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: none; align-items: center; justify-content: center;">
+  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">
+    <h3 id="slotEditTitle" style="margin-top: 0;"></h3>
+    <div id="slotEditBody"></div>
+    <div style="display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap;">
+      <button onclick="closeSlotEditor()" style="padding: 8px 16px; background: #e5e7eb; border: none; border-radius: 6px; cursor: pointer;">キャンセル</button>
+      <button id="slotEditDeleteBtn" onclick="deleteSlot()" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; display: none;">削除</button>
+      <button id="slotEditSaveBtn" onclick="saveSlot()" style="padding: 8px 16px; background: #4a148c; color: white; border: none; border-radius: 6px; cursor: pointer; margin-left: auto;">保存</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.shift-cal-table { border-collapse: collapse; font-size: 12px; }
+.shift-cal-table th, .shift-cal-table td { border: 1px solid #e5e7eb; padding: 4px 6px; }
+.shift-cal-table thead th { background: #f9fafb; position: sticky; top: 0; z-index: 10; font-weight: 600; }
+.shift-cal-table .unit-col { position: sticky; left: 0; background: white; z-index: 5; min-width: 180px; text-align: left; padding: 6px 10px; font-weight: 500; }
+.shift-cal-table thead .unit-col { z-index: 15; background: #f9fafb; }
+.shift-cal-table .day-header { min-width: 70px; text-align: center; }
+.shift-cal-table .day-sat { color: #2563eb; }
+.shift-cal-table .day-sun { color: #dc2626; }
+.shift-cal-table .slot-cell { cursor: pointer; text-align: center; min-width: 70px; height: 40px; transition: opacity 0.15s; }
+.shift-cal-table .slot-cell:hover { opacity: 0.7; }
+.shift-cal-table .slot-empty { background: #fef2f2; color: #9ca3af; font-size: 18px; }
+.shift-cal-table .slot-filled { background: #dbeafe; color: #1e40af; font-weight: 500; }
+.shift-cal-table .slot-confirmed { background: #d1fae5; color: #065f46; font-weight: 500; }
+.shift-cal-table .slot-shift-type { font-size: 10px; color: #6b7280; display: block; margin-top: 2px; }
+.candidate-item { padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 6px; cursor: pointer; transition: all 0.15s; }
+.candidate-item:hover { border-color: #4a148c; background: #faf5ff; }
+.candidate-item.selected { border-color: #4a148c; background: #f3e8ff; }
+.candidate-badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-right: 4px; }
+.badge-wish { background: #dbeafe; color: #1e40af; }
+.badge-main { background: #d1fae5; color: #065f46; }
+.badge-second { background: #fef3c7; color: #92400e; }
+.badge-sub { background: #e5e7eb; color: #374151; }
+.badge-protect { background: #fecaca; color: #991b1b; }
+.badge-qual { background: #e0e7ff; color: #3730a3; }
+.badge-assigned { background: #fed7aa; color: #9a3412; }
+</style>
+
+
 <script>
 let currentAdmin = null;
 let allStaff = [];
@@ -574,13 +713,19 @@ function navigateTo(id) {
   } else if (id === 'logs') {
     showView('logs');
     loadLogsView();
+  } else if (id === 'shift') {
+    showView('shift');
+    loadShiftView();
+  } else if (id === 'approve') {
+    showView('approve');
+    loadApprovalView();
   } else {
     alert(id + ' 機能は次のステップで実装予定');
   }
 }
 
 function showView(name) {
-  ['dashboard', 'staff', 'facility', 'requests', 'logs'].forEach(v => {
+  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve'].forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.classList.toggle('hidden', v !== name);
   });
@@ -1472,6 +1617,7 @@ function reloadLogs() {
   google.script.run.withSuccessHandler(res => {
     if (!res.success) {
       document.getElementById('logTableBody').innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 20px; color: #ef4444;">${res.message}</td></tr>`;
+      document.getElementById('logRowCount').textContent = 'エラー';
       return;
     }
     
@@ -1482,6 +1628,10 @@ function reloadLogs() {
     }
     
     renderLogsTable(res.logs, res.totalCount);
+  }).withFailureHandler(err => {
+    document.getElementById('logTableBody').innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 20px; color: #ef4444;">通信エラー: ${err.message || err}</td></tr>`;
+    document.getElementById('logRowCount').textContent = 'エラー';
+    console.error('getOperationLogs failed:', err);
   }).getOperationLogs(currentAdmin.staff_id, filters);
 }
 
@@ -1620,6 +1770,1070 @@ function escapeAttr(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+
+// ============================================
+// シフト作成画面
+// ============================================
+let shiftViewState = {
+  targetYM: null,
+  calendar: null,
+  canEdit: false,
+  editingSlot: null,
+  selectedCandidate: null,
+  selectedShiftType: null,
+};
+
+function loadShiftView() {
+  document.getElementById('shiftSummary').innerHTML = '';
+  document.getElementById('engineStatus').innerHTML = '';
+  document.getElementById('shiftCalendar').innerHTML = '対象月を選択してください';
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      alert('エラー: ' + res.message);
+      return;
+    }
+    const sel = document.getElementById('shiftTargetYM');
+    sel.innerHTML = '<option value="">選択してください</option>' +
+      res.yms.map(ym => `<option value="${ym}" ${ym === res.defaultYM ? 'selected' : ''}>${ym}</option>`).join('');
+    shiftViewState.targetYM = res.defaultYM;
+    loadShiftCalendar();
+  }).getAvailableTargetYMs(currentAdmin.staff_id);
+}
+
+
+function loadShiftCalendar() {
+  const ym = document.getElementById('shiftTargetYM').value;
+  if (!ym) {
+    document.getElementById('shiftCalendar').innerHTML = '対象月を選択してください';
+    return;
+  }
+  shiftViewState.targetYM = ym;
+  
+  document.getElementById('shiftCalendar').innerHTML = '<div style="padding: 40px; text-align: center;">読み込み中...</div>';
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      alert('エラー: ' + res.message);
+      return;
+    }
+    shiftViewState.calendar = res;
+    shiftViewState.canEdit = res.canEdit;
+    renderShiftSummary(res);
+    renderShiftCalendar(res);
+  }).getShiftCalendar(currentAdmin.staff_id, ym);
+}
+
+
+function renderShiftSummary(data) {
+  const s = data.summary;
+  const rateColor = s.rate >= 95 ? '#059669' : s.rate >= 80 ? '#ca8a04' : '#dc2626';
+  
+  document.getElementById('shiftSummary').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">総枠数</div>
+      <div class="stat-value">${s.totalSlots}</div>
+      <div class="stat-sub">枠</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">配置済</div>
+      <div class="stat-value" style="color: ${rateColor};">${s.assigned}</div>
+      <div class="stat-sub">${s.rate}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">未配置</div>
+      <div class="stat-value" style="color: ${s.unassigned > 0 ? '#dc2626' : '#6b7280'};">${s.unassigned}</div>
+      <div class="stat-sub">枠</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">重複</div>
+      <div class="stat-value" style="color: ${s.duplicates > 0 ? '#dc2626' : '#059669'};">${s.duplicates}</div>
+      <div class="stat-sub">件</div>
+    </div>
+  `;
+}
+
+
+function renderShiftCalendar(data) {
+  if (!data.calendar || data.calendar.length === 0) {
+    document.getElementById('shiftCalendar').innerHTML = '<div style="padding: 40px; text-align: center;">データなし。自動割当を実行してください。</div>';
+    return;
+  }
+  
+  const days = data.calendar[0].days;
+  
+  let html = '<table class="shift-cal-table"><thead><tr>';
+  html += '<th class="unit-col">ユニット</th>';
+  for (const d of days) {
+    const cls = d.dow === 0 ? 'day-sun' : d.dow === 6 ? 'day-sat' : '';
+    const dowChar = ['日','月','火','水','木','金','土'][d.dow];
+    html += `<th class="day-header ${cls}">${d.day}<br><span style="font-size: 10px;">${dowChar}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+  
+  for (const row of data.calendar) {
+    const u = row.unit;
+    html += '<tr>';
+    html += `<td class="unit-col" title="${u.facility}">
+      <div style="font-weight: 600;">${u.unit_name}</div>
+      <div style="font-size: 10px; color: #6b7280;">${u.facility}${u.room ? ' #' + u.room : ''}</div>
+    </td>`;
+    for (const d of row.days) {
+      const shift = d.shift;
+      let cellCls = 'slot-cell slot-empty';
+      let content = '－';
+      let title = d.dateKey + ' ' + u.unit_name + ' (未配置)';
+      
+      if (shift && shift.staff_id) {
+        const isConfirmed = shift.status === '確定';
+        cellCls = 'slot-cell ' + (isConfirmed ? 'slot-confirmed' : 'slot-filled');
+        const shortName = (shift.staff_name || '').length > 4 
+          ? (shift.staff_name || '').substring(0, 4) + '…'
+          : (shift.staff_name || '');
+        content = `${shortName}<span class="slot-shift-type">${shift.shift_type || ''}</span>`;
+        title = `${d.dateKey} ${u.unit_name}\n${shift.staff_name}\n${shift.shift_type} (${shift.status})`;
+      }
+      
+      const clickHandler = data.canEdit ? `onclick="openSlotEditor('${d.dateKey}', '${u.unit_id}', '${u.unit_name.replace(/'/g, "\\'")}', '${u.facility.replace(/'/g, "\\'")}')"` : '';
+      html += `<td class="${cellCls}" ${clickHandler} title="${title}">${content}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  
+  document.getElementById('shiftCalendar').innerHTML = html;
+}
+
+
+function executeEngine() {
+  if (!shiftViewState.targetYM) {
+    alert('対象月を選択してください');
+    return;
+  }
+  if (!confirm(shiftViewState.targetYM + ' の夜勤を自動割当します。既存の仮シフトは上書きされます。実行しますか？')) return;
+  
+  const btn = document.getElementById('runEngineBtn');
+  btn.disabled = true;
+  btn.innerText = '⏳ 実行中...';
+  document.getElementById('engineStatus').innerHTML = 
+    '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ 自動割当エンジン実行中... (1-2分程度かかります)</div>';
+  
+  google.script.run.withSuccessHandler(res => {
+    btn.disabled = false;
+    btn.innerText = '⚡ 自動割当実行';
+    
+    if (!res.success) {
+      document.getElementById('engineStatus').innerHTML = 
+        '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ エラー: ' + res.message + '</div>';
+      return;
+    }
+    
+    document.getElementById('engineStatus').innerHTML = `
+      <div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">
+        ✓ 完了: ${res.assigned}/${res.total}枠配置 (${res.rate}%) / 重複${res.duplicates}件 / 実行時間${res.elapsed}秒
+      </div>
+    `;
+    loadShiftCalendar();
+  }).withFailureHandler(err => {
+    btn.disabled = false;
+    btn.innerText = '⚡ 自動割当実行';
+    document.getElementById('engineStatus').innerHTML = 
+      '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ 通信エラー: ' + err + '</div>';
+  }).executeNightShiftEngine(currentAdmin.staff_id, shiftViewState.targetYM);
+}
+
+
+// ========== セル編集モーダル ==========
+function openSlotEditor(dateKey, unitId, unitName, facility) {
+  const modal = document.getElementById('slotEditModal');
+  modal.style.display = 'flex';
+  modal.classList.remove('hidden');
+  
+  let currentSlot = null;
+  for (const row of shiftViewState.calendar.calendar) {
+    if (row.unit.unit_id === unitId) {
+      for (const d of row.days) {
+        if (d.dateKey === dateKey) {
+          currentSlot = d.shift;
+          break;
+        }
+      }
+      break;
+    }
+  }
+  
+  shiftViewState.editingSlot = {
+    dateKey: dateKey,
+    unitId: unitId,
+    unitName: unitName,
+    facility: facility,
+    currentSlot: currentSlot,
+  };
+  shiftViewState.selectedCandidate = currentSlot ? currentSlot.staff_id : null;
+  shiftViewState.selectedShiftType = currentSlot ? currentSlot.shift_type : '夜勤B';
+  
+  document.getElementById('slotEditTitle').innerText = 
+    `${dateKey} ${unitName} (${facility})`;
+  document.getElementById('slotEditBody').innerHTML = 
+    '<div style="padding: 20px; text-align: center;">候補者読み込み中...</div>';
+  
+  document.getElementById('slotEditDeleteBtn').style.display = currentSlot && currentSlot.staff_id ? 'block' : 'none';
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      document.getElementById('slotEditBody').innerHTML = 
+        '<div style="padding: 20px; color: #dc2626;">エラー: ' + res.message + '</div>';
+      return;
+    }
+    renderSlotEditor(res.candidates);
+  }).getCandidateStaffForSlot(currentAdmin.staff_id, shiftViewState.targetYM, dateKey, unitId);
+}
+
+
+function renderSlotEditor(candidates) {
+  let html = `
+    <div style="margin-bottom: 12px;">
+      <label style="display: block; font-weight: 600; margin-bottom: 6px;">シフト種別</label>
+      <select id="slotEditShiftType" onchange="shiftViewState.selectedShiftType = this.value;" style="padding: 6px; border-radius: 6px; border: 1px solid #d1d5db; width: 150px;">
+        <option value="夜勤A" ${shiftViewState.selectedShiftType === '夜勤A' ? 'selected' : ''}>夜勤A (20-05)</option>
+        <option value="夜勤B" ${shiftViewState.selectedShiftType === '夜勤B' ? 'selected' : ''}>夜勤B (22-07)</option>
+        <option value="夜勤C" ${shiftViewState.selectedShiftType === '夜勤C' ? 'selected' : ''}>夜勤C (22-08)</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label style="display: block; font-weight: 600; margin-bottom: 6px;">スタッフ選択 (${candidates.length}人中)</label>
+      <input type="text" id="candidateSearch" placeholder="氏名で絞り込み..." 
+             oninput="filterCandidates()"
+             style="padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; width: 100%; margin-bottom: 8px;">
+    </div>
+    <div id="candidateList" style="max-height: 350px; overflow-y: auto;">
+  `;
+  
+  html += candidates.map(c => {
+    let badges = '';
+    if (c.hasWishForDate) badges += '<span class="candidate-badge badge-wish">希望あり</span>';
+    if (c.facilityMatch === 'main') badges += '<span class="candidate-badge badge-main">メイン</span>';
+    else if (c.facilityMatch === 'second') badges += '<span class="candidate-badge badge-second">セカンド</span>';
+    else if (c.facilityMatch === 'sub') badges += '<span class="candidate-badge badge-sub">サブ</span>';
+    if (c.isProtected) badges += '<span class="candidate-badge badge-protect">保護</span>';
+    if (c.qualification) badges += `<span class="candidate-badge badge-qual">${c.qualification}</span>`;
+    if (c.alreadyAssignedToday) badges += '<span class="candidate-badge badge-assigned">⚠同日既配置</span>';
+    
+    const wishShiftStr = c.wishShifts.length > 0 ? '希望:' + c.wishShifts.join(',') : '';
+    const selected = shiftViewState.selectedCandidate === c.staff_id ? 'selected' : '';
+    const safeName = (c.name || '').replace(/'/g, "\\'");
+    
+    return `
+      <div class="candidate-item ${selected}" 
+           data-staff-id="${c.staff_id}" 
+           data-name="${c.name}"
+           onclick="selectCandidate('${c.staff_id}', '${safeName}')">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-weight: 600;">${c.name}</div>
+          <div style="font-size: 11px; color: #6b7280;">ID:${c.staff_id}</div>
+        </div>
+        <div style="margin-top: 4px;">${badges}</div>
+        ${wishShiftStr ? `<div style="font-size: 11px; color: #6b7280; margin-top: 4px;">${wishShiftStr}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+  
+  html += '</div>';
+  document.getElementById('slotEditBody').innerHTML = html;
+}
+
+
+function filterCandidates() {
+  const kw = document.getElementById('candidateSearch').value.toLowerCase();
+  const items = document.querySelectorAll('#candidateList .candidate-item');
+  items.forEach(item => {
+    const name = (item.dataset.name || '').toLowerCase();
+    item.style.display = name.includes(kw) ? 'block' : 'none';
+  });
+}
+
+
+function selectCandidate(staffId, name) {
+  shiftViewState.selectedCandidate = staffId;
+  document.querySelectorAll('#candidateList .candidate-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.staffId === staffId);
+  });
+}
+
+
+function closeSlotEditor() {
+  document.getElementById('slotEditModal').style.display = 'none';
+  document.getElementById('slotEditModal').classList.add('hidden');
+  shiftViewState.editingSlot = null;
+  shiftViewState.selectedCandidate = null;
+}
+
+
+function saveSlot() {
+  if (!shiftViewState.editingSlot) return;
+  if (!shiftViewState.selectedCandidate) {
+    alert('スタッフを選択してください');
+    return;
+  }
+  
+  const es = shiftViewState.editingSlot;
+  const updates = {
+    action: 'update',
+    staffId: shiftViewState.selectedCandidate,
+    shiftType: shiftViewState.selectedShiftType,
+  };
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      alert('エラー: ' + res.message);
+      return;
+    }
+    closeSlotEditor();
+    loadShiftCalendar();
+  }).updateShiftSlot(currentAdmin.staff_id, shiftViewState.targetYM, es.dateKey, es.unitId, updates);
+}
+
+
+function deleteSlot() {
+  if (!shiftViewState.editingSlot) return;
+  if (!confirm('この配置を削除しますか?')) return;
+  
+  const es = shiftViewState.editingSlot;
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      alert('エラー: ' + res.message);
+      return;
+    }
+    closeSlotEditor();
+    loadShiftCalendar();
+  }).updateShiftSlot(currentAdmin.staff_id, shiftViewState.targetYM, es.dateKey, es.unitId, { action: 'delete' });
+}
+
+
+
+// ============================================
+// シフト確定(承認)画面
+// ============================================
+let approvalViewState = {
+  targetYM: null,
+  calendar: null,
+  canApprove: false,
+  lockStatus: null,
+};
+
+function loadApprovalView() {
+  document.getElementById('approveSummary').innerHTML = '';
+  document.getElementById('approveStatus').innerHTML = '';
+  document.getElementById('approveCalendar').innerHTML = '対象月を選択してください';
+  document.getElementById('approveBtn').style.display = 'none';
+  document.getElementById('revertBtn').style.display = 'none';
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      alert('エラー: ' + res.message);
+      return;
+    }
+    const sel = document.getElementById('approveTargetYM');
+    sel.innerHTML = '<option value="">選択してください</option>' +
+      res.yms.map(ym => `<option value="${ym}" ${ym === res.defaultYM ? 'selected' : ''}>${ym}</option>`).join('');
+    approvalViewState.targetYM = res.defaultYM;
+    loadApprovalCalendar();
+  }).getAvailableTargetYMs(currentAdmin.staff_id);
+}
+
+
+function loadApprovalCalendar() {
+  const ym = document.getElementById('approveTargetYM').value;
+  if (!ym) {
+    document.getElementById('approveCalendar').innerHTML = '対象月を選択してください';
+    document.getElementById('lockStatusBanner').style.display = 'none';
+    document.getElementById('pdfSection').style.display = 'none';
+    return;
+  }
+  approvalViewState.targetYM = ym;
+  
+  document.getElementById('approveCalendar').innerHTML = '<div style="padding: 40px; text-align: center;">読み込み中...</div>';
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      alert('エラー: ' + res.message);
+      return;
+    }
+    approvalViewState.calendar = res;
+    approvalViewState.canApprove = res.canApprove;
+    renderApprovalSummary(res);
+    renderApprovalCalendar(res);
+    updateApprovalButtons(res);
+  }).getShiftsForApproval(currentAdmin.staff_id, ym);
+  
+  // ロック状態取得
+  google.script.run.withSuccessHandler(lockRes => {
+    if (!lockRes.success) return;
+    approvalViewState.lockStatus = lockRes;
+    renderLockBanner(lockRes);
+    updateUnlockButton(lockRes);
+  }).getLockStatus(currentAdmin.staff_id, ym);
+  
+  // PDF用施設リスト取得
+  google.script.run.withSuccessHandler(facRes => {
+    if (!facRes.success) return;
+    const sel = document.getElementById('pdfFacilitySelect');
+    sel.innerHTML = '<option value="">施設を選択...</option>' +
+      facRes.facilities.map(f => `<option value="${escapeAttr(f)}">${escapeHtml(f)}</option>`).join('');
+    document.getElementById('pdfSection').style.display = facRes.facilities.length > 0 ? 'block' : 'none';
+  }).getFacilitiesWithShifts(currentAdmin.staff_id, ym);
+}
+
+
+function renderLockBanner(lockRes) {
+  const banner = document.getElementById('lockStatusBanner');
+  if (!lockRes.locked) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="padding: 12px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; color: #92400e;">
+      🔒 <strong>ロック中</strong> - ${lockRes.lockedBy}さんが ${lockRes.lockedAt} に確定化しました。編集するには「ロック解除」ボタンを押してください。
+    </div>
+  `;
+}
+
+
+function updateUnlockButton(lockRes) {
+  const btn = document.getElementById('unlockBtn');
+  if (!btn) return;
+  // 最終承認者のみ、かつロック中のとき表示
+  btn.style.display = (lockRes.locked && approvalViewState.canApprove) ? 'inline-block' : 'none';
+}
+
+
+function confirmUnlock() {
+  if (!approvalViewState.targetYM) return;
+  
+  if (!confirm(
+    approvalViewState.targetYM + ' のロックを解除します。\n\n' +
+    '【注意】\n' +
+    '・確定ステータスは維持されます\n' +
+    '・シフト作成画面で編集可能になります\n' +
+    '・修正後は再度確定操作は不要です(既に確定済み)\n\n' +
+    '本当にロックを解除しますか？'
+  )) return;
+  
+  const btn = document.getElementById('unlockBtn');
+  btn.disabled = true;
+  btn.innerText = '⏳ 処理中...';
+  document.getElementById('approveStatus').innerHTML = 
+    '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ ロック解除処理中...</div>';
+  
+  google.script.run.withSuccessHandler(res => {
+    btn.disabled = false;
+    btn.innerText = '🔓 ロック解除(修正用)';
+    
+    if (!res.success) {
+      document.getElementById('approveStatus').innerHTML = 
+        '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ エラー: ' + res.message + '</div>';
+      return;
+    }
+    
+    document.getElementById('approveStatus').innerHTML = 
+      '<div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">✓ ' + res.message + '</div>';
+    loadApprovalCalendar();
+  }).withFailureHandler(err => {
+    btn.disabled = false;
+    btn.innerText = '🔓 ロック解除(修正用)';
+    document.getElementById('approveStatus').innerHTML = 
+      '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ 通信エラー: ' + err + '</div>';
+  }).unlockMonthByAdmin(currentAdmin.staff_id, approvalViewState.targetYM);
+}
+
+
+function renderApprovalSummary(data) {
+  const s = data.summary;
+  const confirmColor = s.confirmRate >= 95 ? '#059669' : s.confirmRate >= 50 ? '#ca8a04' : '#6b7280';
+  const lastUpStr = s.lastUpdated ? `<div style="font-size: 11px; color: #6b7280; margin-top: 4px;">最終更新: ${s.lastUpdated}</div>` : '';
+  
+  document.getElementById('approveSummary').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">配置総数</div>
+      <div class="stat-value">${s.assigned}</div>
+      <div class="stat-sub">枠 / ${s.totalSlots}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">仮</div>
+      <div class="stat-value" style="color: ${s.draft > 0 ? '#2563eb' : '#6b7280'};">${s.draft}</div>
+      <div class="stat-sub">件</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">確定</div>
+      <div class="stat-value" style="color: ${s.confirmed > 0 ? '#059669' : '#6b7280'};">${s.confirmed}</div>
+      <div class="stat-sub">件</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">確定率</div>
+      <div class="stat-value" style="color: ${confirmColor};">${s.confirmRate}%</div>
+      ${lastUpStr}
+    </div>
+  `;
+}
+
+
+function updateApprovalButtons(data) {
+  const s = data.summary;
+  const approveBtn = document.getElementById('approveBtn');
+  const revertBtn = document.getElementById('revertBtn');
+  
+  if (!data.canApprove) {
+    approveBtn.style.display = 'none';
+    revertBtn.style.display = 'none';
+    return;
+  }
+  
+  approveBtn.style.display = s.draft > 0 ? 'inline-block' : 'none';
+  revertBtn.style.display = s.confirmed > 0 ? 'inline-block' : 'none';
+}
+
+
+function renderApprovalCalendar(data) {
+  if (!data.calendar || data.calendar.length === 0) {
+    document.getElementById('approveCalendar').innerHTML = '<div style="padding: 40px; text-align: center;">データなし</div>';
+    return;
+  }
+  
+  const days = data.calendar[0].days;
+  
+  let html = '<table class="shift-cal-table"><thead><tr>';
+  html += '<th class="unit-col">ユニット</th>';
+  for (const d of days) {
+    const cls = d.dow === 0 ? 'day-sun' : d.dow === 6 ? 'day-sat' : '';
+    const dowChar = ['日','月','火','水','木','金','土'][d.dow];
+    html += `<th class="day-header ${cls}">${d.day}<br><span style="font-size: 10px;">${dowChar}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+  
+  for (const row of data.calendar) {
+    const u = row.unit;
+    html += '<tr>';
+    html += `<td class="unit-col" title="${u.facility}">
+      <div style="font-weight: 600;">${u.unit_name}</div>
+      <div style="font-size: 10px; color: #6b7280;">${u.facility}${u.room ? ' #' + u.room : ''}</div>
+    </td>`;
+    for (const d of row.days) {
+      const shift = d.shift;
+      let cellCls = 'slot-cell slot-empty';
+      let content = '－';
+      let title = d.dateKey + ' ' + u.unit_name + ' (未配置)';
+      
+      if (shift && shift.staff_id) {
+        const isConfirmed = shift.status === '確定';
+        cellCls = 'slot-cell ' + (isConfirmed ? 'slot-confirmed' : 'slot-filled');
+        const shortName = (shift.staff_name || '').length > 4 
+          ? (shift.staff_name || '').substring(0, 4) + '…'
+          : (shift.staff_name || '');
+        content = `${shortName}<span class="slot-shift-type">${shift.shift_type || ''}</span>`;
+        title = `${d.dateKey} ${u.unit_name}\n${shift.staff_name}\n${shift.shift_type} (${shift.status})`;
+      }
+      html += `<td class="${cellCls}" title="${title}">${content}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  
+  document.getElementById('approveCalendar').innerHTML = html;
+}
+
+
+function confirmApproval() {
+  if (!approvalViewState.targetYM) return;
+  const s = approvalViewState.calendar.summary;
+  
+  if (!confirm(
+    `${approvalViewState.targetYM} の仮シフト ${s.draft}件を確定します。\n\n` +
+    '【重要】確定後は編集ができなくなります。\n本当に確定しますか？'
+  )) return;
+  
+  const btn = document.getElementById('approveBtn');
+  btn.disabled = true;
+  btn.innerText = '⏳ 処理中...';
+  document.getElementById('approveStatus').innerHTML = 
+    '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ 確定処理中...</div>';
+  
+  google.script.run.withSuccessHandler(res => {
+    btn.disabled = false;
+    btn.innerText = '✓ 全て確定する';
+    
+    if (!res.success) {
+      document.getElementById('approveStatus').innerHTML = 
+        '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ エラー: ' + res.message + '</div>';
+      return;
+    }
+    
+    document.getElementById('approveStatus').innerHTML = 
+      '<div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">✓ ' + res.message + '</div>';
+    loadApprovalCalendar();
+  }).withFailureHandler(err => {
+    btn.disabled = false;
+    btn.innerText = '✓ 全て確定する';
+    document.getElementById('approveStatus').innerHTML = 
+      '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ 通信エラー: ' + err + '</div>';
+  }).approveShifts(currentAdmin.staff_id, approvalViewState.targetYM);
+}
+
+
+function confirmRevert() {
+  if (!approvalViewState.targetYM) return;
+  const s = approvalViewState.calendar.summary;
+  
+  if (!confirm(
+    `${approvalViewState.targetYM} の確定シフト ${s.confirmed}件を取り消して「仮」に戻します。\n\n` +
+    '本当に取り消しますか？'
+  )) return;
+  
+  const btn = document.getElementById('revertBtn');
+  btn.disabled = true;
+  btn.innerText = '⏳ 処理中...';
+  document.getElementById('approveStatus').innerHTML = 
+    '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ 取消処理中...</div>';
+  
+  google.script.run.withSuccessHandler(res => {
+    btn.disabled = false;
+    btn.innerText = '↶ 確定解除';
+    
+    if (!res.success) {
+      document.getElementById('approveStatus').innerHTML = 
+        '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ エラー: ' + res.message + '</div>';
+      return;
+    }
+    
+    document.getElementById('approveStatus').innerHTML = 
+      '<div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">✓ ' + res.message + '</div>';
+    loadApprovalCalendar();
+  }).withFailureHandler(err => {
+    btn.disabled = false;
+    btn.innerText = '↶ 確定解除';
+    document.getElementById('approveStatus').innerHTML = 
+      '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ 通信エラー: ' + err + '</div>';
+  }).revertApproval(currentAdmin.staff_id, approvalViewState.targetYM);
+}
+
+
+
+// ============================================
+// シフト作成画面のロック状態表示
+// ============================================
+function checkShiftLockStatus(ym) {
+  if (!ym) return;
+  google.script.run.withSuccessHandler(lockRes => {
+    if (!lockRes.success) return;
+    const banner = document.getElementById('shiftLockBanner');
+    if (!banner) return;
+    if (lockRes.locked) {
+      banner.style.display = 'block';
+      banner.innerHTML = `
+        <div style="padding: 12px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; color: #92400e;">
+          🔒 <strong>ロック中</strong> - ${lockRes.lockedBy}さんが ${lockRes.lockedAt} に確定化しました。編集するには「シフト確定」画面でロック解除してください。
+        </div>
+      `;
+    } else {
+      banner.style.display = 'none';
+    }
+  }).getLockStatus(currentAdmin.staff_id, ym);
+}
+
+// loadShiftCalendar をパッチ拡張 (既存関数にロック状態チェックを追加)
+(function() {
+  const origLoad = window.loadShiftCalendar;
+  if (origLoad) {
+    window.loadShiftCalendar = function() {
+      origLoad.apply(this, arguments);
+      const ym = document.getElementById('shiftTargetYM').value;
+      if (ym) checkShiftLockStatus(ym);
+    };
+  }
+})();
+
+
+// ============================================
+// PDF出力機能
+// ============================================
+
+function openPdfView() {
+  const facility = document.getElementById('pdfFacilitySelect').value;
+  if (!facility) {
+    alert('施設を選択してください');
+    return;
+  }
+  if (!approvalViewState.targetYM) return;
+  
+  // ★重要: クリックと同じ同期処理で window.open を呼ぶ (ポップアップブロック回避)
+  const newWin = window.open('about:blank', '_blank');
+  if (!newWin) {
+    alert('ポップアップがブロックされました。ブラウザでこのサイトのポップアップを許可してください。');
+    return;
+  }
+  // 読み込み中メッセージ書き込み
+  try {
+    newWin.document.open();
+    newWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>読み込み中...</title></head><body style="font-family: sans-serif; padding: 40px; text-align: center; color: #4a148c;"><h2>📄 シフト表を読み込んでいます...</h2><p style="color: #6b7280;">少々お待ちください</p></body></html>');
+    newWin.document.close();
+  } catch (e) {
+    console.error('初期書き込みエラー:', e);
+  }
+  
+  google.script.run.withSuccessHandler(res => {
+    try {
+      if (!res || !res.success) {
+        const errMsg = res && res.message ? res.message : 'サーバーから空のレスポンスが返されました';
+        newWin.document.open();
+        newWin.document.write('<!DOCTYPE html><html><body><h2 style="color: #dc2626; padding: 40px; text-align: center;">エラー: ' + errMsg + '</h2></body></html>');
+        newWin.document.close();
+        return;
+      }
+      const html = buildPdfHtml([res]);
+      newWin.document.open();
+      newWin.document.write(html);
+      newWin.document.close();
+    } catch (e) {
+      console.error('PDF描画エラー:', e);
+      alert('PDF生成でエラー発生: ' + e.message);
+      try {
+        newWin.document.open();
+        newWin.document.write('<body><h2 style="color:red;padding:40px">PDF生成エラー: ' + e.message + '</h2></body>');
+        newWin.document.close();
+      } catch(e2) {}
+    }
+  }).withFailureHandler(err => {
+    try {
+      newWin.document.open();
+      newWin.document.write('<body><h2 style="color:red;padding:40px">通信エラー: ' + err + '</h2></body>');
+      newWin.document.close();
+    } catch(e) {}
+    alert('通信エラー: ' + err);
+  }).getShiftsForPDF(currentAdmin.staff_id, approvalViewState.targetYM, facility);
+}
+
+
+function openAllFacilitiesPdf() {
+  if (!approvalViewState.targetYM) return;
+  
+  const sel = document.getElementById('pdfFacilitySelect');
+  const facilities = Array.from(sel.options).map(o => o.value).filter(Boolean);
+  if (facilities.length === 0) {
+    alert('施設データがありません');
+    return;
+  }
+  
+  // ★重要: 先にタブを開く
+  const newWin = window.open('about:blank', '_blank');
+  if (!newWin) {
+    alert('ポップアップがブロックされました。ブラウザでこのサイトのポップアップを許可してください。');
+    return;
+  }
+  
+  try {
+    newWin.document.open();
+    newWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>全施設シフト表 読み込み中...</title></head><body style="font-family: sans-serif; padding: 40px; text-align: center; color: #4a148c;"><h2>📚 全' + facilities.length + '施設のシフト表を読み込んでいます...</h2><div id="progress" style="margin-top: 20px; color: #6b7280;">(0/' + facilities.length + ')</div></body></html>');
+    newWin.document.close();
+  } catch (e) {
+    console.error('初期書き込みエラー:', e);
+  }
+  
+  const statusEl = document.getElementById('approveStatus');
+  if (statusEl) {
+    statusEl.innerHTML = '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ 全' + facilities.length + '施設のシフトを読み込み中... (0/' + facilities.length + ')</div>';
+  }
+  
+  const results = [];
+  let count = 0;
+  
+  function updateProgress() {
+    try {
+      const pe = newWin.document.getElementById('progress');
+      if (pe) pe.textContent = '(' + count + '/' + facilities.length + ')';
+    } catch (e) {}
+    if (statusEl) {
+      statusEl.innerHTML = '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ 読み込み中... (' + count + '/' + facilities.length + ')</div>';
+    }
+  }
+  
+  function fetchNext(idx) {
+    if (idx >= facilities.length) {
+      // 完了
+      if (statusEl) {
+        statusEl.innerHTML = '<div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">✓ 読み込み完了 (' + results.length + '施設)</div>';
+      }
+      
+      if (results.length === 0) {
+        try {
+          newWin.document.open();
+          newWin.document.write('<body><h2 style="color:red;padding:40px">データが取得できませんでした</h2></body>');
+          newWin.document.close();
+        } catch(e) {}
+        return;
+      }
+      
+      try {
+        const html = buildPdfHtml(results);
+        newWin.document.open();
+        newWin.document.write(html);
+        newWin.document.close();
+      } catch (e) {
+        console.error('PDF描画エラー:', e);
+        alert('PDF生成エラー: ' + e.message);
+      }
+      return;
+    }
+    
+    google.script.run.withSuccessHandler(res => {
+      if (res && res.success) results.push(res);
+      count++;
+      updateProgress();
+      fetchNext(idx + 1);
+    }).withFailureHandler(err => {
+      console.error('施設取得失敗 ' + facilities[idx] + ':', err);
+      count++;
+      updateProgress();
+      fetchNext(idx + 1);
+    }).getShiftsForPDF(currentAdmin.staff_id, approvalViewState.targetYM, facilities[idx]);
+  }
+  fetchNext(0);
+}
+
+
+function buildPdfHtml(dataArray) {
+  if (dataArray.length === 0) {
+    return '<html><body><h2 style="color: #dc2626;">データなし</h2></body></html>';
+  }
+  
+  const targetYM = dataArray[0].targetYM;
+  const year = dataArray[0].year;
+  const month = dataArray[0].month;
+  
+  let html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${year}年${month}月 夜勤シフト表</title>
+<style>
+  @page { size: A4 landscape; margin: 4mm; }
+  body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; margin: 0; padding: 0; color: #111; }
+  .facility-sheet { page-break-after: always; padding: 4mm 6mm; }
+  .facility-sheet:last-child { page-break-after: auto; }
+  .pdf-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #4a148c; padding-bottom: 4px; margin-bottom: 6px; }
+  .pdf-header-left { flex: 1; }
+  .pdf-title { font-size: 12px; font-weight: bold; color: #4a148c; }
+  .pdf-facility { font-size: 18px; font-weight: bold; margin-top: 2px; }
+  .pdf-meta { font-size: 10px; color: #6b7280; }
+  /* カレンダー型PDFレイアウト */
+  .calendar-grid { display: grid; gap: 8px; }
+  .calendar-grid.layout-1 { grid-template-columns: 1fr; }
+  .calendar-grid.layout-2 { grid-template-columns: 1fr 1fr; }
+  .calendar-grid.layout-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .calendar-grid.layout-4 { grid-template-columns: 1fr 1fr; }
+  .calendar-grid.layout-6 { grid-template-columns: 1fr 1fr 1fr; }
+  
+  .unit-calendar { border: 1.5px solid #4a148c; border-radius: 4px; overflow: hidden; }
+  .unit-title { background: #4a148c; color: white; padding: 4px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+  .unit-title .ut-name { font-size: 11px; }
+  .unit-title .ut-room { font-size: 9px; opacity: 0.85; }
+  
+  table.mini-cal { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.mini-cal th { background: #6b21a8; color: white; font-size: 9px; padding: 3px 2px; border: 1px solid #4a148c; font-weight: 600; }
+  table.mini-cal th.dow-sun { background: #dc2626; }
+  table.mini-cal th.dow-sat { background: #2563eb; }
+  table.mini-cal td { border: 1px solid #cbd5e1; padding: 2px 3px; vertical-align: top; min-height: 38px; }
+  table.mini-cal td.empty-day { background: #f1f5f9; }
+  table.mini-cal td.sun { background: #fef2f2; }
+  table.mini-cal td.sat { background: #eff6ff; }
+  table.mini-cal .date-num { font-size: 9px; font-weight: bold; color: #4b5563; line-height: 1.1; }
+  table.mini-cal .date-num.sun { color: #dc2626; }
+  table.mini-cal .date-num.sat { color: #2563eb; }
+  table.mini-cal .cell-staff { font-size: 9px; font-weight: 600; color: #111827; line-height: 1.15; margin-top: 2px; word-break: break-all; }
+  table.mini-cal .cell-shift { font-size: 7.5px; color: white; display: inline-block; padding: 1px 4px; border-radius: 3px; margin-top: 2px; font-weight: bold; }
+  table.mini-cal .shift-A { background: #2563eb; }
+  table.mini-cal .shift-B { background: #059669; }
+  table.mini-cal .shift-C { background: #ea580c; }
+  table.mini-cal .cell-time { font-size: 7px; color: #6b7280; margin-top: 1px; }
+  table.mini-cal .no-shift { color: #d1d5db; font-size: 9px; text-align: center; margin-top: 4px; }
+  
+  /* ユニット数に応じたサイズ調整 (A4最大活用) */
+  .calendar-grid.layout-1 table.mini-cal td { height: 115px; padding: 5px 6px; }
+  .calendar-grid.layout-1 table.mini-cal .cell-staff { font-size: 13px; }
+  .calendar-grid.layout-1 table.mini-cal .cell-shift { font-size: 11px; padding: 2px 6px; }
+  .calendar-grid.layout-1 table.mini-cal .cell-time { font-size: 11px; margin-top: 3px; }
+  .calendar-grid.layout-1 table.mini-cal .date-num { font-size: 12px; }
+  
+  .calendar-grid.layout-2 table.mini-cal td { height: 95px; padding: 4px 5px; }
+  .calendar-grid.layout-2 table.mini-cal .cell-staff { font-size: 11px; }
+  .calendar-grid.layout-2 table.mini-cal .cell-shift { font-size: 9px; padding: 1px 5px; }
+  .calendar-grid.layout-2 table.mini-cal .cell-time { font-size: 9px; margin-top: 2px; }
+  .calendar-grid.layout-2 table.mini-cal .date-num { font-size: 11px; }
+  
+  .calendar-grid.layout-3 table.mini-cal td { height: 70px; padding: 3px 4px; }
+  .calendar-grid.layout-3 table.mini-cal .cell-staff { font-size: 10px; }
+  .calendar-grid.layout-3 table.mini-cal .cell-shift { font-size: 8px; padding: 1px 4px; }
+  .calendar-grid.layout-3 table.mini-cal .cell-time { font-size: 8px; margin-top: 1px; }
+  
+  .calendar-grid.layout-4 table.mini-cal td { height: 60px; padding: 3px; }
+  .calendar-grid.layout-4 table.mini-cal .cell-staff { font-size: 9px; }
+  .calendar-grid.layout-4 table.mini-cal .cell-shift { font-size: 7.5px; padding: 0 3px; }
+  .calendar-grid.layout-4 table.mini-cal .cell-time { font-size: 7.5px; margin-top: 1px; }
+  
+  .calendar-grid.layout-6 table.mini-cal td { height: 45px; padding: 2px 3px; }
+  .calendar-grid.layout-6 table.mini-cal .cell-staff { font-size: 8px; }
+  .calendar-grid.layout-6 table.mini-cal .cell-shift { font-size: 6.5px; padding: 0 2px; }
+  .calendar-grid.layout-6 table.mini-cal .cell-time { font-size: 6.5px; margin-top: 1px; }
+  .calendar-grid.layout-6 table.mini-cal .date-num { font-size: 8px; }
+  .calendar-grid.layout-6 table.mini-cal th { font-size: 8px; padding: 2px 1px; }
+  
+  /* 時間表示スタイル (共通) */
+  table.mini-cal .cell-time { color: #6b7280; line-height: 1.1; font-weight: 500; letter-spacing: -0.3px; }
+  .print-hint { background: #f3e8ff; padding: 16px; text-align: center; border-radius: 6px; margin: 10mm; font-size: 13px; }
+  @media print { .print-hint { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="print-hint">
+  <strong>📄 印刷のヒント:</strong> Cmd+P (Macの場合) または Ctrl+P (Windows)で印刷ダイアログを開き、
+  「レイアウト」で<strong>横向き</strong>を選択してPDFとして保存してください。
+  <button onclick="window.print()" style="margin-left: 10px; padding: 6px 16px; background: #4a148c; color: white; border: none; border-radius: 6px; cursor: pointer;">🖨 今すぐ印刷</button>
+</div>
+`;
+
+  for (const data of dataArray) {
+    html += renderSingleFacilityPdf(data);
+  }
+  
+  html += '</body></html>';
+  
+  return html;
+}
+
+
+function renderSingleFacilityPdf(data) {
+  const units = data.units;
+  const rows = data.rows; // 31日分
+  const unitsCount = units.length;
+  
+  // レイアウトクラス決定
+  let layoutClass;
+  let timeFormat; // 'full' = "20:00-05:00" / 'short' = "20-5"
+  if (unitsCount === 1) { layoutClass = 'layout-1'; timeFormat = 'full'; }
+  else if (unitsCount === 2) { layoutClass = 'layout-2'; timeFormat = 'full'; }
+  else if (unitsCount === 3) { layoutClass = 'layout-3'; timeFormat = 'short'; }
+  else if (unitsCount === 4) { layoutClass = 'layout-4'; timeFormat = 'short'; }
+  else if (unitsCount <= 6) { layoutClass = 'layout-6'; timeFormat = 'short'; }
+  else { layoutClass = 'layout-6'; timeFormat = 'short'; }
+  
+  // 時間フォーマットヘルパー
+  function formatTime(start, end) {
+    if (!start || !end) return '';
+    if (timeFormat === 'full') {
+      return start + '-' + end;
+    }
+    // 短縮: "20:00-05:00" → "20-5"
+    const s = parseInt(String(start).split(':')[0]);
+    const e = parseInt(String(end).split(':')[0]);
+    return s + '-' + e;
+  }
+  
+  // 月初の曜日取得 → カレンダーの先頭パディング数
+  const firstDow = rows[0].dow;
+  
+  // カレンダーセル配列構築 (前後のパディング込み)
+  const calCells = [];
+  for (let i = 0; i < firstDow; i++) calCells.push(null);
+  for (const r of rows) calCells.push(r);
+  while (calCells.length % 7 !== 0) calCells.push(null);
+  const weeksCount = calCells.length / 7;
+  
+  let html = `<div class="facility-sheet">
+    <div class="pdf-header">
+      <div class="pdf-header-left">
+        <div class="pdf-title">${data.year}年${data.month}月 夜勤シフト表</div>
+        <div class="pdf-facility">${escapeHtml(data.facility)}</div>
+      </div>
+      <div class="pdf-meta">
+        ${unitsCount}ユニット
+      </div>
+    </div>
+    
+    <div class="calendar-grid ${layoutClass}">`;
+  
+  // 各ユニットごとにミニカレンダーを生成
+  for (let ui = 0; ui < units.length; ui++) {
+    const u = units[ui];
+    const roomStr = u.room ? '#' + u.room : '';
+    
+    html += `<div class="unit-calendar">
+      <div class="unit-title">
+        <span class="ut-name">${escapeHtml(u.unit_name)}</span>
+        <span class="ut-room">${escapeHtml(roomStr)}</span>
+      </div>
+      <table class="mini-cal">
+        <thead>
+          <tr>
+            <th class="dow-sun">日</th>
+            <th>月</th>
+            <th>火</th>
+            <th>水</th>
+            <th>木</th>
+            <th>金</th>
+            <th class="dow-sat">土</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    
+    // 週ごとに行を生成
+    for (let w = 0; w < weeksCount; w++) {
+      html += '<tr>';
+      for (let d = 0; d < 7; d++) {
+        const cellIdx = w * 7 + d;
+        const dayRow = calCells[cellIdx];
+        
+        if (!dayRow) {
+          html += '<td class="empty-day"></td>';
+          continue;
+        }
+        
+        const dowCls = dayRow.dow === 0 ? 'sun' : dayRow.dow === 6 ? 'sat' : '';
+        const shift = dayRow.cells[ui];
+        
+        if (shift && shift.staff_name) {
+          const name = shift.staff_name.replace(/\s+/g, '');
+          const shortName = name.length > 5 ? name.substring(0, 5) : name;
+          const shiftChar = shift.shift_type ? shift.shift_type.charAt(shift.shift_type.length - 1) : '';
+          const timeDisp = formatTime(shift.start, shift.end);
+          
+          html += `<td class="${dowCls}" title="${escapeHtml(shift.staff_name)} ${escapeHtml(shift.shift_type)} ${escapeHtml(shift.start)}-${escapeHtml(shift.end)}">
+            <div class="date-num ${dowCls}">${dayRow.day}</div>
+            <div class="cell-staff">${escapeHtml(shortName)}</div>
+            <div class="cell-shift shift-${shiftChar}">${escapeHtml(shift.shift_type || '')}</div>
+            <div class="cell-time">${escapeHtml(timeDisp)}</div>
+          </td>`;
+        } else {
+          html += `<td class="${dowCls}">
+            <div class="date-num ${dowCls}">${dayRow.day}</div>
+            <div class="no-shift">－</div>
+          </td>`;
+        }
+      }
+      html += '</tr>';
+    }
+    
+    html += `</tbody>
+      </table>
+    </div>`;
+  }
+  
+  html += `</div>
+  </div>`;
+  
+  return html;
+}
+
 </script>
 </body>
 </html>
