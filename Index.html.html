@@ -1,667 +1,1097 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>コノヒカラ シフト管理</title>
+<base target="_top">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; background: #F5F5F7; color: #1C1C1E; min-height: 100vh; }
-  .header { background: #3C3489; color: white; padding: 14px 18px; position: sticky; top: 0; z-index: 100; }
-  .header-top { display: flex; justify-content: space-between; align-items: center; }
-  .header h1 { font-size: 16px; font-weight: 600; }
-  .header-sub { font-size: 11px; opacity: 0.75; margin-top: 2px; }
-  .logout-btn { font-size: 11px; color: rgba(255,255,255,0.7); background: none; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-  .tabs { display: flex; background: white; border-bottom: 1px solid #E5E5EA; position: sticky; top: 58px; z-index: 99; }
-  .tab { flex: 1; padding: 10px 4px 8px; text-align: center; font-size: 10px; color: #8E8E93; cursor: pointer; border-bottom: 2px solid transparent; }
-  .tab.active { color: #3C3489; border-bottom-color: #3C3489; }
-  .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
-  .sub-tabs { display: flex; background: #F0EFFE; border-radius: 10px; padding: 3px; margin-bottom: 10px; }
-  .sub-tab { flex: 1; padding: 8px; text-align: center; font-size: 13px; font-weight: 600; color: #8E8E93; border-radius: 8px; cursor: pointer; }
-  .sub-tab.active { background: white; color: #3C3489; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  .screen { display: none; padding: 12px; }
-  .screen.active { display: block; }
-  .card { background: white; border-radius: 12px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-  .card-title { font-size: 11px; font-weight: 600; color: #8E8E93; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-  #login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 32px 24px; background: #3C3489; }
-  .login-logo { font-size: 48px; margin-bottom: 8px; }
-  .login-title { font-size: 22px; font-weight: 700; color: white; margin-bottom: 4px; }
-  .login-sub { font-size: 14px; color: rgba(255,255,255,0.7); margin-bottom: 40px; }
-  .login-card { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 360px; }
-  .login-label { font-size: 13px; font-weight: 600; color: #3C3489; margin-bottom: 6px; display: block; }
-  .login-input { width: 100%; padding: 14px; border: 1.5px solid #E5E5EA; border-radius: 10px; font-size: 16px; margin-bottom: 16px; outline: none; }
-  .login-input:focus { border-color: #3C3489; }
-  .btn-primary { width: 100%; padding: 14px; background: #3C3489; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  .btn-primary:disabled { opacity: 0.4; cursor: default; }
-  .btn-success { width: 100%; padding: 14px; background: #34C759; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  .clock-area { display: flex; gap: 10px; margin-bottom: 10px; }
-  .clock-btn { flex: 1; padding: 18px; border-radius: 14px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
-  .clock-in  { background: #34C759; color: white; }
-  .clock-out { background: #FF3B30; color: white; }
-  .clock-btn:disabled { opacity: 0.35; cursor: default; }
-  .clock-status { font-size: 13px; color: #8E8E93; text-align: center; padding: 6px 0; }
-  .status-done { color: #34C759; font-weight: 600; }
-  .calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .month-label { font-size: 15px; font-weight: 600; }
-  .nav-btn { width: 30px; height: 30px; border: 1px solid #E5E5EA; border-radius: 50%; background: #F5F5F7; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 10px; }
-  .cal-day-header { text-align: center; font-size: 10px; color: #8E8E93; padding: 3px 0; }
-  .cal-day-header.sun { color: #FF3B30; }
-  .cal-day-header.sat { color: #007AFF; }
-  .cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 13px; border-radius: 50%; cursor: pointer; user-select: none; }
-  .cal-day.empty { pointer-events: none; }
-  .cal-day.past  { color: #C7C7CC; pointer-events: none; }
-  .cal-day.sun   { color: #FF3B30; }
-  .cal-day.sat   { color: #007AFF; }
-  .cal-day.selected { background: #3C3489 !important; color: white !important; font-weight: 600; }
-  .cal-day.today { font-weight: 700; border: 2px solid #3C3489; }
-  .cal-day:not(.empty):not(.past):hover:not(.selected) { background: #F0EFFE; }
-  .selected-info { background: #F0EFFE; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
-  .selected-count { font-size: 12px; color: #3C3489; font-weight: 600; margin-bottom: 6px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
-  .chip { background: #3C3489; color: white; font-size: 11px; padding: 3px 8px; border-radius: 20px; display: flex; align-items: center; gap: 3px; }
-  .chip-x { cursor: pointer; opacity: 0.7; }
-  .empty-msg { font-size: 12px; color: #8E8E93; }
-  .shift-panel { background: #F5F5F7; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
-  .shift-panel-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-  .form-select, .form-input { width: 100%; padding: 10px 12px; border: 1.5px solid #E5E5EA; border-radius: 10px; font-size: 14px; background: white; margin-bottom: 8px; outline: none; }
-  .fac-section-title { font-size: 11px; color: #8E8E93; font-weight: 600; margin-bottom: 6px; }
-  .fac-check-item { display: flex; align-items: center; padding: 10px 12px; background: white; border: 1.5px solid #E5E5EA; border-radius: 10px; margin-bottom: 6px; cursor: pointer; }
-  .fac-check-item.checked { border-color: #3C3489; background: #F0EFFE; }
-  .fac-check-item input { width: 18px; height: 18px; margin-right: 10px; accent-color: #3C3489; flex-shrink: 0; }
-  .fac-badge { font-size: 9px; background: #3C3489; color: white; padding: 1px 5px; border-radius: 4px; margin-right: 6px; flex-shrink: 0; }
-  .fac-badge.sub { background: #8E8E93; }
-  .fac-name { font-size: 13px; }
-  .freq-row { display: flex; gap: 8px; align-items: center; }
-  .freq-select { flex: 1; margin-bottom: 0 !important; }
-  .freq-count { width: 70px; text-align: center; margin-bottom: 0 !important; }
-  .freq-unit { font-size: 14px; color: #3C3489; font-weight: 600; }
-  .req-item { padding: 8px 0; border-bottom: 1px solid #F2F2F7; font-size: 13px; }
-  .req-item:last-child { border-bottom: none; }
-  .req-date { font-weight: 600; margin-bottom: 3px; }
-  .req-facs { color: #8E8E93; font-size: 12px; }
-  .submitted-item { padding: 8px 10px; background: #F9F9FB; border-radius: 8px; margin-bottom: 6px; }
-  .submitted-date { font-size: 13px; font-weight: 600; }
-  .submitted-detail { font-size: 11px; color: #8E8E93; margin-top: 2px; }
-  .shift-badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-right: 4px; }
-  .badge-night { background: #EDE9FE; color: #5B21B6; }
-  .badge-day   { background: #DCFCE7; color: #166534; }
-  .shift-card { border: 1px solid #E5E5EA; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
-  .shift-date { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-  .shift-fac  { font-size: 12px; color: #8E8E93; margin-top: 3px; }
-  .profile-avatar { width: 56px; height: 56px; background: #EDE9FE; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3C3489; font-weight: 700; margin: 0 auto 10px; }
-  .profile-name { font-size: 17px; font-weight: 700; text-align: center; }
-  .profile-sub  { font-size: 12px; color: #8E8E93; text-align: center; margin-bottom: 12px; }
-  .stat-row { display: flex; gap: 8px; margin-bottom: 10px; }
-  .stat-box { flex: 1; background: #F5F5F7; border-radius: 10px; padding: 12px; text-align: center; }
-  .stat-num { font-size: 22px; font-weight: 700; color: #3C3489; }
-  .stat-label { font-size: 11px; color: #8E8E93; margin-top: 2px; }
-  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #1C1C1E; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; z-index: 999; opacity: 0; transition: opacity 0.3s; white-space: nowrap; max-width: 90vw; }
-  .toast.show { opacity: 1; }
-  .toast.success { background: #34C759; }
-  .toast.error   { background: #FF3B30; }
-  .loading { position: fixed; inset: 0; background: rgba(255,255,255,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; font-size: 14px; color: #3C3489; font-weight: 600; }
-  .spinner { width: 30px; height: 30px; border: 3px solid #E5E5EA; border-top-color: #3C3489; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 8px; }
+  body { font-family: -apple-system, 'Hiragino Sans', sans-serif; background: #f5f5f7; color: #1d1d1f; padding: 16px; max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 16px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  h3 { font-size: 14px; margin: 12px 0 8px; color: #48484a; font-weight: 500; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .btn { background: #6366f1; color: #fff; border: none; border-radius: 10px; padding: 12px 20px; font-size: 15px; font-weight: 500; cursor: pointer; width: 100%; }
+  .btn:disabled { background: #c7c7cc; cursor: not-allowed; }
+  .btn-secondary { background: #f2f2f7; color: #1d1d1f; }
+  .btn-danger { background: #ff3b30; color: #fff; }
+  .btn-small { padding: 6px 12px; font-size: 12px; width: auto; }
+  input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 15px; font-family: inherit; }
+  label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #48484a; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .banner { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; }
+  .banner-info { background: #e0f2fe; color: #075985; }
+  .banner-warn { background: #fef3c7; color: #92400e; }
+  .banner-error { background: #fee2e2; color: #991b1b; }
+  .banner-success { background: #d1fae5; color: #065f46; }
+
+  /* 入社月数ベースのメッセージバナー */
+  .banner-motivation { padding: 14px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; line-height: 1.5; border-left: 4px solid; }
+  .banner-motivation.stage-start { background: #f0fdf4; color: #166534; border-color: #86efac; }
+  .banner-motivation.stage-familiar { background: #ecfdf5; color: #065f46; border-color: #6ee7b7; }
+  .banner-motivation.stage-established { background: #f0fdfa; color: #115e59; border-color: #5eead4; }
+  .banner-motivation.stage-midlevel { background: #eff6ff; color: #1e40af; border-color: #93c5fd; }
+  .banner-motivation.stage-veteran { background: #f5f3ff; color: #5b21b6; border-color: #c4b5fd; }
+  .banner-motivation.stage-legend { background: #fffbeb; color: #78350f; border-color: #fcd34d; }
+
+  .tab-bar { display: flex; gap: 4px; background: #f2f2f7; border-radius: 10px; padding: 4px; margin-bottom: 16px; }
+  .tab { flex: 1; padding: 8px; text-align: center; border-radius: 8px; font-size: 14px; cursor: pointer; color: #48484a; }
+  .tab.active { background: #fff; color: #1d1d1f; font-weight: 500; }
+  .facility-check { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e5ea; border-radius: 8px; margin-bottom: 6px; cursor: pointer; }
+  .facility-check:hover { background: #f9fafb; }
+  .facility-check.checked { background: #eef2ff; border-color: #6366f1; }
+  .facility-check input[type="checkbox"] { width: 20px; height: 20px; flex: 0; cursor: pointer; }
+  .facility-label { font-size: 14px; flex: 1; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; margin-right: 6px; }
+  .tag-main { background: #6366f1; color: #fff; }
+  .tag-second { background: #8b5cf6; color: #fff; }
+  .tag-sub { background: #9ca3af; color: #fff; }
+  .tag-required { background: #ef4444; color: #fff; font-size: 10px; margin-left: 4px; }
+  .request-item { border: 1px solid #e5e5ea; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
+  .shift-chip { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border: 1px solid #d2d2d7; border-radius: 18px; font-size: 12px; cursor: pointer; background: #fff; margin: 2px 3px; white-space: nowrap; }
+  .shift-chip.checked { background: #6366f1; color: #fff; border-color: #6366f1; }
+  .shift-chip input { display: none; }
+  .shift-time { font-size: 10px; opacity: 0.85; }
+  .small { font-size: 12px; color: #6b7280; }
+  .hidden { display: none !important; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #c7c7cc; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .pattern-info { background: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; color: #075985; border-radius: 0 6px 6px 0; }
+  .bulk-box { background: #fef9c3; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+  .bulk-box h3 { margin-top: 0; color: #713f12; }
+  .section-divider { border-top: 2px dashed #e5e5ea; margin: 16px 0; }
+  .advice-box { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: #78350f; border-radius: 0 6px 6px 0; line-height: 1.6; }
+  .submitted-detail { background: rgba(255,255,255,0.5); border-radius: 6px; padding: 8px 10px; font-size: 12px; margin-top: 4px; }
+  .submitted-detail summary { cursor: pointer; font-weight: 500; list-style: none; }
+  .submitted-detail summary::-webkit-details-marker { display: none; }
+  .submitted-detail summary::before { content: '▶ '; display: inline-block; transition: transform 0.2s; }
+  .submitted-detail[open] summary::before { transform: rotate(90deg); }
+  .submitted-detail-body { margin-top: 8px; border-top: 1px dashed rgba(0,0,0,0.15); padding-top: 6px; line-height: 1.6; }
+
+  /* カレンダー */
+  .calendar-wrap { background: #fff; border: 1px solid #e5e5ea; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .cal-header { text-align: center; font-size: 15px; font-weight: 500; margin-bottom: 8px; color: #1d1d1f; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-head { text-align: center; font-size: 11px; color: #6b7280; padding: 4px 0; font-weight: 500; }
+  .cal-head.sun { color: #ef4444; }
+  .cal-head.sat { color: #3b82f6; }
+  .cal-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 14px; cursor: pointer; user-select: none; border: 1px solid transparent; transition: all 0.15s; position: relative; }
+  .cal-cell:not(.empty):hover { background: #f2f2f7; }
+  .cal-cell.selected { background: #6366f1; color: #fff; font-weight: 500; border-color: #4f46e5; }
+  .cal-cell.empty { visibility: hidden; }
+  .cal-cell.sun { color: #ef4444; }
+  .cal-cell.sat { color: #3b82f6; }
+  .cal-cell.selected.sun, .cal-cell.selected.sat { color: #fff; }
+  .cal-badge { position: absolute; top: 2px; right: 3px; font-size: 8px; opacity: 0.8; }
+  .cal-hint { font-size: 11px; color: #6b7280; text-align: center; margin-top: 8px; }
+
+  /* 施設カード(マイページ用) */
+  .fac-card { background: #fff; border: 1px solid #e5e5ea; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+  .fac-card.main-card { border-left: 4px solid #6366f1; }
+  .fac-card.second-card { border-left: 4px solid #8b5cf6; }
+  .fac-card.sub-card { border-left: 4px solid #9ca3af; }
+  .fac-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .fac-card-name { font-size: 15px; font-weight: 500; }
+  .fac-card-zip { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+  .fac-card-addr { font-size: 13px; line-height: 1.5; color: #1d1d1f; margin-bottom: 8px; }
+  .fac-card-station { font-size: 12px; color: #48484a; margin-bottom: 10px; }
+  .fac-card-map { display: inline-block; font-size: 12px; color: #0284c7; text-decoration: none; padding: 6px 12px; background: #e0f2fe; border-radius: 6px; font-weight: 500; }
+  .fac-card-map:hover { background: #bae6fd; }
+  .fac-empty { padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
+
+  /* ============================================ */
+  /* 繰り返しテンプレート用（Step 3-3 で追加）     */
+  /* ============================================ */
+  .tpl-button-wrap { margin-bottom: 14px; }
+  .tpl-button-wrap .btn { background: linear-gradient(135deg, #10b981, #059669); }
+  .tpl-modal-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: flex-start; justify-content: center; z-index: 1000; padding: 20px 12px; overflow-y: auto; }
+  .tpl-modal { background: #f5f5f7; border-radius: 14px; width: 100%; max-width: 600px; padding: 18px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+  .tpl-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .tpl-modal-header h2 { margin: 0; font-size: 18px; }
+  .tpl-close { background: transparent; border: none; font-size: 22px; cursor: pointer; color: #6b7280; padding: 4px 10px; width: auto; }
+  .tpl-list-card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; border-left: 4px solid #10b981; }
+  .tpl-list-card .tpl-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .tpl-list-card .tpl-meta { font-size: 12px; color: #6b7280; margin-bottom: 2px; line-height: 1.5; }
+  .tpl-list-card .tpl-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .tpl-list-empty { text-align: center; color: #6b7280; padding: 20px; font-size: 13px; }
+  .tpl-weekday-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tpl-wd { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid #d2d2d7; border-radius: 50%; font-size: 13px; cursor: pointer; background: #fff; user-select: none; }
+  .tpl-wd.checked { background: #10b981; color: #fff; border-color: #059669; }
+  .tpl-wd.sun { color: #ef4444; }
+  .tpl-wd.sat { color: #3b82f6; }
+  .tpl-wd.checked.sun, .tpl-wd.checked.sat { color: #fff; }
+  .tpl-preset-row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tpl-preset-btn { padding: 4px 10px; border: 1px solid #d2d2d7; border-radius: 12px; font-size: 11px; background: #fff; cursor: pointer; color: #48484a; }
+  .tpl-preset-btn:hover { background: #f2f2f7; }
+  .tpl-tag-mini { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 500; margin-right: 4px; }
 </style>
 </head>
 <body>
 
-<div id="loading" class="loading"><div class="spinner"></div>読み込み中...</div>
+<div id="loginScreen">
+  <h1>コノヒカラ シフト管理</h1>
+  <div class="card">
+    <label>メールアドレス</label>
+    <input type="email" id="emailInput" placeholder="your@email.com">
+    <div style="height: 12px;"></div>
+    <button class="btn" onclick="doLogin()">ログイン</button>
+  </div>
+  <div id="loginError" class="banner banner-error hidden"></div>
+</div>
 
-<div id="login-screen" style="display:none;">
-  <div class="login-logo">🏠</div>
-  <div class="login-title">コノヒカラ</div>
-  <div class="login-sub">シフト管理アプリ</div>
-  <div class="login-card">
-    <label class="login-label">メールアドレス</label>
-    <input type="email" id="login-email" class="login-input" placeholder="example@gmail.com">
-    <button class="btn-primary" onclick="login()" id="login-btn">ログイン</button>
-    <p id="login-error" style="color:#FF3B30;font-size:13px;margin-top:10px;text-align:center;"></p>
+<div id="mainScreen" class="hidden">
+  <div class="row" style="margin-bottom: 12px;">
+    <h1 id="welcomeMsg" style="flex: 2;">こんにちは</h1>
+    <button class="btn btn-secondary" style="flex: 0.8;" onclick="doLogout()">ログアウト</button>
+  </div>
+
+  <div id="motivationBanner" class="banner-motivation hidden"></div>
+  <div id="periodBanner" class="banner banner-info"></div>
+  <div id="submittedBanner" class="banner banner-success hidden"></div>
+
+  <div class="tab-bar">
+    <div class="tab active" onclick="switchTab(event, 'submit')">希望提出</div>
+    <div class="tab" onclick="switchTab(event, 'shifts')">確定シフト</div>
+    <div class="tab" onclick="switchTab(event, 'attendance')">打刻</div>
+    <div class="tab" onclick="switchTab(event, 'profile')">マイページ</div>
+  </div>
+
+  <div id="tab-submit">
+
+    <div class="advice-box">
+      💡 希望日はなるべく多く提出してください。希望頻度を元に調整してシフトを決定します。希望日が多いほど要望に合致しやすいです。<br>
+      📅 提出できるのは<strong>来月分のみ・毎月10日〜22日</strong>です。期限内なら何度でも修正可能です。
+    </div>
+
+    <!-- 🔁 繰り返しテンプレート起動ボタン -->
+    <div class="tpl-button-wrap">
+      <button class="btn" onclick="openTemplateModal()">🔁 繰り返しテンプレート</button>
+      <div class="small" style="margin-top: 4px; text-align: center;">毎月同じパターンで提出する人向け（管理者・サビ管・看護師など）</div>
+    </div>
+
+    <!-- Step 1: 希望頻度 -->
+    <div class="card">
+      <h2>① 希望頻度</h2>
+      <div class="row">
+        <div>
+          <label>頻度タイプ</label>
+          <select id="freqType">
+            <option value="月次合計">月次合計</option>
+            <option value="週次">週次</option>
+          </select>
+        </div>
+        <div>
+          <label>回数</label>
+          <input type="number" id="freqCount" min="1" max="31" value="8">
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: 希望施設(一括) -->
+    <div class="card">
+      <h2>② 希望施設を選択</h2>
+      <div id="patternInfo" class="pattern-info"></div>
+      <div id="facilityPicker"></div>
+    </div>
+
+    <!-- Step 3: カレンダー選択 -->
+    <div class="card">
+      <h2>③ 希望日をカレンダーから選択</h2>
+      <div id="calendarContainer"></div>
+      <div class="cal-hint">💡 日付をタップして選択/解除できます</div>
+    </div>
+
+    <!-- Step 4: 選択済みリスト & 一括設定 -->
+    <div class="card">
+      <h2>④ 選択した日程の詳細</h2>
+      <div class="bulk-box">
+        <h3>一括設定: 全日程に同じシフト種別を適用</h3>
+        <div id="bulkShiftChips" style="margin-bottom: 8px;"></div>
+        <button class="btn btn-secondary btn-small" onclick="applyBulkShifts()">選択したシフトを全日程に適用</button>
+      </div>
+      <div class="section-divider"></div>
+      <div id="requestList"></div>
+    </div>
+
+    <button class="btn" id="submitBtn" onclick="doSubmit()" style="margin-bottom: 20px;">希望を提出する</button>
+  </div>
+
+  <div id="tab-shifts" class="hidden">
+    <div class="card">
+      <h2>確定シフト</h2>
+      <div id="shiftList" class="small">読み込み中...</div>
+    </div>
+  </div>
+
+  <div id="tab-attendance" class="hidden">
+    <div class="card">
+      <h2>今日の出退勤</h2>
+      <div id="attendanceStatus" class="small" style="margin-bottom: 12px;">読み込み中...</div>
+      <label>勤務施設</label>
+      <select id="clockFacility"></select>
+      <div style="height: 12px;"></div>
+      <div class="row">
+        <button class="btn" onclick="doClockIn()">出勤</button>
+        <button class="btn btn-danger" onclick="doClockOut()">退勤</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-profile" class="hidden">
+    <h2 style="margin-bottom: 12px;">登録施設の住所</h2>
+    <div id="profileInfo">読み込み中...</div>
   </div>
 </div>
 
-<div id="main-app" style="display:none;">
-  <div class="header">
-    <div class="header-top">
-      <div><h1 id="header-name">コノヒカラ</h1><div class="header-sub" id="header-sub">シフト管理</div></div>
-      <button class="logout-btn" onclick="logout()">ログアウト</button>
+<!-- ================================================= -->
+<!-- 繰り返しテンプレート モーダル                      -->
+<!-- ================================================= -->
+<div id="tplModal" class="tpl-modal-bg hidden" onclick="if(event.target===this)closeTemplateModal()">
+  <div class="tpl-modal">
+    <div class="tpl-modal-header">
+      <h2>🔁 繰り返しテンプレート</h2>
+      <button class="tpl-close" onclick="closeTemplateModal()">✕</button>
     </div>
-  </div>
-  <div class="tabs">
-    <div class="tab active" onclick="switchTab('attendance')" id="tab-attendance"><span class="tab-icon">⏰</span>打刻</div>
-    <div class="tab" onclick="switchTab('request')"    id="tab-request">  <span class="tab-icon">📅</span>希望提出</div>
-    <div class="tab" onclick="switchTab('shift')"      id="tab-shift">   <span class="tab-icon">📋</span>シフト確認</div>
-    <div class="tab" onclick="switchTab('profile')"    id="tab-profile"> <span class="tab-icon">👤</span>マイページ</div>
-  </div>
 
-  <div id="screen-attendance" class="screen active">
-    <div class="card">
-      <div class="card-title">本日の打刻</div>
-      <div id="today-date" style="font-size:15px;font-weight:600;margin-bottom:12px;"></div>
-      <div class="clock-area">
-        <button class="clock-btn clock-in"  id="btn-clock-in"  onclick="clockIn()">出勤</button>
-        <button class="clock-btn clock-out" id="btn-clock-out" onclick="clockOut()">退勤</button>
+    <!-- 一覧表示 -->
+    <div id="tplListView">
+      <div class="card">
+        <h3 style="margin-top:0;">登録済みテンプレート</h3>
+        <div id="tplList">読み込み中...</div>
+        <div style="height: 10px;"></div>
+        <button class="btn" onclick="showTemplateForm(null)">＋ 新規テンプレートを作成</button>
       </div>
-      <div class="clock-status" id="clock-status">状態確認中...</div>
     </div>
-    <div class="card">
-      <div class="card-title">本日のシフト</div>
-      <div id="today-shift-info" style="font-size:14px;color:#8E8E93;">確認中...</div>
-    </div>
-  </div>
 
-  <div id="screen-request" class="screen">
-    <div class="sub-tabs" id="shift-sub-tabs">
-      <div class="sub-tab active" id="sub-tab-night" onclick="switchShiftMode('night')">🌙 夜勤</div>
-      <div class="sub-tab"       id="sub-tab-day"   onclick="switchShiftMode('day')">☀️ 日勤</div>
-    </div>
-    <div class="card">
-      <div class="calendar-header">
-        <button class="nav-btn" onclick="changeMonth(-1)">‹</button>
-        <span class="month-label" id="req-month-label"></span>
-        <button class="nav-btn" onclick="changeMonth(1)">›</button>
-      </div>
-      <div class="cal-grid" id="cal-grid"></div>
-    </div>
-    <div class="selected-info">
-      <div class="selected-count" id="sel-count">0日 選択中</div>
-      <div class="chips" id="chips"></div>
-    </div>
-    <div class="shift-panel" id="shift-panel" style="display:none;">
-      <div class="shift-panel-title" id="shift-panel-title">シフト設定</div>
-      <select class="form-select" id="shift-select"><option value="">シフト種別を選択</option></select>
-      <div class="fac-section-title">希望施設（複数選択可）</div>
-      <div id="facility-checkboxes"></div>
-      <input type="text" class="form-input" id="comment-input" placeholder="備考（任意）">
-      <button class="btn-primary" onclick="addToList()">この設定で追加</button>
-    </div>
-    <div class="card">
-      <div class="card-title">希望頻度（任意）</div>
-      <div class="freq-row">
-        <select class="form-select freq-select" id="freq-type">
-          <option value="">未設定</option>
-          <option value="月次合計">月合計</option>
-          <option value="週次">週あたり</option>
-        </select>
-        <input type="number" class="form-input freq-count" id="freq-count" min="1" max="31" placeholder="回数">
-        <span class="freq-unit">回</span>
-      </div>
-      <div style="font-size:11px;color:#8E8E93;margin-top:6px;">例：月合計8回 / 週あたり2回</div>
-    </div>
-    <div class="card" id="request-list-card" style="display:none;">
-      <div class="card-title">提出リスト</div>
-      <div id="request-list"></div>
-      <button class="btn-success" onclick="submitAll()" style="margin-top:10px;">提出する</button>
-    </div>
-    <div class="card">
-      <div class="card-title">提出済み状況（今月）</div>
-      <div id="submitted-status-list"><p style="color:#8E8E93;font-size:13px;">読み込み中...</p></div>
-    </div>
-  </div>
+    <!-- 作成/編集フォーム -->
+    <div id="tplFormView" class="hidden">
+      <div class="card">
+        <h3 id="tplFormTitle" style="margin-top:0;">新規テンプレート</h3>
 
-  <div id="screen-shift" class="screen">
-    <div class="card">
-      <div class="calendar-header">
-        <button class="nav-btn" onclick="changeShiftMonth(-1)">‹</button>
-        <span class="month-label" id="shift-month-label"></span>
-        <button class="nav-btn" onclick="changeShiftMonth(1)">›</button>
-      </div>
-      <div id="shift-summary"></div>
-    </div>
-    <div id="shift-list"></div>
-  </div>
+        <label>テンプレート名</label>
+        <input type="text" id="tplName" placeholder="例: 平日早番パターン" maxlength="50">
 
-  <div id="screen-profile" class="screen">
-    <div class="card">
-      <div class="profile-avatar" id="profile-avatar"></div>
-      <div class="profile-name" id="profile-name"></div>
-      <div class="profile-sub"  id="profile-sub"></div>
-      <div class="stat-row">
-        <div class="stat-box"><div class="stat-num" id="stat-submitted">-</div><div class="stat-label">提出日数</div></div>
-        <div class="stat-box"><div class="stat-num" id="stat-confirmed">-</div><div class="stat-label">確定日数</div></div>
+        <div style="height: 12px;"></div>
+
+        <label>曜日（クリックで選択）</label>
+        <div class="tpl-preset-row">
+          <button class="tpl-preset-btn" onclick="applyWeekdayPreset('weekday')">平日（月〜金）</button>
+          <button class="tpl-preset-btn" onclick="applyWeekdayPreset('weekend')">土日</button>
+          <button class="tpl-preset-btn" onclick="applyWeekdayPreset('all')">全日</button>
+          <button class="tpl-preset-btn" onclick="applyWeekdayPreset('clear')">クリア</button>
+        </div>
+        <div class="tpl-weekday-row" id="tplWeekdays"></div>
+
+        <div style="height: 12px;"></div>
+
+        <label>シフト種別</label>
+        <select id="tplShiftType"></select>
+
+        <div style="height: 12px;"></div>
+
+        <label>メイン施設</label>
+        <select id="tplMainFac"></select>
+
+        <div id="tplSecondFacWrap">
+          <div style="height: 12px;"></div>
+          <label>セカンド施設</label>
+          <select id="tplSecondFac"></select>
+        </div>
+
+        <div id="tplSubFacWrap">
+          <div style="height: 12px;"></div>
+          <label>サブ施設（複数選択可）</label>
+          <div id="tplSubFac"></div>
+        </div>
+
+        <div style="height: 12px;"></div>
+
+        <label>コメント（任意）</label>
+        <input type="text" id="tplComment" placeholder="">
+
+        <div style="height: 16px;"></div>
+
+        <div class="row">
+          <button class="btn btn-secondary" onclick="backToTemplateList()">キャンセル</button>
+          <button class="btn" onclick="saveTemplateForm()">保存</button>
+        </div>
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">登録施設・シフト区分</div>
-      <div id="my-info-list"></div>
-    </div>
+
   </div>
 </div>
-
-<div id="toast" class="toast"></div>
 
 <script>
-let staff       = null;
-let calYear     = new Date().getFullYear();
-let calMonth    = new Date().getMonth();
-let shiftYear   = new Date().getFullYear();
-let shiftMonth  = new Date().getMonth();
-let currentMode = 'night';
-let nightReqs   = {};
-let dayReqs     = {};
-const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-const DAYS   = ['日','月','火','水','木','金','土'];
-const SHIFT_HOURS = { '夜勤A':8,'夜勤B':8,'夜勤C':9,'日勤早出':8,'日勤遅出':8 };
+let currentUser = null;
+let selectedFacilities = { main: '', second: '', subs: [] };
+let bulkShiftSelection = [];
+let requests = [];
+let hasSubmitted = false;
 
-window.onload = function() {
-  const saved = sessionStorage.getItem('konoStaff');
-  if (saved) { staff = JSON.parse(saved); initApp(); }
-  else { hide('loading'); show('login-screen'); }
+// テンプレ編集用の内部状態
+let tplState = {
+  editingId: null,
+  weekdays: [],      // [1,2,3,4,5]
+  subs: []           // 選択されたサブ施設名の配列
 };
 
-function login() {
-  const email = document.getElementById('login-email').value.trim();
-  if (!email) { showError('メールアドレスを入力してください'); return; }
-  document.getElementById('login-btn').disabled = true;
-  show('loading');
-  google.script.run
-    .withSuccessHandler(res => {
-      hide('loading');
-      document.getElementById('login-btn').disabled = false;
-      if (res.success) { staff = res; sessionStorage.setItem('konoStaff', JSON.stringify(staff)); initApp(); }
-      else showError(res.message);
-    })
-    .withFailureHandler(() => { hide('loading'); document.getElementById('login-btn').disabled = false; showError('エラーが発生しました'); })
-    .authenticateStaff(email);
+function doLogin() {
+  const email = document.getElementById('emailInput').value.trim();
+  if (!email) return;
+  const errBox = document.getElementById('loginError');
+  errBox.classList.add('hidden');
+  document.querySelector('#loginScreen .btn').innerHTML = '<span class="spinner"></span> 認証中...';
+  google.script.run.withSuccessHandler(onLoginResult).withFailureHandler(err => {
+    errBox.textContent = 'エラー: ' + err;
+    errBox.classList.remove('hidden');
+    document.querySelector('#loginScreen .btn').innerHTML = 'ログイン';
+  }).authenticateStaff(email);
 }
 
-function logout() { sessionStorage.removeItem('konoStaff'); location.reload(); }
-function showError(msg) { document.getElementById('login-error').textContent = msg; }
-
-function initApp() {
-  hide('login-screen'); show('main-app');
-  document.getElementById('header-name').textContent = staff.name + ' さん';
-  document.getElementById('header-sub').textContent  = staff.kubun || 'スタッフ';
-  initAttendanceTab();
-  initRequestTab();
-  initShiftTab();
-  initProfileTab();
-  hide('loading');
-}
-
-function initAttendanceTab() {
-  const now = new Date();
-  document.getElementById('today-date').textContent =
-    now.getFullYear() + '年' + (now.getMonth()+1) + '月' + now.getDate() + '日（' + DAYS[now.getDay()] + '）';
-  refreshClockStatus();
-  loadTodayShift();
-}
-
-function refreshClockStatus() {
-  google.script.run
-    .withSuccessHandler(s => {
-      const ib = document.getElementById('btn-clock-in');
-      const ob = document.getElementById('btn-clock-out');
-      const se = document.getElementById('clock-status');
-      if (s.clockedIn && s.clockedOut) { ib.disabled = ob.disabled = true; se.innerHTML = '<span class="status-done">✓ 出勤・退勤済み</span>'; }
-      else if (s.clockedIn) { ib.disabled = true; ob.disabled = false; se.innerHTML = '<span class="status-done">✓ 出勤済み</span>'; }
-      else { ib.disabled = false; ob.disabled = true; se.textContent = '未打刻'; }
-    })
-    .getAttendanceStatus(staff.staff_id);
-}
-
-function clockIn() {
-  show('loading');
-  google.script.run
-    .withSuccessHandler(r => { hide('loading'); showToast(r.message, r.success?'success':'error'); if (r.success) refreshClockStatus(); })
-    .clockIn(staff.staff_id, staff.name, staff.mainFacility || '');
-}
-
-function clockOut() {
-  show('loading');
-  google.script.run
-    .withSuccessHandler(r => { hide('loading'); showToast(r.message, r.success?'success':'error'); if (r.success) refreshClockStatus(); })
-    .clockOut(staff.staff_id);
-}
-
-function loadTodayShift() {
-  const ym = fmtYM(new Date());
-  google.script.run
-    .withSuccessHandler(shifts => {
-      const s  = shifts.find(x => x.date === fmtDate(new Date()));
-      const el = document.getElementById('today-shift-info');
-      el.innerHTML = s ? '<span class="shift-badge ' + bc(s.shift) + '">' + s.shift + '</span>' + s.facility : '本日のシフトはありません';
-    })
-    .getMyShifts(staff.staff_id, ym);
-}
-
-function initRequestTab() {
-  const kubun = staff.shiftKubun || '両方';
-  const subTabs = document.getElementById('shift-sub-tabs');
-  if (kubun === '夜勤のみ')      { subTabs.style.display = 'none'; currentMode = 'night'; }
-  else if (kubun === '日勤のみ') { subTabs.style.display = 'none'; currentMode = 'day'; }
-  else                           { subTabs.style.display = 'flex'; currentMode = 'night'; }
-  buildShiftSelect();
-  buildFacilityCheckboxes();
-  updateMonthLabel();
-  buildCalendar();
-  updateChips();
-  loadSubmittedStatus();
-}
-
-function switchShiftMode(mode) {
-  currentMode = mode;
-  document.getElementById('sub-tab-night').classList.toggle('active', mode === 'night');
-  document.getElementById('sub-tab-day').classList.toggle('active',   mode === 'day');
-  document.getElementById('shift-panel-title').textContent = mode === 'night' ? '🌙 夜勤シフト設定' : '☀️ 日勤シフト設定';
-  buildShiftSelect();
-  buildCalendar();
-  updateChips();
-  document.getElementById('shift-panel').style.display = Object.keys(getActive()).length > 0 ? 'block' : 'none';
-}
-
-function buildShiftSelect() {
-  const sel     = document.getElementById('shift-select');
-  const allowed = staff.allowedShifts || [];
-  const pool    = currentMode === 'night' ? ['夜勤A','夜勤B','夜勤C'] : ['日勤早出','日勤遅出'];
-  const labels  = {
-    '夜勤A':'夜勤A（20:00〜05:00）','夜勤B':'夜勤B（22:00〜07:00）','夜勤C':'夜勤C（22:00〜08:00）',
-    '日勤早出':'日勤早出（06:00〜15:00）','日勤遅出':'日勤遅出（13:00〜22:00）'
-  };
-  const filtered = pool.filter(s => allowed.length === 0 || allowed.includes(s));
-  sel.innerHTML = '<option value="">シフト種別を選択</option>';
-  filtered.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = labels[s]; sel.appendChild(o); });
-}
-
-function buildFacilityCheckboxes() {
-  const container = document.getElementById('facility-checkboxes');
-  container.innerHTML = '';
-  const allFacs = staff.allFacilities || [];
-  const mainFac = staff.mainFacility  || '';
-
-  if (allFacs.length === 0) {
-    container.innerHTML = '<p style="color:#FF6B6B;font-size:12px;margin-bottom:8px;">⚠️ 施設未登録。管理者に連絡してください。</p>';
+function onLoginResult(res) {
+  if (!res.success) {
+    const errBox = document.getElementById('loginError');
+    errBox.textContent = res.message;
+    errBox.classList.remove('hidden');
+    document.querySelector('#loginScreen .btn').innerHTML = 'ログイン';
     return;
   }
+  currentUser = res;
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('mainScreen').classList.remove('hidden');
+  document.getElementById('welcomeMsg').textContent = 'こんにちは、' + res.name + 'さん';
 
-  allFacs.forEach((fac, i) => {
-    const isMain = fac === mainFac;
-    const div = document.createElement('div');
-    div.className = 'fac-check-item' + (isMain ? ' checked' : '');
-    div.innerHTML =
-      '<input type="checkbox" id="fc' + i + '" ' + (isMain ? 'checked' : '') + ' data-facility="' + fac + '" onchange="onFacChange(this)">' +
-      '<label for="fc' + i + '" style="cursor:pointer;flex:1;display:flex;align-items:center;">' +
-        '<span class="fac-badge ' + (isMain ? '' : 'sub') + '">' + (isMain ? 'メイン' : 'サブ') + '</span>' +
-        '<span class="fac-name">' + fac + '</span>' +
-      '</label>';
-    container.appendChild(div);
-  });
+  selectedFacilities = {
+    main: res.mainFacility,
+    second: res.secondFacility || '',
+    subs: []
+  };
+  bulkShiftSelection = [res.allowedShifts[0] || '夜勤A'];
+
+  loadMotivationMessage();
+  loadPeriodInfo();
+  setupPatternInfo();
+  renderFacilityPicker();
+  renderBulkShifts();
+  loadMyRequests();
+  loadFacilityOptions();
 }
 
-function onFacChange(cb) { cb.parentElement.classList.toggle('checked', cb.checked); }
-
-function getCheckedFacilities() {
-  const cbs = document.querySelectorAll('#facility-checkboxes input[type="checkbox"]:checked');
-  return Array.from(cbs).map(c => c.dataset.facility);
-}
-
-function getActive() { return currentMode === 'night' ? nightReqs : dayReqs; }
-
-function changeMonth(delta) {
-  calMonth += delta;
-  if (calMonth > 11) { calMonth = 0; calYear++; }
-  if (calMonth < 0)  { calMonth = 11; calYear--; }
-  nightReqs = {}; dayReqs = {};
-  updateMonthLabel(); buildCalendar(); updateChips();
-  document.getElementById('shift-panel').style.display = 'none';
-  document.getElementById('request-list-card').style.display = 'none';
-  loadSubmittedStatus();
-}
-
-function updateMonthLabel() {
-  document.getElementById('req-month-label').textContent = calYear + '年' + MONTHS[calMonth];
-}
-
-function buildCalendar() {
-  const grid   = document.getElementById('cal-grid');
-  const active = getActive();
-  const today  = new Date();
-  grid.innerHTML = '';
-  ['日','月','火','水','木','金','土'].forEach((d, i) => {
-    const h = document.createElement('div');
-    h.className = 'cal-day-header' + (i===0?' sun': i===6?' sat':'');
-    h.textContent = d; grid.appendChild(h);
-  });
-  const firstDay = new Date(calYear, calMonth, 1).getDay();
-  const lastDate = new Date(calYear, calMonth+1, 0).getDate();
-  for (let i = 0; i < firstDay; i++) { const e = document.createElement('div'); e.className = 'cal-day empty'; grid.appendChild(e); }
-  for (let d = 1; d <= lastDate; d++) {
-    const date   = new Date(calYear, calMonth, d);
-    const ds     = fmtDate(date);
-    const dow    = date.getDay();
-    const isPast = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const el = document.createElement('div');
-    let cls = 'cal-day';
-    if (dow===0) cls += ' sun';
-    if (dow===6) cls += ' sat';
-    if (isPast)  cls += ' past';
-    if (d === today.getDate() && calMonth === today.getMonth() && calYear === today.getFullYear()) cls += ' today';
-    if (active[ds] !== undefined) cls += ' selected';
-    el.className = cls; el.textContent = d;
-    if (!isPast) el.onclick = () => toggleDay(ds, el);
-    grid.appendChild(el);
-  }
-}
-
-function toggleDay(ds, el) {
-  const active = getActive();
-  if (active[ds] !== undefined) { delete active[ds]; el.classList.remove('selected'); }
-  else { active[ds] = null; el.classList.add('selected'); }
-  updateChips();
-  document.getElementById('shift-panel').style.display = Object.keys(active).length > 0 ? 'block' : 'none';
-}
-
-function updateChips() {
-  const active = getActive();
-  const dates  = Object.keys(active).sort();
-  const chips  = document.getElementById('chips');
-  document.getElementById('sel-count').textContent = dates.length + '日 選択中';
-  chips.innerHTML = '';
-  if (dates.length === 0) { chips.innerHTML = '<span class="empty-msg">日付をタップして選択</span>'; return; }
-  dates.forEach(d => {
-    const dt = new Date(d);
-    const c  = document.createElement('div');
-    c.className = 'chip';
-    c.innerHTML = (dt.getMonth()+1) + '/' + dt.getDate() + '（' + DAYS[dt.getDay()] + '）<span class="chip-x" onclick="removeDay(\'' + d + '\')">×</span>';
-    chips.appendChild(c);
-  });
-}
-
-function removeDay(ds) { const a = getActive(); delete a[ds]; buildCalendar(); updateChips(); }
-
-function addToList() {
-  const shift = document.getElementById('shift-select').value;
-  if (!shift) { showToast('シフト種別を選択してください', 'error'); return; }
-  const checkedFacs = getCheckedFacilities();
-  if (checkedFacs.length === 0) { showToast('施設を1つ以上選択してください', 'error'); return; }
-  const comment = document.getElementById('comment-input').value;
-  const active  = getActive();
-  const dates   = Object.keys(active);
-  if (dates.length === 0) { showToast('日付を選択してください', 'error'); return; }
-  dates.forEach(d => { active[d] = { shift, facs: checkedFacs, comment }; });
-  renderRequestList();
-  showToast(dates.length + '件を追加しました', 'success');
-}
-
-function renderRequestList() {
-  const all = [];
-  Object.entries(nightReqs).forEach(([d, v]) => { if (v) all.push({ date:d, ...v }); });
-  Object.entries(dayReqs).forEach(([d, v])   => { if (v) all.push({ date:d, ...v }); });
-  all.sort((a, b) => new Date(a.date) - new Date(b.date));
-  const listEl   = document.getElementById('request-list');
-  const listCard = document.getElementById('request-list-card');
-  listEl.innerHTML = '';
-  if (all.length === 0) { listCard.style.display = 'none'; return; }
-  listCard.style.display = 'block';
-  all.forEach(e => {
-    const dt   = new Date(e.date);
-    const facs = (e.facs || []).join('・');
-    const div  = document.createElement('div');
-    div.className = 'req-item';
-    div.innerHTML =
-      '<div class="req-date">' + (dt.getMonth()+1) + '/' + dt.getDate() + '（' + DAYS[dt.getDay()] + '）' +
-      '<span class="shift-badge ' + bc(e.shift) + '">' + e.shift + '</span></div>' +
-      '<div class="req-facs">' + facs + (e.comment ? ' ／ ' + e.comment : '') + '</div>';
-    listEl.appendChild(div);
-  });
-}
-
-function submitAll() {
-  const reqs = [];
-  Object.entries(nightReqs).forEach(([d, v]) => {
-    if (v) reqs.push({ date:d, shift:v.shift, facility1:v.facs[0]||'', facility2:v.facs[1]||'', facility3:v.facs[2]||'', comment:v.comment });
-  });
-  Object.entries(dayReqs).forEach(([d, v]) => {
-    if (v) reqs.push({ date:d, shift:v.shift, facility1:v.facs[0]||'', facility2:v.facs[1]||'', facility3:v.facs[2]||'', comment:v.comment });
-  });
-  reqs.sort((a, b) => new Date(a.date) - new Date(b.date));
-  if (reqs.length === 0) { showToast('提出する希望がありません', 'error'); return; }
-
-  const ow = checkOverwork(reqs);
-  if (ow.alert) {
-    if (!confirm('⚠️ 連続' + ow.days + '日・推定' + ow.hours + '時間の勤務があります。\nそのまま提出しますか？')) return;
-  }
-
-  const ym        = calYear + '-' + String(calMonth+1).padStart(2,'0');
-  const freqType  = document.getElementById('freq-type').value;
-  const freqCount = document.getElementById('freq-count').value;
-  show('loading');
-  google.script.run
-    .withSuccessHandler(res => {
-      hide('loading');
-      if (res.success) {
-        showToast(res.count + '件を提出しました！', 'success');
-        nightReqs = {}; dayReqs = {};
-        buildCalendar(); updateChips(); renderRequestList();
-        document.getElementById('shift-panel').style.display = 'none';
-        loadSubmittedStatus();
-      } else { showToast('エラーが発生しました', 'error'); }
-    })
-    .submitRequests(staff.staff_id, staff.name, ym, reqs, freqType, freqCount);
-}
-
-function checkOverwork(reqs) {
-  const sorted = [...reqs].sort((a, b) => new Date(a.date) - new Date(b.date));
-  for (let i = 0; i < sorted.length; i++) {
-    let days = 1, hours = SHIFT_HOURS[sorted[i].shift] || 8;
-    for (let j = i + 1; j < sorted.length; j++) {
-      const diff = (new Date(sorted[j].date) - new Date(sorted[j-1].date)) / 86400000;
-      if (diff !== 1) break;
-      days++; hours += SHIFT_HOURS[sorted[j].shift] || 8;
-      if (days >= 6 && hours >= 40) return { alert:true, days, hours };
+function loadMotivationMessage() {
+  google.script.run.withSuccessHandler(res => {
+    const banner = document.getElementById('motivationBanner');
+    if (res && res.success) {
+      banner.className = 'banner-motivation stage-' + res.stage;
+      banner.textContent = res.message;
+      banner.classList.remove('hidden');
     }
-  }
-  return { alert: false };
+  }).getMotivationMessage(currentUser.staff_id);
 }
 
-function loadSubmittedStatus() {
-  const ym = calYear + '-' + String(calMonth+1).padStart(2,'0');
-  google.script.run
-    .withSuccessHandler(reqs => {
-      const el = document.getElementById('submitted-status-list');
-      if (reqs.length === 0) { el.innerHTML = '<p style="color:#8E8E93;font-size:13px;">提出済みデータなし</p>'; return; }
-      let html = '';
-      const f0 = reqs[0];
-      if (f0.freqType && f0.freqCount) {
-        html += '<div style="background:#F0EFFE;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#3C3489;">' +
-          '<strong>希望頻度：</strong>' + (f0.freqType === '週次' ? '週' : '月合計') + f0.freqCount + '回</div>';
-      }
-      reqs.forEach(r => {
-        const dt   = new Date(r.date);
-        const facs = [r.facility1, r.facility2, r.facility3].filter(Boolean).join('・');
-        html += '<div class="submitted-item">' +
-          '<div class="submitted-date">' + (dt.getMonth()+1) + '/' + dt.getDate() + '（' + DAYS[dt.getDay()] + '）' +
-          '<span class="shift-badge ' + bc(r.shift) + '">' + r.shift + '</span></div>' +
-          '<div class="submitted-detail">' + facs + (r.comment ? ' ／ ' + r.comment : '') + '</div>' +
-          '</div>';
+function doLogout() {
+  currentUser = null;
+  selectedFacilities = { main: '', second: '', subs: [] };
+  requests = [];
+  hasSubmitted = false;
+  document.getElementById('mainScreen').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('emailInput').value = '';
+  document.querySelector('#loginScreen .btn').innerHTML = 'ログイン';
+}
+
+function setupPatternInfo() {
+  const box = document.getElementById('patternInfo');
+  const patterns = {
+    fixed: '📍 固定型: メイン施設のチェック必須',
+    double: '📍 2施設型: メイン・セカンド両方のチェック必須',
+    multi: '📍 多施設型: メイン・セカンド必須 + サブから1個以上チェック',
+  };
+  box.textContent = patterns[currentUser.facilityPattern] || '施設未登録です';
+}
+
+function loadPeriodInfo() {
+  google.script.run.withSuccessHandler(info => {
+    const banner = document.getElementById('periodBanner');
+    banner.textContent = info.message;
+    banner.className = 'banner ' + (info.isOpen ? 'banner-info' : 'banner-warn');
+    document.getElementById('submitBtn').disabled = !info.isOpen;
+    window.currentYM = info.targetYM;
+    window.targetYear = info.targetYear;
+    window.targetMonth = info.targetMonth;
+    renderCalendar();
+  }).getSubmitPeriodInfo();
+}
+
+function loadMyRequests() {
+  if (!window.currentYM) return setTimeout(loadMyRequests, 300);
+  google.script.run.withSuccessHandler(data => {
+    const validData = data.filter(r => r.date && r.date.substring(0, 7) === window.currentYM);
+
+    if (validData.length > 0) {
+      hasSubmitted = true;
+      const byDate = {};
+      validData.forEach(r => {
+        if (!byDate[r.date]) byDate[r.date] = { date: r.date, shifts: [], comment: r.comment };
+        if (!byDate[r.date].shifts.includes(r.shift)) byDate[r.date].shifts.push(r.shift);
       });
-      el.innerHTML = html;
-    })
-    .getMyRequests(staff.staff_id, ym);
+      requests = Object.values(byDate).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      if (validData[0].mainFac) selectedFacilities.main = validData[0].mainFac;
+      if (validData[0].secondFac) selectedFacilities.second = validData[0].secondFac;
+      if (validData[0].subFacs) selectedFacilities.subs = validData[0].subFacs;
+
+      document.getElementById('freqType').value = validData[0].freqType || '月次合計';
+      document.getElementById('freqCount').value = validData[0].freqCount || 8;
+
+      updateSubmittedBanner();
+    } else {
+      hasSubmitted = false;
+      requests = [];
+      document.getElementById('submittedBanner').classList.add('hidden');
+    }
+    renderFacilityPicker();
+    renderCalendar();
+    renderRequests();
+    updateSubmitButton();
+  }).getMyRequests(currentUser.staff_id, window.currentYM);
 }
 
-function initShiftTab() { loadShifts(); }
+function updateSubmittedBanner() {
+  const banner = document.getElementById('submittedBanner');
+  if (hasSubmitted && requests.length > 0) {
+    const totalShifts = requests.reduce((sum, r) => sum + r.shifts.length, 0);
+    const main = selectedFacilities.main;
+    const second = selectedFacilities.second;
+    const subs = selectedFacilities.subs.join('、');
 
-function changeShiftMonth(delta) {
-  shiftMonth += delta;
-  if (shiftMonth > 11) { shiftMonth = 0; shiftYear++; }
-  if (shiftMonth < 0)  { shiftMonth = 11; shiftYear--; }
-  loadShifts();
+    const dateList = requests.map(r => {
+      const shifts = r.shifts.map(s => {
+        const time = currentUser.shiftTimes[s] || '';
+        return s + '(' + time + ')';
+      }).join(' / ');
+      return `<div style="padding:3px 0;">📅 ${formatDateJP(r.date)} → ${shifts}</div>`;
+    }).join('');
+
+    banner.innerHTML = `
+      <div style="font-weight:500; margin-bottom:6px;">✅ 提出済み (${requests.length}日分、計${totalShifts}シフト)</div>
+      <div style="font-size:12px; opacity:0.9; margin-bottom:8px;">期限内なら再提出で上書き可能です</div>
+      <details class="submitted-detail">
+        <summary>📋 提出内容を見る</summary>
+        <div class="submitted-detail-body">
+          <div style="margin-bottom:6px;"><strong>希望施設:</strong></div>
+          <div>メイン: ${main || '—'}</div>
+          ${second ? `<div>セカンド: ${second}</div>` : ''}
+          ${subs ? `<div>サブ: ${subs}</div>` : ''}
+          <div style="margin-top:8px; border-top:1px dashed rgba(0,0,0,0.15); padding-top:6px;"><strong>希望日程:</strong></div>
+          ${dateList}
+        </div>
+      </details>
+    `;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function updateSubmitButton() {
+  const btn = document.getElementById('submitBtn');
+  btn.textContent = hasSubmitted ? '内容を更新して再提出する' : '希望を提出する';
+}
+
+function renderFacilityPicker() {
+  const box = document.getElementById('facilityPicker');
+  if (!currentUser) return;
+  box.innerHTML = currentUser.allFacilities.map(f => {
+    let isChecked = false, required = false, tagClass, tagLabel;
+    if (f.type === 'main') {
+      isChecked = selectedFacilities.main === f.name;
+      required = true;
+      tagClass = 'tag-main'; tagLabel = 'メイン';
+    } else if (f.type === 'second') {
+      isChecked = selectedFacilities.second === f.name;
+      required = true;
+      tagClass = 'tag-second'; tagLabel = 'セカンド';
+    } else {
+      isChecked = selectedFacilities.subs.includes(f.name);
+      tagClass = 'tag-sub'; tagLabel = 'サブ';
+    }
+    const reqBadge = required ? '<span class="tag tag-required">必須</span>' : '';
+    return `
+      <label class="facility-check ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleFacilityPicker('${f.name.replace(/'/g, "\\'")}', '${f.type}')">
+        <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
+        <span class="facility-label"><span class="tag ${tagClass}">${tagLabel}</span>${f.name}${reqBadge}</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function toggleFacilityPicker(name, type) {
+  if (type === 'main') {
+    selectedFacilities.main = selectedFacilities.main === name ? '' : name;
+  } else if (type === 'second') {
+    selectedFacilities.second = selectedFacilities.second === name ? '' : name;
+  } else {
+    const i = selectedFacilities.subs.indexOf(name);
+    if (i >= 0) selectedFacilities.subs.splice(i, 1);
+    else selectedFacilities.subs.push(name);
+  }
+  renderFacilityPicker();
+}
+
+function renderBulkShifts() {
+  const box = document.getElementById('bulkShiftChips');
+  box.innerHTML = currentUser.allowedShifts.map(s => {
+    const isChecked = bulkShiftSelection.includes(s);
+    const time = currentUser.shiftTimes[s] || '';
+    return `
+      <label class="shift-chip ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleBulkShift('${s}')">
+        <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
+        ${s}<span class="shift-time">(${time})</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function toggleBulkShift(shift) {
+  const i = bulkShiftSelection.indexOf(shift);
+  if (i >= 0) bulkShiftSelection.splice(i, 1);
+  else bulkShiftSelection.push(shift);
+  renderBulkShifts();
+}
+
+function applyBulkShifts() {
+  if (bulkShiftSelection.length === 0) return alert('一括適用するシフトを1つ以上選択してください');
+  if (requests.length === 0) return alert('カレンダーから日付を1つ以上選択してください');
+  requests.forEach(r => { r.shifts = [...bulkShiftSelection]; });
+  renderRequests();
+  alert(requests.length + '件の日程に「' + bulkShiftSelection.join('・') + '」を適用しました');
+}
+
+function renderCalendar() {
+  const box = document.getElementById('calendarContainer');
+  if (!window.currentYM) { box.innerHTML = '<div class="small">読み込み中...</div>'; return; }
+
+  const year = window.targetYear;
+  const month = window.targetMonth;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstDayOfWeek = new Date(year, month - 1, 1).getDay();
+
+  const heads = ['日', '月', '火', '水', '木', '金', '土'];
+  const headClass = ['sun', '', '', '', '', '', 'sat'];
+
+  const cells = [];
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    cells.push('<div class="cal-cell empty"></div>');
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const req = requests.find(r => r.date === dateStr);
+    const isSelected = !!req;
+    const dayOfWeek = (firstDayOfWeek + d - 1) % 7;
+    const dowClass = dayOfWeek === 0 ? 'sun' : dayOfWeek === 6 ? 'sat' : '';
+    const shiftCount = req ? req.shifts.length : 0;
+    const badge = shiftCount > 1 ? `<span class="cal-badge">×${shiftCount}</span>` : '';
+    cells.push(`
+      <div class="cal-cell ${isSelected ? 'selected' : ''} ${dowClass}" onclick="toggleCalendarDate('${dateStr}')">
+        ${d}${badge}
+      </div>
+    `);
+  }
+
+  box.innerHTML = `
+    <div class="calendar-wrap">
+      <div class="cal-header">${year}年 ${month}月</div>
+      <div class="cal-grid">
+        ${heads.map((h, i) => `<div class="cal-head ${headClass[i]}">${h}</div>`).join('')}
+        ${cells.join('')}
+      </div>
+    </div>
+  `;
+}
+
+function toggleCalendarDate(dateStr) {
+  const idx = requests.findIndex(r => r.date === dateStr);
+  if (idx >= 0) {
+    requests.splice(idx, 1);
+  } else {
+    const initShifts = bulkShiftSelection.length > 0 ? [...bulkShiftSelection] : [currentUser.allowedShifts[0] || '夜勤A'];
+    requests.push({
+      date: dateStr,
+      shifts: initShifts,
+      comment: ''
+    });
+    requests.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }
+  renderCalendar();
+  renderRequests();
+}
+
+function removeRequest(idx) {
+  requests.splice(idx, 1);
+  renderCalendar();
+  renderRequests();
+}
+
+function toggleRequestShift(idx, shift) {
+  const r = requests[idx];
+  const i = r.shifts.indexOf(shift);
+  if (i >= 0) r.shifts.splice(i, 1);
+  else r.shifts.push(shift);
+  renderRequests();
+}
+
+function updateField(idx, field, value) {
+  requests[idx][field] = value;
+}
+
+function renderRequests() {
+  const list = document.getElementById('requestList');
+  if (requests.length === 0) {
+    list.innerHTML = '<div class="small" style="padding: 12px 0; text-align: center;">カレンダーから日付を選択してください</div>';
+    return;
+  }
+  list.innerHTML = requests.map((r, idx) => {
+    const shiftChips = currentUser.allowedShifts.map(s => {
+      const isChecked = r.shifts.includes(s);
+      const time = currentUser.shiftTimes[s] || '';
+      return `
+        <label class="shift-chip ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleRequestShift(${idx}, '${s}')">
+          <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
+          ${s}<span class="shift-time">(${time})</span>
+        </label>
+      `;
+    }).join('');
+    const dateFormatted = formatDateJP(r.date);
+    return `
+      <div class="request-item">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <strong>${dateFormatted}</strong>
+          <button class="btn btn-danger btn-small" onclick="removeRequest(${idx})">削除</button>
+        </div>
+        <div class="small" style="margin-bottom: 4px;">シフト種別(複数選択可)</div>
+        <div style="margin-bottom: 8px;">${shiftChips}</div>
+        <input type="text" placeholder="コメント(任意)" value="${(r.comment || '').replace(/"/g, '&quot;')}" oninput="updateField(${idx}, 'comment', this.value)">
+      </div>
+    `;
+  }).join('');
+}
+
+function formatDateJP(dateStr) {
+  const d = new Date(dateStr);
+  const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+  return `${d.getMonth()+1}月${d.getDate()}日(${dow})`;
+}
+
+function doSubmit() {
+  if (!selectedFacilities.main) return alert('メイン施設にチェックを入れてください');
+  if (currentUser.secondFacility && !selectedFacilities.second) return alert('セカンド施設にチェックを入れてください');
+  if (currentUser.subFacilities.length > 0 && selectedFacilities.subs.length < 1) return alert('サブ施設を1つ以上選択してください');
+  if (requests.length === 0) return alert('カレンダーから希望日を1つ以上選択してください');
+  for (const r of requests) {
+    if (!r.date) return alert('日付が未入力の希望があります');
+    if (!r.shifts || r.shifts.length === 0) return alert(formatDateJP(r.date) + ' のシフト種別が未選択です');
+  }
+
+  const freqType = document.getElementById('freqType').value;
+  const freqCount = parseInt(document.getElementById('freqCount').value);
+
+  document.getElementById('submitBtn').innerHTML = '<span class="spinner"></span> 送信中...';
+  document.getElementById('submitBtn').disabled = true;
+
+  google.script.run.withSuccessHandler(res => {
+    document.getElementById('submitBtn').disabled = false;
+    if (res.success) {
+      alert(res.uniqueDates + '日分、計' + res.totalShifts + 'シフトの希望を提出しました');
+      hasSubmitted = true;
+      updateSubmittedBanner();
+      updateSubmitButton();
+    } else {
+      alert('エラー: ' + res.message);
+      updateSubmitButton();
+    }
+  }).withFailureHandler(err => {
+    document.getElementById('submitBtn').disabled = false;
+    alert('エラー: ' + err);
+    updateSubmitButton();
+  }).submitRequests(
+    currentUser.staff_id, currentUser.name, window.currentYM,
+    selectedFacilities, requests, freqType, freqCount
+  );
+}
+
+function switchTab(event, name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  ['submit', 'shifts', 'attendance', 'profile'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+  });
+  if (name === 'shifts') loadShifts();
+  else if (name === 'attendance') loadAttendance();
+  else if (name === 'profile') loadProfile();
 }
 
 function loadShifts() {
-  document.getElementById('shift-month-label').textContent = shiftYear + '年' + MONTHS[shiftMonth];
-  const ym = shiftYear + '-' + String(shiftMonth+1).padStart(2,'0');
-  google.script.run
-    .withSuccessHandler(shifts => {
-      const listEl    = document.getElementById('shift-list');
-      const summaryEl = document.getElementById('shift-summary');
-      listEl.innerHTML = '';
-      if (shifts.length === 0) { summaryEl.innerHTML = '<p style="color:#8E8E93;font-size:13px;">確定シフトはまだありません</p>'; return; }
-      summaryEl.innerHTML = '<div style="background:#F0EFFE;border-radius:8px;padding:8px 12px;font-size:13px;">確定済み　勤務日数：<strong style="color:#3C3489;">' + shifts.length + '日</strong></div>';
-      shifts.forEach(s => {
-        const dt = new Date(s.date);
-        const el = document.createElement('div');
-        el.className = 'shift-card';
-        el.innerHTML = '<div class="shift-date">' + (dt.getMonth()+1) + '月' + dt.getDate() + '日（' + DAYS[dt.getDay()] + '）</div>' +
-          '<span class="shift-badge ' + bc(s.shift) + '">' + s.shift + '</span>' +
-          '<div class="shift-fac">' + s.facility + '</div>';
-        listEl.appendChild(el);
-      });
-      document.getElementById('stat-confirmed').textContent = shifts.length;
-    })
-    .getMyShifts(staff.staff_id, ym);
+  google.script.run.withSuccessHandler(shifts => {
+    const box = document.getElementById('shiftList');
+    if (shifts.length === 0) box.innerHTML = '確定シフトはまだありません';
+    else box.innerHTML = shifts.map(s => {
+      const time = currentUser.shiftTimes[s.shift] || '';
+      return `<div style="padding: 8px 0; border-bottom: 1px solid #f2f2f7;">${s.date} ${s.shift} (${time}) @ ${s.facility}</div>`;
+    }).join('');
+  }).getMyShifts(currentUser.staff_id, window.currentYM);
 }
 
-function initProfileTab() {
-  document.getElementById('profile-name').textContent   = staff.name;
-  document.getElementById('profile-sub').textContent    = staff.kubun || 'スタッフ';
-  document.getElementById('profile-avatar').textContent = staff.name ? staff.name.charAt(0) : '？';
-  const infoEl  = document.getElementById('my-info-list');
-  const allFacs = staff.allFacilities || [];
-  const facText = allFacs.length > 0
-    ? allFacs.map((f, i) => (i === 0 ? '【メイン】' : '【サブ】') + f).join('<br>')
-    : '—';
-  const rows = [
-    { label:'シフト区分',     val: staff.shiftKubun || '—' },
-    { label:'許可シフト種別', val: (staff.allowedShifts||[]).join('、') || '—' },
+function loadAttendance() {
+  google.script.run.withSuccessHandler(st => {
+    const box = document.getElementById('attendanceStatus');
+    box.textContent = st.clockedIn ? (st.clockedOut ? '✅ 退勤済み' : '🕐 出勤中') : '未出勤';
+  }).getAttendanceStatus(currentUser.staff_id);
+}
+
+function loadFacilityOptions() {
+  const sel = document.getElementById('clockFacility');
+  sel.innerHTML = currentUser.allFacilities.map(f => `<option>${f.name}</option>`).join('');
+}
+
+function doClockIn() {
+  const fac = document.getElementById('clockFacility').value;
+  google.script.run.withSuccessHandler(r => {
+    alert(r.message);
+    loadAttendance();
+  }).clockIn(currentUser.staff_id, currentUser.name, fac);
+}
+
+function doClockOut() {
+  google.script.run.withSuccessHandler(r => {
+    alert(r.message);
+    loadAttendance();
+  }).clockOut(currentUser.staff_id);
+}
+
+function loadProfile() {
+  google.script.run.withSuccessHandler(info => {
+    const box = document.getElementById('profileInfo');
+    if (!info.success) {
+      box.textContent = '取得失敗: ' + info.message;
+      return;
+    }
+
+    if (!info.facilities || info.facilities.length === 0) {
+      box.innerHTML = '<div class="fac-empty">登録されている施設がありません</div>';
+      return;
+    }
+
+    const cards = info.facilities.map(f => {
+      const tagClass = f.type === 'main' ? 'tag-main' : f.type === 'second' ? 'tag-second' : 'tag-sub';
+      const tagLabel = f.type === 'main' ? 'メイン' : f.type === 'second' ? 'セカンド' : 'サブ';
+      const cardClass = f.type === 'main' ? 'main-card' : f.type === 'second' ? 'second-card' : 'sub-card';
+
+      const zipLine = f.zip ? `<div class="fac-card-zip">〒${f.zip}</div>` : '';
+      const addrLine = f.address ? `<div class="fac-card-addr">📍 ${f.address}</div>` : '<div class="fac-card-addr" style="color:#9ca3af;">住所未登録</div>';
+      const stationLine = f.station ? `<div class="fac-card-station">🚃 ${f.station}</div>` : '';
+      const mapBtn = f.mapUrl ? `<a href="${f.mapUrl}" target="_blank" class="fac-card-map">🗺️ Google Mapsで開く</a>` : '';
+
+      return `
+        <div class="fac-card ${cardClass}">
+          <div class="fac-card-header">
+            <span class="tag ${tagClass}">${tagLabel}</span>
+            <span class="fac-card-name">${f.name}</span>
+          </div>
+          ${zipLine}
+          ${addrLine}
+          ${stationLine}
+          ${mapBtn}
+        </div>
+      `;
+    }).join('');
+
+    box.innerHTML = cards;
+  }).getPersonalInfo(currentUser.staff_id);
+}
+
+// ============================================================
+// 繰り返しテンプレート機能（Step 3-3 で追加）
+// ============================================================
+
+function openTemplateModal() {
+  if (!currentUser) return;
+  document.getElementById('tplModal').classList.remove('hidden');
+  showTemplateList();
+}
+
+function closeTemplateModal() {
+  document.getElementById('tplModal').classList.add('hidden');
+}
+
+function showTemplateList() {
+  document.getElementById('tplListView').classList.remove('hidden');
+  document.getElementById('tplFormView').classList.add('hidden');
+  loadTemplates();
+}
+
+function backToTemplateList() {
+  showTemplateList();
+}
+
+function loadTemplates() {
+  const box = document.getElementById('tplList');
+  box.innerHTML = '<div class="small">読み込み中...</div>';
+  google.script.run.withSuccessHandler(list => {
+    if (!list || list.length === 0) {
+      box.innerHTML = '<div class="tpl-list-empty">テンプレートはまだありません<br>↓ 新規作成してください</div>';
+      return;
+    }
+    box.innerHTML = list.map(t => renderTemplateCard(t)).join('');
+  }).withFailureHandler(err => {
+    box.innerHTML = '<div class="banner-error banner">エラー: ' + err + '</div>';
+  }).listTemplates(currentUser.staff_id);
+}
+
+function renderTemplateCard(t) {
+  const wdLabels = ['月','火','水','木','金','土','日'];
+  const wdText = (t.weekdays || []).sort((a,b)=>a-b).map(n => wdLabels[n-1]).join('・');
+  const shiftTime = (currentUser.shiftTimes && currentUser.shiftTimes[t.shiftType]) || '';
+
+  const subTags = (t.subFacs && t.subFacs.length > 0)
+    ? `<div class="tpl-meta">サブ: ${t.subFacs.join('、')}</div>` : '';
+  const secondTag = t.secondFac ? `<div class="tpl-meta">セカンド: ${t.secondFac}</div>` : '';
+  const commentTag = t.comment ? `<div class="tpl-meta">💬 ${t.comment}</div>` : '';
+
+  const applyLabel = window.currentYM ? `📅 ${window.currentYM} に適用` : '📅 適用';
+  const applyDisabled = window.currentYM ? '' : 'disabled';
+
+  return `
+    <div class="tpl-list-card">
+      <div class="tpl-name">${escapeHtml(t.templateName)}</div>
+      <div class="tpl-meta">🗓 ${wdText || '—'} / ${t.shiftType} ${shiftTime ? '(' + shiftTime + ')' : ''}</div>
+      <div class="tpl-meta">メイン: ${t.mainFac || '—'}</div>
+      ${secondTag}
+      ${subTags}
+      ${commentTag}
+      <div class="tpl-actions">
+        <button class="btn btn-small" ${applyDisabled} onclick="applyTemplateToMonth('${t.template_id}')">${applyLabel}</button>
+        <button class="btn btn-secondary btn-small" onclick="editTemplate('${t.template_id}')">編集</button>
+        <button class="btn btn-danger btn-small" onclick="deleteTemplateAction('${t.template_id}','${escapeHtml(t.templateName).replace(/'/g,"\\'")}')">削除</button>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function showTemplateForm(template) {
+  document.getElementById('tplListView').classList.add('hidden');
+  document.getElementById('tplFormView').classList.remove('hidden');
+
+  if (template) {
+    document.getElementById('tplFormTitle').textContent = '編集: ' + template.templateName;
+    tplState.editingId = template.template_id;
+    tplState.weekdays = [...(template.weekdays || [])];
+    tplState.subs = [...(template.subFacs || [])];
+    document.getElementById('tplName').value = template.templateName || '';
+    document.getElementById('tplComment').value = template.comment || '';
+  } else {
+    document.getElementById('tplFormTitle').textContent = '新規テンプレート';
+    tplState.editingId = null;
+    tplState.weekdays = [];
+    tplState.subs = [];
+    document.getElementById('tplName').value = '';
+    document.getElementById('tplComment').value = '';
+  }
+
+  renderTplWeekdays();
+  renderTplShiftType(template);
+  renderTplMainFac(template);
+  renderTplSecondFac(template);
+  renderTplSubFac(template);
+}
+
+function renderTplWeekdays() {
+  const labels = [
+    { n: 1, label: '月', cls: '' },
+    { n: 2, label: '火', cls: '' },
+    { n: 3, label: '水', cls: '' },
+    { n: 4, label: '木', cls: '' },
+    { n: 5, label: '金', cls: '' },
+    { n: 6, label: '土', cls: 'sat' },
+    { n: 7, label: '日', cls: 'sun' },
   ];
-  infoEl.innerHTML =
-    '<div style="padding:8px 0;border-bottom:1px solid #F2F2F7;font-size:13px;">' +
-    '<div style="color:#8E8E93;margin-bottom:4px;">登録施設</div>' +
-    '<div style="line-height:1.8;">' + facText + '</div></div>' +
-    rows.map(r =>
-      '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F2F7;font-size:13px;">' +
-      '<span style="color:#8E8E93;">' + r.label + '</span><span>' + r.val + '</span></div>'
-    ).join('');
-  const ym = fmtYM(new Date());
-  google.script.run
-    .withSuccessHandler(reqs => { document.getElementById('stat-submitted').textContent = reqs.length; })
-    .getMyRequests(staff.staff_id, ym);
+  const box = document.getElementById('tplWeekdays');
+  box.innerHTML = labels.map(w => {
+    const isChecked = tplState.weekdays.includes(w.n);
+    return `<div class="tpl-wd ${w.cls} ${isChecked ? 'checked' : ''}" onclick="toggleTplWeekday(${w.n})">${w.label}</div>`;
+  }).join('');
 }
 
-function switchTab(name) {
-  ['attendance','request','shift','profile'].forEach(t => {
-    document.getElementById('screen-' + t).classList.remove('active');
-    document.getElementById('tab-' + t).classList.remove('active');
-  });
-  document.getElementById('screen-' + name).classList.add('active');
-  document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'shift')   loadShifts();
-  if (name === 'profile') initProfileTab();
+function toggleTplWeekday(n) {
+  const i = tplState.weekdays.indexOf(n);
+  if (i >= 0) tplState.weekdays.splice(i, 1);
+  else tplState.weekdays.push(n);
+  renderTplWeekdays();
 }
 
-function show(id) { document.getElementById(id).style.display = 'block'; }
-function hide(id) { document.getElementById(id).style.display = 'none'; }
-function fmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
-function fmtYM(d)   { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
-function bc(shift)  { return shift && shift.startsWith('夜勤') ? 'badge-night' : 'badge-day'; }
-function showToast(msg, type) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.className = 'toast ' + (type||''); el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+function applyWeekdayPreset(preset) {
+  if (preset === 'weekday') tplState.weekdays = [1,2,3,4,5];
+  else if (preset === 'weekend') tplState.weekdays = [6,7];
+  else if (preset === 'all') tplState.weekdays = [1,2,3,4,5,6,7];
+  else if (preset === 'clear') tplState.weekdays = [];
+  renderTplWeekdays();
+}
+
+function renderTplShiftType(template) {
+  const sel = document.getElementById('tplShiftType');
+  sel.innerHTML = currentUser.allowedShifts.map(s => {
+    const time = currentUser.shiftTimes[s] || '';
+    return `<option value="${s}">${s} (${time})</option>`;
+  }).join('');
+  if (template && template.shiftType) sel.value = template.shiftType;
+}
+
+function renderTplMainFac(template) {
+  const sel = document.getElementById('tplMainFac');
+  const options = currentUser.allFacilities
+    .filter(f => f.type === 'main' || f.type === 'second' || f.type === 'sub');
+  sel.innerHTML = options.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
+  if (template && template.mainFac) sel.value = template.mainFac;
+  else if (currentUser.mainFacility) sel.value = currentUser.mainFacility;
+}
+
+function renderTplSecondFac(template) {
+  const wrap = document.getElementById('tplSecondFacWrap');
+  const sel = document.getElementById('tplSecondFac');
+  // セカンド未登録の人は非表示
+  if (!currentUser.secondFacility) {
+    wrap.classList.add('hidden');
+    sel.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  const options = [{ name: '' }].concat(currentUser.allFacilities);
+  sel.innerHTML = options.map(f => {
+    if (!f.name) return '<option value="">（なし）</option>';
+    return `<option value="${f.name}">${f.name}</option>`;
+  }).join('');
+  if (template && template.secondFac) sel.value = template.secondFac;
+  else if (currentUser.secondFacility) sel.value = currentUser.secondFacility;
+}
+
+function renderTplSubFac(template) {
+  const wrap = document.getElementById('tplSubFacWrap');
+  const box = document.getElementById('tplSubFac');
+  // サブ施設登録がある人だけ表示
+  const subFacsAvailable = currentUser.allFacilities.filter(f => f.type === 'sub');
+  if (subFacsAvailable.length === 0) {
+    wrap.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  box.innerHTML = subFacsAvailable.map(f => {
+    const isChecked = tplState.subs.includes(f.name);
+    return `
+      <label class="facility-check ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleTplSub('${f.name.replace(/'/g, "\\'")}')">
+        <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
+        <span class="facility-label"><span class="tag tag-sub">サブ</span>${f.name}</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function toggleTplSub(name) {
+  const i = tplState.subs.indexOf(name);
+  if (i >= 0) tplState.subs.splice(i, 1);
+  else tplState.subs.push(name);
+  renderTplSubFac();
+}
+
+function saveTemplateForm() {
+  const name = document.getElementById('tplName').value.trim();
+  const shiftType = document.getElementById('tplShiftType').value;
+  const mainFac = document.getElementById('tplMainFac').value;
+  const secondFac = currentUser.secondFacility ? document.getElementById('tplSecondFac').value : '';
+  const comment = document.getElementById('tplComment').value.trim();
+
+  if (!name) return alert('テンプレート名を入力してください');
+  if (tplState.weekdays.length === 0) return alert('曜日を1つ以上選択してください');
+  if (!shiftType) return alert('シフト種別を選択してください');
+  if (!mainFac) return alert('メイン施設を選択してください');
+
+  const payload = {
+    template_id: tplState.editingId,
+    staff_id: currentUser.staff_id,
+    name: currentUser.name,
+    templateName: name,
+    weekdays: tplState.weekdays,
+    shiftType: shiftType,
+    mainFac: mainFac,
+    secondFac: secondFac,
+    subFacs: tplState.subs,
+    comment: comment
+  };
+
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) {
+      alert(res.mode === 'create' ? 'テンプレートを作成しました' : 'テンプレートを更新しました');
+      showTemplateList();
+    } else {
+      alert('エラー: ' + (res.message || '不明'));
+    }
+  }).withFailureHandler(err => {
+    alert('エラー: ' + err);
+  }).saveTemplate(payload);
+}
+
+function editTemplate(templateId) {
+  google.script.run.withSuccessHandler(list => {
+    const t = (list || []).find(x => x.template_id === templateId);
+    if (!t) return alert('テンプレートが見つかりません');
+    showTemplateForm(t);
+  }).listTemplates(currentUser.staff_id);
+}
+
+function deleteTemplateAction(templateId, templateName) {
+  if (!confirm('「' + templateName + '」を削除しますか？\n※既に適用済みの希望データは削除されません')) return;
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) {
+      alert('削除しました');
+      loadTemplates();
+    } else {
+      alert('エラー: ' + (res.message || '不明'));
+    }
+  }).withFailureHandler(err => {
+    alert('エラー: ' + err);
+  }).deleteTemplate(templateId);
+}
+
+function applyTemplateToMonth(templateId) {
+  if (!window.currentYM) return alert('提出対象月が取得できていません');
+
+  const choice = confirm(
+    window.currentYM + ' に適用します。\n\n' +
+    '【OK】新規のみ追加（既存の希望は残す）\n' +
+    '【キャンセル】このダイアログを閉じる'
+  );
+  if (!choice) return;
+
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) {
+      alert(
+        '適用完了\n\n' +
+        '新規追加: ' + res.inserted + '件\n' +
+        'スキップ (既存重複): ' + res.skipped + '件\n' +
+        '対象日数: ' + res.totalTargetDates + '日'
+      );
+      closeTemplateModal();
+      // 画面リフレッシュ
+      loadMyRequests();
+    } else {
+      alert('エラー: ' + (res.message || '不明'));
+    }
+  }).withFailureHandler(err => {
+    alert('エラー: ' + err);
+  }).applyTemplate(templateId, window.currentYM, false);
 }
 </script>
 </body>
