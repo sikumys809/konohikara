@@ -665,7 +665,24 @@
         <span style="font-size: 11px; color: #6b7280;">新タブで開き、Cmd+Pで「横向き」を選んで保存</span>
       </div>
     </div>
-    
+
+    <!-- 日勤PDF出力セクション -->
+    <div id="dsPdfSection" style="margin-bottom: 20px; padding: 16px; background: #fef3c7; border-radius: 8px; display: none;">
+      <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #92400e;">☀️ 日勤PDF出力 (印刷用シフト表)</h3>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select id="dsPdfJigyoshoSelect" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; min-width: 220px;">
+          <option value="">事業所を選択...</option>
+        </select>
+        <button onclick="openDsPdfView()" style="padding: 8px 16px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer;">
+          📄 日勤PDF表示 (新タブ)
+        </button>
+        <button onclick="openAllDsPdf()" style="padding: 8px 16px; background: #d97706; color: white; border: none; border-radius: 6px; cursor: pointer;">
+          📚 全事業所まとめて表示
+        </button>
+        <span style="font-size: 11px; color: #6b7280;">夜勤B/Cの朝部分も繰越として表示</span>
+      </div>
+    </div>
+
     <!-- サマリー -->
     <div id="approveSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
     
@@ -2593,6 +2610,8 @@ function loadApprovalCalendar() {
       facRes.facilities.map(f => `<option value="${escapeAttr(f)}">${escapeHtml(f)}</option>`).join('');
     document.getElementById('pdfSection').style.display = facRes.facilities.length > 0 ? 'block' : 'none';
   }).getFacilitiesWithShifts(currentAdmin.staff_id, ym);
+
+  loadDsPdfSection();
 }
 
 
@@ -4117,6 +4136,209 @@ function deleteOverride(overrideId) {
       alert('エラー: ' + res.message);
     }
   }).deleteSubmitOverride(currentAdmin.staff_id, overrideId);
+}
+
+
+// ============================================
+// 日勤PDF出力
+// ============================================
+function loadDsPdfSection() {
+  if (!approvalViewState.targetYM) return;
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) return;
+    const sel = document.getElementById('dsPdfJigyoshoSelect');
+    sel.innerHTML = '<option value="">事業所を選択...</option>' +
+      res.jigyoshoList.map(j => `<option value="${escapeAttr(j)}">${escapeHtml(j)}</option>`).join('');
+    document.getElementById('dsPdfSection').style.display = res.jigyoshoList.length > 0 ? 'block' : 'none';
+  }).getJigyoshoListForPDF(currentAdmin.staff_id, approvalViewState.targetYM);
+}
+
+function openDsPdfView() {
+  const jigyosho = document.getElementById('dsPdfJigyoshoSelect').value;
+  if (!jigyosho) { alert('事業所を選択してください'); return; }
+  if (!approvalViewState.targetYM) return;
+
+  const newWin = window.open('about:blank', '_blank');
+  if (!newWin) { alert('ポップアップがブロックされました'); return; }
+  newWin.document.open();
+  newWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>読み込み中</title></head><body style="font-family:sans-serif;padding:40px;text-align:center;color:#92400e;"><h2>☀️ 日勤シフト表を読み込んでいます...</h2></body></html>');
+  newWin.document.close();
+
+  google.script.run.withSuccessHandler(res => {
+    try {
+      if (!res || !res.success) {
+        newWin.document.open();
+        newWin.document.write('<body><h2 style="color:red;padding:40px">エラー: ' + (res && res.message ? res.message : '不明') + '</h2></body>');
+        newWin.document.close();
+        return;
+      }
+      const html = buildDsPdfHtml([res]);
+      newWin.document.open();
+      newWin.document.write(html);
+      newWin.document.close();
+    } catch (e) {
+      alert('PDF生成エラー: ' + e.message);
+    }
+  }).withFailureHandler(err => {
+    alert('通信エラー: ' + err);
+  }).getDayShiftsForPDF(currentAdmin.staff_id, approvalViewState.targetYM, jigyosho);
+}
+
+function openAllDsPdf() {
+  if (!approvalViewState.targetYM) return;
+  const sel = document.getElementById('dsPdfJigyoshoSelect');
+  const jigyoshos = Array.from(sel.options).map(o => o.value).filter(Boolean);
+  if (jigyoshos.length === 0) { alert('事業所データがありません'); return; }
+
+  const newWin = window.open('about:blank', '_blank');
+  if (!newWin) { alert('ポップアップがブロックされました'); return; }
+  newWin.document.open();
+  newWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:sans-serif;padding:40px;text-align:center;color:#92400e;"><h2>☀️ 全' + jigyoshos.length + '事業所の日勤シフト表を読み込み中...</h2><div id="progress">(0/' + jigyoshos.length + ')</div></body></html>');
+  newWin.document.close();
+
+  const results = [];
+  let count = 0;
+  function fetchNext(idx) {
+    if (idx >= jigyoshos.length) {
+      if (results.length === 0) {
+        newWin.document.open();
+        newWin.document.write('<body><h2 style="color:red;padding:40px">データなし</h2></body>');
+        newWin.document.close();
+        return;
+      }
+      const html = buildDsPdfHtml(results);
+      newWin.document.open();
+      newWin.document.write(html);
+      newWin.document.close();
+      return;
+    }
+    google.script.run.withSuccessHandler(res => {
+      if (res && res.success) results.push(res);
+      count++;
+      try {
+        const pe = newWin.document.getElementById('progress');
+        if (pe) pe.textContent = '(' + count + '/' + jigyoshos.length + ')';
+      } catch (e) {}
+      fetchNext(idx + 1);
+    }).withFailureHandler(err => {
+      count++;
+      fetchNext(idx + 1);
+    }).getDayShiftsForPDF(currentAdmin.staff_id, approvalViewState.targetYM, jigyoshos[idx]);
+  }
+  fetchNext(0);
+}
+
+function buildDsPdfHtml(dataArray) {
+  if (!dataArray.length) return '<html><body><h2>データなし</h2></body></html>';
+  const first = dataArray[0];
+  let html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>${first.year}年${first.month}月 日勤シフト表</title>
+<style>
+  @page { size: A4 landscape; margin: 4mm; }
+  body { font-family: -apple-system, 'Hiragino Sans', sans-serif; margin: 0; padding: 0; color: #111; }
+  .jigyosho-sheet { page-break-after: always; padding: 4mm 6mm; }
+  .jigyosho-sheet:last-child { page-break-after: auto; }
+  .pdf-header { border-bottom: 2px solid #f59e0b; padding-bottom: 4px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .pdf-title { font-size: 12px; font-weight: bold; color: #92400e; }
+  .pdf-jigyosho { font-size: 18px; font-weight: bold; margin-top: 2px; color: #1f2937; }
+  .pdf-meta { font-size: 10px; color: #6b7280; }
+  .facility-block { margin-bottom: 8px; }
+  .facility-name { background: #fef3c7; padding: 4px 10px; font-size: 12px; font-weight: bold; color: #92400e; border-left: 4px solid #f59e0b; }
+  table.ds-mini-cal { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9px; }
+  table.ds-mini-cal th { background: #d97706; color: white; padding: 3px 2px; border: 1px solid #92400e; font-weight: 600; }
+  table.ds-mini-cal th.dow-sun { background: #dc2626; }
+  table.ds-mini-cal th.dow-sat { background: #2563eb; }
+  table.ds-mini-cal td { border: 1px solid #cbd5e1; padding: 3px; vertical-align: top; min-height: 60px; }
+  table.ds-mini-cal td.empty { background: #f9fafb; }
+  table.ds-mini-cal td.sun { background: #fef2f2; }
+  table.ds-mini-cal td.sat { background: #eff6ff; }
+  .date-num { font-size: 9px; font-weight: bold; color: #4b5563; line-height: 1.1; }
+  .date-num.sun { color: #dc2626; }
+  .date-num.sat { color: #2563eb; }
+  .placement { margin-top: 1px; padding: 1px 3px; border-radius: 3px; background: #fff; border-left: 2px solid #f59e0b; font-size: 8.5px; line-height: 1.25; word-break: break-all; }
+  .placement.carryover { background: #f3f4f6; border-left-color: #6b7280; opacity: 0.85; }
+  .p-name { font-weight: 600; color: #111827; }
+  .p-role { color: #6b7280; }
+  .p-shift { color: #92400e; font-weight: 500; }
+  .placement.carryover .p-shift { color: #6b7280; }
+  .p-time { color: #9ca3af; }
+  .no-shift { color: #d1d5db; font-size: 9px; text-align: center; margin-top: 6px; }
+  .print-hint { background: #fef3c7; padding: 12px; text-align: center; border-radius: 6px; margin: 8mm; font-size: 12px; }
+  @media print { .print-hint { display: none; } }
+</style></head>
+<body>
+<div class="print-hint">
+  <strong>📄 印刷:</strong> Cmd+P (Mac) / Ctrl+P (Win) で「横向き」を選択して保存
+  <button onclick="window.print()" style="margin-left:10px;padding:6px 16px;background:#f59e0b;color:white;border:none;border-radius:6px;cursor:pointer;">🖨 今すぐ印刷</button>
+</div>`;
+
+  for (const data of dataArray) html += renderJigyoshoDsPdf(data);
+  html += '</body></html>';
+  return html;
+}
+
+function renderJigyoshoDsPdf(data) {
+  const firstDow = new Date(data.year, data.month - 1, 1).getDay();
+  let html = `<div class="jigyosho-sheet">
+    <div class="pdf-header">
+      <div>
+        <div class="pdf-title">${data.year}年${data.month}月 日勤シフト表</div>
+        <div class="pdf-jigyosho">${escapeHtml(data.jigyosho)}</div>
+      </div>
+      <div class="pdf-meta">${data.facilities.length}施設</div>
+    </div>`;
+
+  for (const fac of data.facilities) {
+    const facCells = data.cells[fac];
+    html += `<div class="facility-block">
+      <div class="facility-name">📍 ${escapeHtml(fac)}</div>
+      <table class="ds-mini-cal">
+        <thead><tr>
+          <th class="dow-sun">日</th><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th class="dow-sat">土</th>
+        </tr></thead>
+        <tbody>`;
+
+    const padded = [];
+    for (let i = 0; i < firstDow; i++) padded.push(null);
+    for (const c of facCells) padded.push(c);
+    while (padded.length % 7 !== 0) padded.push(null);
+
+    for (let w = 0; w < padded.length / 7; w++) {
+      html += '<tr>';
+      for (let d = 0; d < 7; d++) {
+        const cell = padded[w * 7 + d];
+        if (!cell) { html += '<td class="empty"></td>'; continue; }
+        const dowCls = cell.dow === 0 ? 'sun' : cell.dow === 6 ? 'sat' : '';
+        if (cell.placements.length === 0) {
+          html += `<td class="${dowCls}"><div class="date-num ${dowCls}">${cell.day}</div><div class="no-shift">－</div></td>`;
+        } else {
+          let inner = `<div class="date-num ${dowCls}">${cell.day}</div>`;
+          for (const p of cell.placements) {
+            const carryoverCls = p.isNightCarryover ? ' carryover' : '';
+            const formatHour = (t) => {
+              if (!t) return '';
+              const m = t.match(/^(\d{1,2}):(\d{2})$/);
+              if (!m) return t;
+              const h = parseInt(m[1]);
+              return m[2] === '00' ? String(h) : h + ':' + m[2];
+            };
+            const timeStr = formatHour(p.start) + '-' + formatHour(p.end);
+            const roleSpan = p.role ? `<span class="p-role"> ${escapeHtml(p.role)}</span>` : '';
+            inner += `<div class="placement${carryoverCls}">
+              <span class="p-name">${escapeHtml(p.name)}</span>${roleSpan} <span class="p-shift">${escapeHtml(p.shiftType)}</span> <span class="p-time">${escapeHtml(timeStr)}</span>
+            </div>`;
+          }
+          html += `<td class="${dowCls}">${inner}</td>`;
+        }
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+
+  html += '</div>';
+  return html;
 }
 
 </script>

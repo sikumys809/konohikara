@@ -4,6 +4,22 @@
 // ============================================
 
 // ============================================
+// ユーティリティ
+// ============================================
+
+function parseTimeToHHMM(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, 'Asia/Tokyo', 'HH:mm');
+  }
+  const s = String(val).trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s.padStart(5, '0');
+  const match = s.match(/(\d{2}):(\d{2}):\d{2}/);
+  if (match) return match[1] + ':' + match[2];
+  return s;
+}
+
+// ============================================
 // 認証とダッシュボード
 // ============================================
 
@@ -1933,4 +1949,166 @@ function cleanupMonthLockSheet() {
   SpreadsheetApp.flush();
   Logger.log('クリーンアップ完了: ' + ymKeys.length + '年月分を整理');
   return { success: true, count: ymKeys.length, yms: ymKeys };
+}
+
+function getJigyoshoListForPDF(adminStaffId, targetYM) {
+  const admin = checkAdminAuth(adminStaffId, 'シフト作成');
+  if (!admin.authorized) return { success: false, message: admin.message };
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const unitSheet = ss.getSheetByName('M_ユニット');
+    const data = unitSheet.getDataRange().getValues();
+    const set = new Set();
+    for (let i = 1; i < data.length; i++) {
+      const jig = String(data[i][1] || '').trim();
+      if (jig) set.add(jig);
+    }
+    return { success: true, jigyoshoList: Array.from(set).sort() };
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
+}
+
+function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
+  const admin = checkAdminAuth(adminStaffId, 'シフト作成');
+  if (!admin.authorized) return { success: false, message: admin.message };
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // M_スタッフから職種マップ
+    const staffSheet = ss.getSheetByName('M_スタッフ');
+    const staffData = staffSheet.getDataRange().getValues();
+    const staffRoleMap = {};
+    for (let i = 1; i < staffData.length; i++) {
+      const sid = String(staffData[i][0]);
+      // T列(index 19)が主職種
+      const mainRoles = String(staffData[i][19] || '').trim();
+      staffRoleMap[sid] = mainRoles;
+    }
+
+    // M_ユニットから事業所→施設マップ
+    const unitSheet = ss.getSheetByName('M_ユニット');
+    const unitData = unitSheet.getDataRange().getValues();
+    const facilitiesSet = new Set();
+    for (let i = 1; i < unitData.length; i++) {
+      const jig = String(unitData[i][1] || '').trim();
+      const fac = String(unitData[i][3] || '').trim();
+      if (jig === jigyosho && fac) facilitiesSet.add(fac);
+    }
+    const facilities = Array.from(facilitiesSet).sort();
+    if (facilities.length === 0) {
+      return { success: false, message: '事業所「' + jigyosho + '」に施設がありません' };
+    }
+
+    // 月の日数計算
+    const [year, month] = targetYM.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // T_シフト確定からデータ取得
+    const shiftSheet = ss.getSheetByName('T_シフト確定');
+    const shiftData = shiftSheet.getDataRange().getValues();
+
+    const placements = {};
+    for (const fac of facilities) placements[fac] = {};
+
+    for (let i = 1; i < shiftData.length; i++) {
+      const row = shiftData[i];
+      const dateVal = row[1];
+      const facility = String(row[4] || '').trim();
+      const staffId = String(row[6] || '').trim();
+      const staffName = String(row[7] || '').replace(/[(([][^)\])]*[)\])]/g, '').trim();
+      const shiftType = String(row[8] || '').trim();
+      const start = parseTimeToHHMM(row[9]);
+      const end = parseTimeToHHMM(row[10]);
+
+      if (!facilities.includes(facility)) continue;
+      if (!staffId || !staffName) continue;
+
+      const dateKey = dateVal instanceof Date
+        ? Utilities.formatDate(dateVal, 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(dateVal).substring(0, 10);
+      if (!dateKey.startsWith(targetYM)) continue;
+
+      const role = staffRoleMap[staffId] || '';
+      const isDayShift = shiftType.indexOf('早出') !== -1 || shiftType.indexOf('遅出') !== -1;
+      const isNightBC = shiftType === '夜勤B' || shiftType === '夜勤C';
+
+      if (isDayShift) {
+        if (!placements[facility][dateKey]) placements[facility][dateKey] = [];
+        placements[facility][dateKey].push({
+          name: staffName,
+          role: role,
+          shiftType: shiftType,
+          start: start,
+          end: end,
+          isNightCarryover: false,
+        });
+      } else if (isNightBC) {
+        // 翌日の朝勤務として登録
+        const nextDate = new Date(dateKey + 'T00:00:00+09:00');
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nextDateKey = Utilities.formatDate(nextDate, 'Asia/Tokyo', 'yyyy-MM-dd');
+        if (!nextDateKey.startsWith(targetYM)) continue;
+        if (!placements[facility][nextDateKey]) placements[facility][nextDateKey] = [];
+
+        // 夜勤B: 05:00-07:00 / 夜勤C: 06:00-08:00 (5-6時は休憩のため)
+        const carryoverStart = shiftType === '夜勤B' ? '05:00' : '06:00';
+        const carryoverEnd = shiftType === '夜勤B' ? '07:00' : '08:00';
+
+        placements[facility][nextDateKey].push({
+          name: staffName,
+          role: role,
+          shiftType: '(' + shiftType + '繰越)',
+          start: carryoverStart,
+          end: carryoverEnd,
+          isNightCarryover: true,
+        });
+      }
+    }
+
+    // セル内ソート: 夜勤繰越 → 早出 → 遅出
+    for (const fac of facilities) {
+      for (const dk of Object.keys(placements[fac])) {
+        placements[fac][dk].sort((a, b) => {
+          const order = (p) => {
+            if (p.isNightCarryover) return 0;
+            if (p.shiftType.indexOf('早出') !== -1) return 1;
+            if (p.shiftType.indexOf('遅出') !== -1) return 2;
+            return 3;
+          };
+          return order(a) - order(b);
+        });
+      }
+    }
+
+    // 日付配列構築
+    const cells = {};
+    for (const fac of facilities) {
+      cells[fac] = [];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateKey = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        const dow = new Date(year, month - 1, d).getDay();
+        cells[fac].push({
+          day: d,
+          dateKey: dateKey,
+          dow: dow,
+          placements: placements[fac][dateKey] || [],
+        });
+      }
+    }
+
+    return {
+      success: true,
+      targetYM: targetYM,
+      year: year,
+      month: month,
+      daysInMonth: daysInMonth,
+      jigyosho: jigyosho,
+      facilities: facilities,
+      cells: cells,
+    };
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
 }
