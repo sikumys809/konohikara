@@ -479,6 +479,110 @@
   </div>
 </div>
 
+<!-- ========== 提出期間オーバーライド管理ビュー ========== -->
+<div id="view-submitOverride" class="hidden">
+  <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <h2 style="margin: 0;">📅 提出期間管理</h2>
+    <button class="btn btn-inline" onclick="openAddOverrideModal()">+ 新規追加</button>
+  </div>
+
+  <div class="banner banner-info" style="margin-bottom: 16px;">
+    通常は毎月10日〜22日のみ希望提出可。特例として個人または全体に対し期間を開放できます。
+  </div>
+
+  <div class="card">
+    <div id="overrideRowCount" class="row-count">読み込み中...</div>
+
+    <div class="staff-table-wrapper">
+      <table class="staff-table">
+        <thead>
+          <tr>
+            <th>状態</th>
+            <th>対象</th>
+            <th>対象月</th>
+            <th>開始日</th>
+            <th>終了日</th>
+            <th>制限なし</th>
+            <th>メモ</th>
+            <th>設定者</th>
+            <th>設定日時</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="overrideTableBody">
+          <tr><td colspan="10" style="text-align: center; padding: 20px; color: #9ca3af;">読み込み中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 新規追加モーダル -->
+<div id="addOverrideModal" class="modal-overlay hidden" onclick="closeAddOverrideModalOnOverlay(event)">
+  <div class="modal" style="max-width: 560px;">
+    <div class="modal-header">
+      <h2>提出期間オーバーライド追加</h2>
+      <button class="modal-close" onclick="closeAddOverrideModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>対象 <span style="color:#ef4444;">*</span></label>
+        <select id="ov-target-type" onchange="onOverrideTargetTypeChange()">
+          <option value="personal">個人を指定</option>
+          <option value="global">全体（全スタッフ）</option>
+        </select>
+      </div>
+
+      <div id="ov-staff-row" class="form-group">
+        <label>スタッフ</label>
+        <select id="ov-staff-id">
+          <option value="">読み込み中...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>対象月 <span style="color:#9ca3af;font-weight:400;">（提出する希望日の月）</span></label>
+        <input type="text" id="ov-target-ym" placeholder="例: 2026-05 (5月分の希望を提出させる場合)">
+        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
+          💡 「来月のシフト希望を出させたい」場合、来月の年月を入力<br>
+          💡 空欄にするとどの月の希望提出でも特例適用される<br>
+          💡 形式: YYYY-MM (例: 2026-05)
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ov-unrestricted" onchange="onUnrestrictedChange()">
+          <span>期間制限なし（常時開放）</span>
+        </label>
+      </div>
+
+      <div id="ov-period-row">
+        <div class="form-row">
+          <div class="form-group">
+            <label>開始日</label>
+            <input type="date" id="ov-start-date">
+          </div>
+          <div class="form-group">
+            <label>終了日</label>
+            <input type="date" id="ov-end-date">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>理由メモ</label>
+        <textarea id="ov-memo" placeholder="例: 4/25採用、初月のみ"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-inline" onclick="closeAddOverrideModal()">キャンセル</button>
+      <button class="btn btn-inline" onclick="saveOverride()">追加</button>
+    </div>
+  </div>
+</div>
+
 <!-- ========== シフト作成ビュー ========== -->
 <div id="view-shift" class="hidden" style="padding: 0;">
   <div style="padding: 20px;">
@@ -874,6 +978,7 @@ function renderNavButtons() {
    { id: 'shift', icon: '🌙', title: '夜勤自動割当', desc: '夜勤希望を一括配置 + 編集', requires: 'canCreateShift' },
     { id: 'dayshift', icon: '☀️', title: '日勤自動割当', desc: '日勤希望を一括配置 + 充足率', requires: 'canCreateShift' },
     { id: 'approve', icon: '✅', title: 'シフト確定', desc: '仮→確定の承認', requires: 'canApprove' },
+    { id: 'submitOverride', icon: '📅', title: '提出期間管理', desc: '希望提出の特例開放', requires: 'canEditMaster' },
     { id: 'logs', icon: '📋', title: '操作ログ', desc: '変更履歴の確認', requires: null },
   ];
   const html = navs.map(n => {
@@ -913,12 +1018,15 @@ function navigateTo(id) {
   } else if (id === 'dayshift') {
     showView('dayshift');
     loadDayShiftView();
+  } else if (id === 'submitOverride') {
+    showView('submitOverride');
+    loadSubmitOverridesView();
   } else {
     alert(id + ' 機能は次のステップで実装予定');
   }
 }
 function showView(name) {
-  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve', 'dayshift'].forEach(v => {
+  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve', 'dayshift', 'submitOverride'].forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.classList.toggle('hidden', v !== name);
   });
@@ -3844,6 +3952,171 @@ function execDayShiftEngineFromView() {
   }).withFailureHandler(err => {
     document.getElementById('dsStatus').innerHTML = `<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">✗ 通信エラー: ${err}</div>`;
   }).executeDayShiftEngineFromAdmin(currentAdmin.staff_id, dsViewState.targetYM);
+}
+
+
+// ============================================
+// 提出期間オーバーライド管理
+// ============================================
+let allOverrides = [];
+let overrideStaffList = [];
+
+function loadSubmitOverridesView() {
+  document.getElementById('overrideRowCount').textContent = '読み込み中...';
+  document.getElementById('overrideTableBody').innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 20px; color: #9ca3af;">読み込み中...</td></tr>';
+
+  // スタッフリスト並行取得
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) overrideStaffList = res.staff;
+  }).getStaffListForOverride(currentAdmin.staff_id);
+
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) {
+      document.getElementById('overrideTableBody').innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 20px; color: #ef4444;">${res.message}</td></tr>`;
+      return;
+    }
+    allOverrides = res.overrides;
+    renderOverrideTable();
+  }).getSubmitOverrides(currentAdmin.staff_id);
+}
+
+function renderOverrideTable() {
+  document.getElementById('overrideRowCount').textContent = `${allOverrides.length} 件`;
+
+  if (allOverrides.length === 0) {
+    document.getElementById('overrideTableBody').innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 20px; color: #9ca3af;">オーバーライド設定なし</td></tr>';
+    return;
+  }
+
+  document.getElementById('overrideTableBody').innerHTML = allOverrides.map(o => {
+    let statusBadge = '';
+    if (o.status === '有効') statusBadge = '<span class="staff-badge" style="background: #d1fae5; color: #065f46;">✓ 有効</span>';
+    else if (o.status === '未開始') statusBadge = '<span class="staff-badge" style="background: #dbeafe; color: #1e40af;">⏰ 未開始</span>';
+    else statusBadge = '<span class="staff-badge badge-retired">期限切れ</span>';
+
+    const targetCell = o.is_global
+      ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:4px;">🌐 全体</span>'
+      : `<span>${escapeHtml(o.staff_name)} <span style="color:#9ca3af;font-size:11px;">(ID:${o.staff_id})</span></span>`;
+
+    const unrestrictedCell = o.unrestricted ? '<span style="color:#059669;font-weight:600;">✓ 制限なし</span>' : '<span style="color:#9ca3af;">-</span>';
+
+    return `
+      <tr>
+        <td>${statusBadge}</td>
+        <td>${targetCell}</td>
+        <td>${escapeHtml(o.target_ym) || '<span style="color:#9ca3af;">全月</span>'}</td>
+        <td>${escapeHtml(o.start_date) || '<span style="color:#9ca3af;">-</span>'}</td>
+        <td>${escapeHtml(o.end_date) || '<span style="color:#9ca3af;">-</span>'}</td>
+        <td>${unrestrictedCell}</td>
+        <td title="${escapeAttr(o.memo)}" style="max-width: 200px;">${escapeHtml(o.memo) || '-'}</td>
+        <td>${escapeHtml(o.created_by_name)}</td>
+        <td style="font-size: 11px;">${escapeHtml(o.created_at)}</td>
+        <td><button class="btn btn-small btn-danger" onclick="deleteOverride('${escapeAttr(o.override_id)}')">削除</button></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openAddOverrideModal() {
+  // フォームリセット
+  document.getElementById('ov-target-type').value = 'personal';
+  document.getElementById('ov-target-ym').value = '';
+  document.getElementById('ov-unrestricted').checked = false;
+  document.getElementById('ov-start-date').value = '';
+  document.getElementById('ov-end-date').value = '';
+  document.getElementById('ov-memo').value = '';
+
+  // スタッフセレクト構築
+  const sel = document.getElementById('ov-staff-id');
+  sel.innerHTML = '<option value="">選択してください</option>' +
+    overrideStaffList.map(s => `<option value="${s.staff_id}">${escapeHtml(s.name)} (ID:${s.staff_id})</option>`).join('');
+
+  onOverrideTargetTypeChange();
+  onUnrestrictedChange();
+
+  document.getElementById('addOverrideModal').classList.remove('hidden');
+}
+
+function closeAddOverrideModal() {
+  document.getElementById('addOverrideModal').classList.add('hidden');
+}
+
+function closeAddOverrideModalOnOverlay(e) {
+  if (e.target.id === 'addOverrideModal') closeAddOverrideModal();
+}
+
+function onOverrideTargetTypeChange() {
+  const type = document.getElementById('ov-target-type').value;
+  document.getElementById('ov-staff-row').style.display = type === 'personal' ? 'block' : 'none';
+}
+
+function onUnrestrictedChange() {
+  const unrestricted = document.getElementById('ov-unrestricted').checked;
+  document.getElementById('ov-period-row').style.opacity = unrestricted ? '0.4' : '1';
+  document.getElementById('ov-start-date').disabled = unrestricted;
+  document.getElementById('ov-end-date').disabled = unrestricted;
+}
+
+function saveOverride() {
+  const type = document.getElementById('ov-target-type').value;
+  const staffId = type === 'global' ? 0 : Number(document.getElementById('ov-staff-id').value);
+  const targetYM = document.getElementById('ov-target-ym').value.trim();
+  const unrestricted = document.getElementById('ov-unrestricted').checked;
+  const startDate = document.getElementById('ov-start-date').value;
+  const endDate = document.getElementById('ov-end-date').value;
+  const memo = document.getElementById('ov-memo').value.trim();
+
+  if (type === 'personal' && (!staffId || isNaN(staffId))) {
+    alert('スタッフを選択してください'); return;
+  }
+  if (!unrestricted && !startDate && !endDate) {
+    alert('期間（開始日 or 終了日）を指定するか、「期間制限なし」をONにしてください'); return;
+  }
+  if (targetYM && !/^\d{4}-\d{2}$/.test(targetYM)) {
+    alert('対象月は YYYY-MM 形式で入力してください（例: 2026-05）'); return;
+  }
+
+  const params = {
+    staff_id: staffId,
+    target_ym: targetYM,
+    start_date: startDate,
+    end_date: endDate,
+    unrestricted: unrestricted,
+    memo: memo,
+  };
+
+  const btn = document.querySelector('#addOverrideModal .modal-footer .btn:not(.btn-secondary)');
+  btn.innerHTML = '<span class="spinner"></span> 追加中...';
+  btn.disabled = true;
+
+  google.script.run.withSuccessHandler(res => {
+    btn.innerHTML = '追加';
+    btn.disabled = false;
+    if (res.success) {
+      alert(res.message);
+      closeAddOverrideModal();
+      loadSubmitOverridesView();
+    } else {
+      alert('エラー: ' + res.message);
+    }
+  }).withFailureHandler(err => {
+    btn.innerHTML = '追加';
+    btn.disabled = false;
+    alert('通信エラー: ' + err);
+  }).addSubmitOverride(currentAdmin.staff_id, params);
+}
+
+function deleteOverride(overrideId) {
+  if (!confirm('このオーバーライドを削除しますか？')) return;
+
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) {
+      alert(res.message);
+      loadSubmitOverridesView();
+    } else {
+      alert('エラー: ' + res.message);
+    }
+  }).deleteSubmitOverride(currentAdmin.staff_id, overrideId);
 }
 
 </script>
