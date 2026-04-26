@@ -483,7 +483,7 @@
 <div id="view-shift" class="hidden" style="padding: 0;">
   <div style="padding: 20px;">
     <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
-    <h2 style="margin-top: 16px;">📅 シフト作成</h2>
+    <h2 style="margin-top: 16px;">🌙 夜勤自動割当</h2>
     
     <!-- コントロール -->
     <div style="display: flex; gap: 12px; align-items: center; margin: 20px 0; flex-wrap: wrap;">
@@ -594,6 +594,9 @@
       </button>
     </div>
     
+    <!-- ロック状態バナー -->
+    <div id="dsLockBanner" style="margin-bottom: 16px; display: none;"></div>
+    
     <!-- 処理状態 -->
     <div id="dsStatus" style="margin-bottom: 16px;"></div>
     
@@ -628,6 +631,9 @@
 .ds-cal-table th, .ds-cal-table td { border: 1px solid #e5e7eb; padding: 4px 6px; text-align: center; }
 .ds-cal-table thead th { background: #fef3c7; position: sticky; top: 0; z-index: 10; font-weight: 600; min-width: 55px; }
 .ds-cal-table thead th.ds-fac-col { z-index: 15; background: #fde68a; text-align: left; padding: 6px 10px; min-width: 200px; position: sticky; left: 0; }
+.ds-cal-table tr.ds-jigyosho-header td { background: #4a148c !important; color: #ffffff !important; font-size: 14px; padding: 10px 14px; position: sticky; left: 0; z-index: 8; font-weight: 700; }
+.ds-cal-table tr.ds-jigyosho-header td strong { color: #ffffff !important; font-size: 15px; margin-right: 12px; font-weight: 700; }
+.ds-cal-table tr.ds-jigyosho-header td span { color: #e9d5ff !important; font-weight: 400; }
 .ds-cal-table tbody td.ds-fac-col { position: sticky; left: 0; background: white; z-index: 5; min-width: 200px; text-align: left; padding: 8px 10px; font-weight: 500; }
 .ds-cal-table .ds-day-sun { color: #dc2626; }
 .ds-cal-table .ds-day-sat { color: #2563eb; }
@@ -865,7 +871,7 @@ function renderNavButtons() {
     { id: 'staff', icon: '👥', title: 'スタッフマスタ', desc: 'スタッフ情報の編集', requires: 'canEditMaster' },
     { id: 'facility', icon: '🏢', title: '施設マスタ', desc: '施設の住所・備考編集', requires: 'canEditMaster' },
     { id: 'requests', icon: '📝', title: '希望提出一覧', desc: '全スタッフの希望確認', requires: null },
-    { id: 'shift', icon: '📅', title: 'シフト作成', desc: '夜勤の自動割当・編集', requires: 'canCreateShift' },
+   { id: 'shift', icon: '🌙', title: '夜勤自動割当', desc: '夜勤希望を一括配置 + 編集', requires: 'canCreateShift' },
     { id: 'dayshift', icon: '☀️', title: '日勤自動割当', desc: '日勤希望を一括配置 + 充足率', requires: 'canCreateShift' },
     { id: 'approve', icon: '✅', title: 'シフト確定', desc: '仮→確定の承認', requires: 'canApprove' },
     { id: 'logs', icon: '📋', title: '操作ログ', desc: '変更履歴の確認', requires: null },
@@ -2026,6 +2032,7 @@ let shiftViewState = {
   editingSlot: null,
   selectedCandidate: null,
   selectedShiftType: null,
+  lockStatus: null,
 };
 
 function loadShiftView() {
@@ -2051,6 +2058,7 @@ function loadShiftCalendar() {
   const ym = document.getElementById('shiftTargetYM').value;
   if (!ym) {
     document.getElementById('shiftCalendar').innerHTML = '対象月を選択してください';
+    document.getElementById('shiftLockBanner').style.display = 'none';
     return;
   }
   shiftViewState.targetYM = ym;
@@ -2067,6 +2075,47 @@ function loadShiftCalendar() {
     renderShiftSummary(res);
     renderShiftCalendar(res);
   }).getShiftCalendar(currentAdmin.staff_id, ym);
+  
+  // ロック状態取得 + UIガード
+  google.script.run.withSuccessHandler(lockRes => {
+    if (!lockRes.success) return;
+    shiftViewState.lockStatus = lockRes;
+    renderShiftLockBanner(lockRes);
+    updateShiftEngineButton(lockRes);
+  }).getLockStatus(currentAdmin.staff_id, ym);
+}
+
+
+function renderShiftLockBanner(lockRes) {
+  const banner = document.getElementById('shiftLockBanner');
+  if (!banner) return;
+  if (!lockRes.locked) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="padding: 12px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; color: #92400e;">
+      🔒 <strong>ロック中</strong> - ${lockRes.lockedBy}さんが ${lockRes.lockedAt} に確定化しました。編集するには「シフト確定」画面でロック解除してください。
+    </div>
+  `;
+}
+
+
+function updateShiftEngineButton(lockRes) {
+  const btn = document.getElementById('runEngineBtn');
+  if (!btn) return;
+  if (lockRes.locked) {
+    btn.disabled = true;
+    btn.style.opacity = '0.4';
+    btn.style.cursor = 'not-allowed';
+    btn.title = 'ロック中のため実行できません';
+  } else {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+    btn.title = '';
+  }
 }
 
 
@@ -2155,6 +2204,10 @@ function executeEngine() {
     alert('対象月を選択してください');
     return;
   }
+  if (shiftViewState.lockStatus && shiftViewState.lockStatus.locked) {
+    alert('🔒 ' + shiftViewState.targetYM + ' はロック中です。\n「シフト確定」画面でロック解除してから実行してください。');
+    return;
+  }
   if (!confirm(shiftViewState.targetYM + ' の夜勤を自動割当します。既存の仮シフトは上書きされます。実行しますか？')) return;
   
   const btn = document.getElementById('runEngineBtn');
@@ -2190,6 +2243,11 @@ function executeEngine() {
 
 // ========== セル編集モーダル ==========
 function openSlotEditor(dateKey, unitId, unitName, facility) {
+  if (shiftViewState.lockStatus && shiftViewState.lockStatus.locked) {
+    alert('🔒 ' + shiftViewState.targetYM + ' はロック中です。\n「シフト確定」画面でロック解除してから編集してください。');
+    return;
+  }
+  
   const modal = document.getElementById('slotEditModal');
   modal.style.display = 'flex';
   modal.classList.remove('hidden');
@@ -2540,49 +2598,103 @@ function updateApprovalButtons(data) {
 
 
 function renderApprovalCalendar(data) {
-  if (!data.calendar || data.calendar.length === 0) {
-    document.getElementById('approveCalendar').innerHTML = '<div style="padding: 40px; text-align: center;">データなし</div>';
-    return;
-  }
+  let html = '';
   
-  const days = data.calendar[0].days;
-  
-  let html = '<table class="shift-cal-table"><thead><tr>';
-  html += '<th class="unit-col">ユニット</th>';
-  for (const d of days) {
-    const cls = d.dow === 0 ? 'day-sun' : d.dow === 6 ? 'day-sat' : '';
-    const dowChar = ['日','月','火','水','木','金','土'][d.dow];
-    html += `<th class="day-header ${cls}">${d.day}<br><span style="font-size: 10px;">${dowChar}</span></th>`;
-  }
-  html += '</tr></thead><tbody>';
-  
-  for (const row of data.calendar) {
-    const u = row.unit;
-    html += '<tr>';
-    html += `<td class="unit-col" title="${u.facility}">
-      <div style="font-weight: 600;">${u.unit_name}</div>
-      <div style="font-size: 10px; color: #6b7280;">${u.facility}${u.room ? ' #' + u.room : ''}</div>
-    </td>`;
-    for (const d of row.days) {
-      const shift = d.shift;
-      let cellCls = 'slot-cell slot-empty';
-      let content = '－';
-      let title = d.dateKey + ' ' + u.unit_name + ' (未配置)';
-      
-      if (shift && shift.staff_id) {
-        const isConfirmed = shift.status === '確定';
-        cellCls = 'slot-cell ' + (isConfirmed ? 'slot-confirmed' : 'slot-filled');
-        const shortName = (shift.staff_name || '').length > 4 
-          ? (shift.staff_name || '').substring(0, 4) + '…'
-          : (shift.staff_name || '');
-        content = `${shortName}<span class="slot-shift-type">${shift.shift_type || ''}</span>`;
-        title = `${d.dateKey} ${u.unit_name}\n${shift.staff_name}\n${shift.shift_type} (${shift.status})`;
-      }
-      html += `<td class="${cellCls}" title="${title}">${content}</td>`;
+  // ============ 🌙 夜勤カレンダー ============
+  if (data.calendar && data.calendar.length > 0) {
+    html += '<div style="margin-bottom: 24px;">';
+    html += '<div style="background: #4a148c; color: white; padding: 10px 16px; font-weight: 700; font-size: 14px; border-radius: 8px 8px 0 0;">🌙 夜勤シフト</div>';
+    
+    const days = data.calendar[0].days;
+    html += '<table class="shift-cal-table" style="border-radius: 0 0 8px 8px;"><thead><tr>';
+    html += '<th class="unit-col">ユニット</th>';
+    for (const d of days) {
+      const cls = d.dow === 0 ? 'day-sun' : d.dow === 6 ? 'day-sat' : '';
+      const dowChar = ['日','月','火','水','木','金','土'][d.dow];
+      html += `<th class="day-header ${cls}">${d.day}<br><span style="font-size: 10px;">${dowChar}</span></th>`;
     }
-    html += '</tr>';
+    html += '</tr></thead><tbody>';
+    
+    for (const row of data.calendar) {
+      const u = row.unit;
+      html += '<tr>';
+      html += `<td class="unit-col" title="${u.facility}">
+        <div style="font-weight: 600;">${u.unit_name}</div>
+        <div style="font-size: 10px; color: #6b7280;">${u.facility}${u.room ? ' #' + u.room : ''}</div>
+      </td>`;
+      for (const d of row.days) {
+        const shift = d.shift;
+        let cellCls = 'slot-cell slot-empty';
+        let content = '－';
+        let title = d.dateKey + ' ' + u.unit_name + ' (未配置)';
+        
+        if (shift && shift.staff_id) {
+          const isConfirmed = shift.status === '確定';
+          cellCls = 'slot-cell ' + (isConfirmed ? 'slot-confirmed' : 'slot-filled');
+          const shortName = (shift.staff_name || '').length > 4 
+            ? (shift.staff_name || '').substring(0, 4) + '…'
+            : (shift.staff_name || '');
+          content = `${shortName}<span class="slot-shift-type">${shift.shift_type || ''}</span>`;
+          title = `${d.dateKey} ${u.unit_name}\n${shift.staff_name}\n${shift.shift_type} (${shift.status})`;
+        }
+        html += `<td class="${cellCls}" title="${title}">${content}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    html += '</div>';
   }
-  html += '</tbody></table>';
+  
+  // ============ ☀️ 日勤カレンダー ============
+  if (data.dayCalendar && data.dayCalendar.length > 0 && data.days) {
+    html += '<div>';
+    html += '<div style="background: #f59e0b; color: white; padding: 10px 16px; font-weight: 700; font-size: 14px; border-radius: 8px 8px 0 0;">☀️ 日勤シフト</div>';
+    
+    html += '<table class="ds-cal-table" style="border-radius: 0 0 8px 8px;"><thead><tr>';
+    html += '<th class="ds-fac-col">事業所 / 施設</th>';
+    for (const d of data.days) {
+      const cls = d.dow === 0 ? 'ds-day-sun' : d.dow === 6 ? 'ds-day-sat' : '';
+      const dowChar = ['日','月','火','水','木','金','土'][d.dow];
+      html += `<th class="${cls}">${d.day}<br><span style="font-size: 10px;">${dowChar}</span></th>`;
+    }
+    html += '</tr></thead><tbody>';
+    
+    for (const row of data.dayCalendar) {
+      // 事業所ヘッダ行
+      html += `<tr class="ds-jigyosho-header"><td class="ds-fac-col" colspan="${data.days.length + 1}" style="background: #4a148c !important; color: white !important; padding: 10px 14px; font-weight: 700; position: sticky; left: 0; z-index: 8;"><strong style="color: white; font-size: 15px; margin-right: 12px;">${escapeHtml(row.jigyosho)}</strong><span style="font-size: 11px; color: #e9d5ff; font-weight: normal;">定員${row.capacity} / ${row.buildings.length}施設</span></td></tr>`;
+      
+      // 施設ごとの行
+      for (const b of row.buildings) {
+        html += '<tr>';
+        html += `<td class="ds-fac-col" style="padding-left: 20px;"><span style="font-size: 12px;">📍 ${escapeHtml(b.facility)}</span></td>`;
+        for (const cell of b.cells) {
+          if (cell.count === 0) {
+            html += `<td class="ds-cell ds-cell-empty" title="${cell.dateKey} (未配置)">－</td>`;
+          } else {
+            const early = cell.placements.filter(p => p.shift_type.indexOf('早出') !== -1).length;
+            const late = cell.placements.filter(p => p.shift_type.indexOf('遅出') !== -1).length;
+            const subParts = [];
+            if (early > 0) subParts.push(`🌅${early}`);
+            if (late > 0) subParts.push(`🌆${late}`);
+            
+            // 全件確定なら緑、それ以外は黄色
+            const allConfirmed = cell.placements.every(p => p.status === '確定');
+            const cellExtraCls = allConfirmed ? 'ds-cell-good' : '';
+            
+            const tooltipNames = cell.placements.map(p => `${p.staff_name} ${p.shift_type} (${p.status})`).join('\n');
+            html += `<td class="ds-cell ${cellExtraCls}" title="${cell.dateKey} ${b.facility}\n${tooltipNames}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div></td>`;
+          }
+        }
+        html += '</tr>';
+      }
+    }
+    html += '</tbody></table>';
+    html += '</div>';
+  }
+  
+  if (!html) {
+    html = '<div style="padding: 40px; text-align: center;">データなし</div>';
+  }
   
   document.getElementById('approveCalendar').innerHTML = html;
 }
@@ -2685,18 +2797,7 @@ function checkShiftLockStatus(ym) {
   }).getLockStatus(currentAdmin.staff_id, ym);
 }
 
-// loadShiftCalendar をパッチ拡張 (既存関数にロック状態チェックを追加)
-(function() {
-  const origLoad = window.loadShiftCalendar;
-  if (origLoad) {
-    window.loadShiftCalendar = function() {
-      origLoad.apply(this, arguments);
-      const ym = document.getElementById('shiftTargetYM').value;
-      if (ym) checkShiftLockStatus(ym);
-    };
-  }
-})();
-
+// loadShiftCalendar 内でロック状態取得済みのため、IIFEパッチは不要
 
 // ============================================
 // PDF出力機能
@@ -3328,6 +3429,7 @@ let dsViewState = {
   editingCell: null,
   candidates: [],
   selectedCandidate: null,
+  lockStatus: null,
 };
 
 function loadDayShiftView() {
@@ -3372,6 +3474,49 @@ function loadDayShiftCalendar() {
     console.error('充足率取得失敗:', err);
     document.getElementById('dsFulfillmentCards').innerHTML = '<div class="banner banner-info">⚠️ 充足率データ未生成。「⚡自動割当実行」してください。</div>';
   }).getDayShiftFulfillmentSummary(currentAdmin.staff_id, ym);
+  
+  // ロック状態取得 + UIガード
+  google.script.run.withSuccessHandler(lockRes => {
+    if (!lockRes.success) return;
+    dsViewState.lockStatus = lockRes;
+    renderDsLockBanner(lockRes);
+    updateDsEngineButton(lockRes);
+  }).getLockStatus(currentAdmin.staff_id, ym);
+}
+
+
+function renderDsLockBanner(lockRes) {
+  const banner = document.getElementById('dsLockBanner');
+  if (!banner) return;
+  if (!lockRes.locked) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="padding: 12px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; color: #92400e;">
+      🔒 <strong>ロック中</strong> - ${lockRes.lockedBy}さんが ${lockRes.lockedAt} に確定化しました。編集するには「シフト確定」画面でロック解除してください。
+    </div>
+  `;
+}
+
+
+function updateDsEngineButton(lockRes) {
+  // 「⚡ 自動割当実行」ボタン (view-dayshift内のbutton onclick="execDayShiftEngineFromView()")
+  const btns = document.querySelectorAll('#view-dayshift button[onclick="execDayShiftEngineFromView()"]');
+  btns.forEach(btn => {
+    if (lockRes.locked) {
+      btn.disabled = true;
+      btn.style.opacity = '0.4';
+      btn.style.cursor = 'not-allowed';
+      btn.title = 'ロック中のため実行できません';
+    } else {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+      btn.title = '';
+    }
+  });
 }
 
 function renderDayShiftFulfillmentCards() {
@@ -3424,7 +3569,7 @@ function renderDayShiftCalendar() {
   }
 
   let html = '<table class="ds-cal-table"><thead><tr>';
-  html += '<th class="ds-fac-col">事業所</th>';
+  html += '<th class="ds-fac-col">事業所 / 施設</th>';
   for (const d of data.days) {
     const cls = d.dow === 0 ? 'ds-day-sun' : d.dow === 6 ? 'ds-day-sat' : '';
     const dowChar = ['日','月','火','水','木','金','土'][d.dow];
@@ -3433,25 +3578,44 @@ function renderDayShiftCalendar() {
   html += '</tr></thead><tbody>';
 
   for (const row of data.calendar) {
-    html += '<tr>';
-    html += `<td class="ds-fac-col">${escapeHtml(row.facility)}<div style="font-size: 10px; color: #6b7280;">定員${row.capacity}</div></td>`;
-    for (const cell of row.cells) {
-      if (cell.count === 0) {
-        html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－</td>`;
-      } else {
-        // 早出/遅出の内訳
-        const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
-        const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
-        const subParts = [];
-        if (early > 0) subParts.push(`🌅${early}`);
-        if (late > 0) subParts.push(`🌆${late}`);
-        html += `<td class="ds-cell" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}\n${cell.placements.map(p => p.staff_name + '(' + p.shiftType + ')').join('\\n')}">
-          <div class="ds-cell-count">${cell.count}</div>
-          <div class="ds-cell-sub">${subParts.join(' ')}</div>
-        </td>`;
+    if (row.buildings && Array.isArray(row.buildings)) {
+      // 新構造: 事業所→施設階層
+      html += `<tr class="ds-jigyosho-header"><td class="ds-fac-col" colspan="${data.days.length + 1}" style="background: #4a148c !important; color: white !important; padding: 10px 14px; font-weight: 700; position: sticky; left: 0; z-index: 8;"><strong style="color: white; font-size: 15px; margin-right: 12px;">${escapeHtml(row.jigyosho)}</strong><span style="font-size: 11px; color: #e9d5ff; font-weight: normal;">定員${row.capacity} / ${row.buildings.length}施設</span></td></tr>`;
+      for (const b of row.buildings) {
+        html += '<tr>';
+        html += `<td class="ds-fac-col" style="padding-left: 20px;"><span style="font-size: 12px;">📍 ${escapeHtml(b.facility)}</span></td>`;
+        for (const cell of b.cells) {
+          if (cell.count === 0) {
+            html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－</td>`;
+          } else {
+            const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
+            const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
+            const subParts = [];
+            if (early > 0) subParts.push(`🌅${early}`);
+            if (late > 0) subParts.push(`🌆${late}`);
+            html += `<td class="ds-cell" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} ${b.facility}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div></td>`;
+          }
+        }
+        html += '</tr>';
       }
+    } else {
+      // 旧構造: 事業所単位
+      html += '<tr>';
+      html += `<td class="ds-fac-col">${escapeHtml(row.facility)}<div style="font-size: 10px; color: #6b7280;">定員${row.capacity}</div></td>`;
+      for (const cell of row.cells) {
+        if (cell.count === 0) {
+          html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－</td>`;
+        } else {
+          const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
+          const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
+          const subParts = [];
+          if (early > 0) subParts.push(`🌅${early}`);
+          if (late > 0) subParts.push(`🌆${late}`);
+          html += `<td class="ds-cell" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div></td>`;
+        }
+      }
+      html += '</tr>';
     }
-    html += '</tr>';
   }
   html += '</tbody></table>';
 
@@ -3459,14 +3623,31 @@ function renderDayShiftCalendar() {
 }
 
 function openDsCellEditor(facility, dateKey) {
+  if (dsViewState.lockStatus && dsViewState.lockStatus.locked) {
+    alert('🔒 ' + dsViewState.targetYM + ' はロック中です。\n「シフト確定」画面でロック解除してから編集してください。');
+    return;
+  }
+  
   const modal = document.getElementById('dsCellEditModal');
   modal.style.display = 'flex';
   modal.classList.remove('hidden');
 
-  // 該当セルの配置を取得
+  // 該当セルの配置を取得(新旧両構造に対応)
   let placements = [];
   for (const row of dsViewState.calendar.calendar) {
-    if (row.facility === facility) {
+    if (row.buildings && Array.isArray(row.buildings)) {
+      for (const b of row.buildings) {
+        if (b.facility === facility) {
+          for (const c of b.cells) {
+            if (c.dateKey === dateKey) {
+              placements = c.placements;
+              break;
+            }
+          }
+          break;
+        }
+      }
+    } else if (row.facility === facility) {
       for (const c of row.cells) {
         if (c.dateKey === dateKey) {
           placements = c.placements;
@@ -3645,6 +3826,10 @@ function closeDsCellEditor() {
 
 function execDayShiftEngineFromView() {
   if (!dsViewState.targetYM) return;
+  if (dsViewState.lockStatus && dsViewState.lockStatus.locked) {
+    alert('🔒 ' + dsViewState.targetYM + ' はロック中です。\n「シフト確定」画面でロック解除してから実行してください。');
+    return;
+  }
   if (!confirm(dsViewState.targetYM + ' の日勤を自動割当します。\n既存の日勤データは削除されます。\n実行しますか？')) return;
 
   document.getElementById('dsStatus').innerHTML = '<div style="padding: 12px; background: #fef3c7; border-radius: 6px; color: #92400e;">⏳ 自動割当実行中...</div>';
