@@ -141,7 +141,10 @@
   <!-- スタッフマスタ画面 -->
   <div id="view-staff" class="hidden">
     <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
-    <h2>スタッフマスタ編集</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 style="margin: 0;">スタッフマスタ編集</h2>
+      <button class="btn btn-inline" onclick="openAddStaffModal()">+ 新規スタッフ追加</button>
+    </div>
     
     <div class="card">
       <div class="filter-bar">
@@ -294,6 +297,57 @@
     <div class="modal-footer">
       <button class="btn btn-secondary btn-inline" onclick="closeAddFacilityModal()">キャンセル</button>
       <button class="btn btn-inline" onclick="addNewFacility()">追加</button>
+    </div>
+  </div>
+</div>
+
+<!-- スタッフ追加モーダル -->
+<div id="addStaffModal" class="modal-overlay hidden" onclick="closeAddStaffModalOnOverlay(event)">
+  <div class="modal" style="max-width: 560px;">
+    <div class="modal-header">
+      <h2>新規スタッフ追加</h2>
+      <button class="modal-close" onclick="closeAddStaffModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="banner banner-info" style="margin-bottom: 16px; font-size: 12px;">
+        💡 氏名とメールだけ入力すれば登録できます。他の項目は登録後に「編集」から入力してください。
+      </div>
+      <div class="form-group">
+        <label>氏名 <span style="color:#ef4444;">*</span></label>
+        <input type="text" id="add-staff-name" placeholder="例: 山田 太郎">
+      </div>
+      <div class="form-group">
+        <label>メールアドレス <span style="color:#ef4444;">*</span></label>
+        <input type="email" id="add-staff-email" placeholder="例: yamada@example.com">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>電話 (任意)</label>
+          <input type="text" id="add-staff-phone" placeholder="例: 090-1234-5678">
+        </div>
+        <div class="form-group">
+          <label>雇用形態 (任意)</label>
+          <select id="add-staff-employment">
+            <option value="">(未選択)</option>
+            <option value="正社員">正社員</option>
+            <option value="パート">パート</option>
+            <option value="アルバイト">アルバイト</option>
+            <option value="契約社員">契約社員</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>入社日 (任意)</label>
+        <input type="date" id="add-staff-hireDate">
+      </div>
+      <div class="form-group">
+        <label>備考 (任意)</label>
+        <textarea id="add-staff-note" placeholder="管理者メモ"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-inline" onclick="closeAddStaffModal()">キャンセル</button>
+      <button class="btn btn-inline" onclick="addNewStaff()">追加</button>
     </div>
   </div>
 </div>
@@ -4339,6 +4393,69 @@ function renderJigyoshoDsPdf(data) {
 
   html += '</div>';
   return html;
+}
+
+
+// ============================================
+// スタッフ追加機能
+// ============================================
+function openAddStaffModal() {
+  document.getElementById('add-staff-name').value = '';
+  document.getElementById('add-staff-email').value = '';
+  document.getElementById('add-staff-phone').value = '';
+  document.getElementById('add-staff-employment').value = '';
+  document.getElementById('add-staff-hireDate').value = '';
+  document.getElementById('add-staff-note').value = '';
+  document.getElementById('addStaffModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('add-staff-name').focus(), 100);
+}
+
+function closeAddStaffModal() {
+  document.getElementById('addStaffModal').classList.add('hidden');
+}
+
+function closeAddStaffModalOnOverlay(e) {
+  if (e.target.id === 'addStaffModal') closeAddStaffModal();
+}
+
+function addNewStaff() {
+  const name = document.getElementById('add-staff-name').value.trim();
+  const email = document.getElementById('add-staff-email').value.trim();
+
+  if (!name) { alert('氏名は必須です'); return; }
+  if (!email) { alert('メールアドレスは必須です'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    alert('メールアドレスの形式が不正です'); return;
+  }
+
+  const data = {
+    name: name,
+    email: email,
+    phone: document.getElementById('add-staff-phone').value.trim(),
+    employment: document.getElementById('add-staff-employment').value,
+    hireDate: document.getElementById('add-staff-hireDate').value,
+    note: document.getElementById('add-staff-note').value.trim(),
+  };
+
+  const addBtn = document.querySelector('#addStaffModal .modal-footer .btn:not(.btn-secondary)');
+  addBtn.innerHTML = '<span class="spinner"></span> 追加中...';
+  addBtn.disabled = true;
+
+  google.script.run.withSuccessHandler(res => {
+    addBtn.innerHTML = '追加';
+    addBtn.disabled = false;
+    if (res.success) {
+      alert(res.message);
+      closeAddStaffModal();
+      loadStaffList(); // 一覧再読込
+    } else {
+      alert('エラー: ' + res.message);
+    }
+  }).withFailureHandler(err => {
+    addBtn.innerHTML = '追加';
+    addBtn.disabled = false;
+    alert('通信エラー: ' + err);
+  }).addStaff(currentAdmin.staff_id, data);
 }
 
 </script>

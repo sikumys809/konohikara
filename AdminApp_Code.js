@@ -2112,3 +2112,90 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
     return { success: false, message: 'エラー: ' + e.message };
   }
 }
+
+function addStaff(adminStaffId, params) {
+  const admin = checkAdminAuth(adminStaffId, 'マスタ編集');
+  if (!admin.authorized) return { success: false, message: admin.message };
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('M_スタッフ');
+    if (!sheet) return { success: false, message: 'M_スタッフシートが見つかりません' };
+
+    // 必須バリデーション
+    const name = String(params.name || '').trim();
+    const email = String(params.email || '').trim().toLowerCase();
+    if (!name) return { success: false, message: '氏名は必須です' };
+    if (!email) return { success: false, message: 'メールは必須です' };
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { success: false, message: 'メールアドレスの形式が不正です' };
+    }
+
+    // 既存データ取得 + 重複チェック + 最大ID取得
+    const data = sheet.getDataRange().getValues();
+    let maxId = 0;
+    for (let i = 1; i < data.length; i++) {
+      const id = Number(data[i][0]);
+      if (id > maxId) maxId = id;
+      const existingMail = String(data[i][2] || '').trim().toLowerCase();
+      if (existingMail && existingMail === email) {
+        const existingName = String(data[i][1] || '').trim();
+        return {
+          success: false,
+          message: `このメールアドレスは既に「${existingName}」(ID:${data[i][0]}) で登録されています`
+        };
+      }
+    }
+
+    const newId = maxId + 1;
+
+    // 新行データ (M_スタッフは18列構造)
+    // ID, 氏名, メール, 電話, 雇用, 資格, 入社日, 入社月, 区分, メイン, セカンド, サブ, シフト区分, 許可シフト, 保護, VIP, 退職, 備考
+    const newRow = [
+      newId,
+      name,
+      email,
+      String(params.phone || '').trim(),
+      String(params.employment || '').trim(),
+      '', // 資格 (空)
+      params.hireDate || '',
+      '', // 入社月 (自動計算 or 後で)
+      '', // 区分 (空)
+      '', // メイン
+      '', // セカンド
+      '', // サブ
+      '', // シフト区分
+      '', // 許可シフト
+      'FALSE', // 保護
+      'FALSE', // VIP
+      'FALSE', // 退職
+      String(params.note || '').trim(),
+    ];
+
+    sheet.appendRow(newRow);
+
+    // 操作ログ記録
+    try {
+      logAdminOperation(
+        adminStaffId,
+        admin.name,
+        'スタッフ追加',
+        'スタッフ',
+        String(newId),
+        '',
+        JSON.stringify(newRow),
+        '新規追加: ' + name
+      );
+    } catch (e) {
+      Logger.log('ログ記録エラー: ' + e.message);
+    }
+
+    return {
+      success: true,
+      message: `✅ ${name}さん (ID:${newId}) を追加しました`,
+      staff_id: newId
+    };
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
+}
