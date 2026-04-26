@@ -1,16 +1,10 @@
 // ============================================================
-// Step 5-3: 日勤カレンダー & セル編集 バックエンド
-// - getDayShiftCalendarData: 事業所×日付の配置データ取得
-// - updateDayShiftSlot: セル編集(追加/削除/更新)
+// Step 5-3 v3: 日勤カレンダー & セル編集 バックエンド
+// 18列構造対応版
 // ============================================================
 
 /**
- * 日勤カレンダーデータを取得
- * 返却: 事業所×日付マトリクス + 各セルの配置詳細
- *
- * @param {string} adminStaffId 実行者staff_id
- * @param {string} yearMonth "YYYY-MM"
- * @return {Object}
+ * 日勤カレンダーデータを取得 (施設階層対応 / 18列構造)
  */
 function getDayShiftCalendarData(adminStaffId, yearMonth) {
   try {
@@ -28,7 +22,7 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // ① 事業所リスト (M_事業所配置基準から取得)
+    // 事業所リスト
     const baseSheet = ss.getSheetByName('M_事業所配置基準');
     const baseData = baseSheet.getRange(2, 1, baseSheet.getLastRow() - 1, 8).getValues();
     const facilities = baseData.map(row => ({
@@ -36,16 +30,34 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       capacity: parseInt(row[1]) || 0
     })).filter(f => f.name);
 
-    // ② T_シフト確定 から日勤レコードを取得
+    // M_ユニット: 事業所 → 施設リスト
+    const unitSheet = ss.getSheetByName('M_ユニット');
+    const unitData = unitSheet.getRange(2, 1, unitSheet.getLastRow() - 1, 6).getValues();
+    const facilityBuildings = {};
+    facilities.forEach(f => { facilityBuildings[f.name] = new Set(); });
+
+    unitData.forEach(row => {
+      const jig = String(row[1] || '').trim();
+      const building = String(row[3] || '').trim();
+      if (jig && building && facilityBuildings[jig]) {
+        facilityBuildings[jig].add(building);
+      }
+    });
+
+    // T_シフト確定 日勤レコード (18列)
     const cfSheet = ss.getSheetByName('T_シフト確定');
     const cfLast = cfSheet.getLastRow();
-    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 19).getValues() : [];
+    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
 
     const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
 
-    // 事業所 → 日付 → 配置リストのマトリクス構築
     const matrix = {};
-    facilities.forEach(f => { matrix[f.name] = {}; });
+    facilities.forEach(f => {
+      matrix[f.name] = {};
+      Array.from(facilityBuildings[f.name]).forEach(b => {
+        matrix[f.name][b] = {};
+      });
+    });
 
     cfData.forEach((row, idx) => {
       const rowYm = row[1] instanceof Date
@@ -57,31 +69,34 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       if (!dayShiftSet.has(shift)) return;
 
       const jigyosho = String(row[3]).trim();
+      const facility = String(row[4]).trim();
       if (!matrix[jigyosho]) return;
+      if (!matrix[jigyosho][facility]) matrix[jigyosho][facility] = {};
 
       const dateKey = row[1] instanceof Date
         ? Utilities.formatDate(row[1], 'Asia/Tokyo', 'yyyy-MM-dd')
         : String(row[1]);
 
-      if (!matrix[jigyosho][dateKey]) matrix[jigyosho][dateKey] = [];
+      if (!matrix[jigyosho][facility][dateKey]) {
+        matrix[jigyosho][facility][dateKey] = [];
+      }
 
-      matrix[jigyosho][dateKey].push({
-        rowIndex: idx + 2,  // 1-indexed, ヘッダー行込み
+      matrix[jigyosho][facility][dateKey].push({
+        rowIndex: idx + 2,
         shift_id: String(row[0]),
         date: dateKey,
-        facility: String(row[4]).trim(),
+        facility: facility,
         unitName: String(row[5] || ''),
         staff_id: String(row[6]),
         staff_name: String(row[7]),
         shiftType: shift,
         startTime: _formatTimeCell(row[9]),
         endTime: _formatTimeCell(row[10]),
-        status: String(row[13] || '確定'),
-        dayHours: parseFloat(row[18]) || 0
+        status: String(row[12] || '仮'),    // ★ M列(12) ステータス (旧 row[13])
+        dayHours: parseFloat(row[17]) || 0   // ★ R列(17) 日勤換算 (旧 row[18])
       });
     });
 
-    // ③ 日付配列（1〜末日）
     const days = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -89,22 +104,28 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       days.push({ day: d, dateKey, dow });
     }
 
-    // ④ 事業所×日付のマトリクス返却用
     const calendar = facilities.map(f => {
-      const cells = days.map(d => {
-        const placements = matrix[f.name][d.dateKey] || [];
+      const buildings = Array.from(facilityBuildings[f.name]).sort();
+      const buildingRows = buildings.map(b => {
+        const cells = days.map(d => {
+          const placements = (matrix[f.name][b] && matrix[f.name][b][d.dateKey]) || [];
+          return {
+            day: d.day,
+            dateKey: d.dateKey,
+            dow: d.dow,
+            count: placements.length,
+            placements: placements
+          };
+        });
         return {
-          day: d.day,
-          dateKey: d.dateKey,
-          dow: d.dow,
-          count: placements.length,
-          placements: placements
+          facility: b,
+          cells: cells
         };
       });
       return {
-        facility: f.name,
+        jigyosho: f.name,
         capacity: f.capacity,
-        cells: cells
+        buildings: buildingRows
       };
     });
 
@@ -123,30 +144,16 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
   }
 }
 
-/**
- * 時刻セルのフォーマット (Date型 → "HH:mm")
- */
 function _formatTimeCell(val) {
   if (!val) return '';
   if (val instanceof Date) return Utilities.formatDate(val, 'Asia/Tokyo', 'HH:mm');
   const s = String(val);
-  // "Sat Dec 30 1899 06:00:00 ..." 形式
   const m = s.match(/\d{2}:\d{2}/);
   return m ? m[0] : s;
 }
 
 /**
- * 日勤セル編集
- * action: 'add' | 'update' | 'delete'
- *
- * @param {string} adminStaffId
- * @param {Object} params
- *   - action: string
- *   - rowIndex: number (update/delete 時)
- *   - date: string "YYYY-MM-DD" (add 時)
- *   - facility: string (add 時) - 事業所名
- *   - staff_id: string (add/update 時)
- *   - shiftType: string (add/update 時)
+ * 日勤セル編集 (18列構造)
  */
 function updateDayShiftSlot(adminStaffId, params) {
   try {
@@ -162,7 +169,7 @@ function updateDayShiftSlot(adminStaffId, params) {
       if (!params.rowIndex || params.rowIndex < 2) {
         return { success: false, message: 'rowIndex不正' };
       }
-      const rowData = sheet.getRange(params.rowIndex, 1, 1, 19).getValues()[0];
+      const rowData = sheet.getRange(params.rowIndex, 1, 1, 18).getValues()[0];
       const deletedInfo = `${rowData[1]} ${rowData[7]} ${rowData[8]} @ ${rowData[4]}`;
       sheet.deleteRow(params.rowIndex);
       _recordSlotEditLog(adminStaffId, auth.name, 'delete', null, deletedInfo);
@@ -177,30 +184,28 @@ function updateDayShiftSlot(adminStaffId, params) {
         return { success: false, message: 'staff_id, shiftType必須' };
       }
 
-      // スタッフ情報取得
       const staffInfo = _getStaffBasicInfo(params.staff_id);
       if (!staffInfo) return { success: false, message: 'staff_idが見つかりません' };
 
-      // シフトパターン取得
       const pat = SHIFT_PATTERNS[params.shiftType];
       if (!pat) return { success: false, message: '不正なシフト種別' };
 
       const hoursCalc = calcShiftHours(pat.start, pat.end, pat.breakMin);
 
-      // 既存行を書き換え
-      const beforeRow = sheet.getRange(params.rowIndex, 1, 1, 19).getValues()[0];
+      const beforeRow = sheet.getRange(params.rowIndex, 1, 1, 18).getValues()[0];
       const beforeInfo = `${beforeRow[7]} ${beforeRow[8]}`;
 
-      sheet.getRange(params.rowIndex, 7).setValue(params.staff_id);
-      sheet.getRange(params.rowIndex, 8).setValue(staffInfo.name);
-      sheet.getRange(params.rowIndex, 9).setValue(params.shiftType);
-      sheet.getRange(params.rowIndex, 10).setValue(pat.start);
-      sheet.getRange(params.rowIndex, 11).setValue(pat.end);
-      sheet.getRange(params.rowIndex, 15).setValue(new Date());  // 更新日時
-      sheet.getRange(params.rowIndex, 16).setValue(pat.start);
-      sheet.getRange(params.rowIndex, 17).setValue(pat.end);
-      sheet.getRange(params.rowIndex, 18).setValue(hoursCalc.nightH);
-      sheet.getRange(params.rowIndex, 19).setValue(hoursCalc.dayH);
+      // 列番号を全て1ずつ前にズラす (18列構造)
+      sheet.getRange(params.rowIndex, 7).setValue(params.staff_id);   // G staff_id
+      sheet.getRange(params.rowIndex, 8).setValue(staffInfo.name);    // H 氏名
+      sheet.getRange(params.rowIndex, 9).setValue(params.shiftType);  // I シフト種別
+      sheet.getRange(params.rowIndex, 10).setValue(pat.start);        // J 開始時刻
+      sheet.getRange(params.rowIndex, 11).setValue(pat.end);          // K 終了時刻
+      sheet.getRange(params.rowIndex, 14).setValue(new Date());       // N 更新日時 (旧15)
+      sheet.getRange(params.rowIndex, 15).setValue(pat.start);        // O 実開始 (旧16)
+      sheet.getRange(params.rowIndex, 16).setValue(pat.end);          // P 実終了 (旧17)
+      sheet.getRange(params.rowIndex, 17).setValue(hoursCalc.nightH); // Q 夜勤換算 (旧18)
+      sheet.getRange(params.rowIndex, 18).setValue(hoursCalc.dayH);   // R 日勤換算 (旧19)
 
       _recordSlotEditLog(adminStaffId, auth.name, 'update',
         `${beforeInfo}`, `${staffInfo.name} ${params.shiftType}`);
@@ -219,40 +224,47 @@ function updateDayShiftSlot(adminStaffId, params) {
       if (!pat) return { success: false, message: '不正なシフト種別' };
 
       const hoursCalc = calcShiftHours(pat.start, pat.end, pat.breakMin);
-
-      // 施設名: メイン施設を取得(M_ユニットから逆引き)
-      const facility = _findStaffDefaultFacility(params.staff_id) || params.facility;
-
-      // shift_id 採番 (末尾の番号 + 1)
       const ym = params.date.substring(0, 7);
       const newShiftId = _generateNewDayShiftId(sheet, ym);
 
+      // 事業所名を解決
+      const ss2 = SpreadsheetApp.getActiveSpreadsheet();
+      const unitSheet = ss2.getSheetByName('M_ユニット');
+      const unitData = unitSheet.getRange(2, 1, unitSheet.getLastRow() - 1, 6).getValues();
+      let jigyosho = params.facility;
+      for (const row of unitData) {
+        const building = String(row[3] || '').trim();
+        if (building === params.facility) {
+          jigyosho = String(row[1] || '').trim();
+          break;
+        }
+      }
+
+      // 18列構造の新規行
       const newRow = [
-        newShiftId,
-        params.date,
-        '',  // unit_id
-        params.facility,
-        facility,  // 施設名
-        '',  // unitName
-        params.staff_id,
-        staffInfo.name,
-        params.shiftType,
-        pat.start,
-        pat.end,
-        1,
-        '',  // アラート
-        '確定',
-        new Date(),
-        pat.start,
-        pat.end,
-        hoursCalc.nightH,
-        hoursCalc.dayH
+        newShiftId,         // A
+        params.date,        // B
+        '',                 // C
+        jigyosho,           // D
+        params.facility,    // E
+        '',                 // F
+        params.staff_id,    // G
+        staffInfo.name,     // H
+        params.shiftType,   // I
+        pat.start,          // J
+        pat.end,            // K
+        1,                  // L
+        '仮',               // M ステータス ★ '確定'→'仮'
+        new Date(),         // N 更新日時
+        pat.start,          // O 実開始
+        pat.end,            // P 実終了
+        hoursCalc.nightH,   // Q 夜勤換算
+        hoursCalc.dayH      // R 日勤換算
       ];
 
       const newRowIdx = sheet.getLastRow() + 1;
-      // 日付列は文字列書式に固定
       sheet.getRange(newRowIdx, 2).setNumberFormat('@');
-      sheet.getRange(newRowIdx, 1, 1, 19).setValues([newRow]);
+      sheet.getRange(newRowIdx, 1, 1, 18).setValues([newRow]);
 
       _recordSlotEditLog(adminStaffId, auth.name, 'add', null,
         `${params.date} ${staffInfo.name} ${params.shiftType} @ ${params.facility}`);
@@ -268,7 +280,7 @@ function updateDayShiftSlot(adminStaffId, params) {
 }
 
 /**
- * 候補スタッフ一覧取得（セル編集時の選択肢）
+ * 候補スタッフ一覧取得 (18列構造)
  */
 function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
   try {
@@ -277,16 +289,14 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 全スタッフ取得
     const staffSheet = ss.getSheetByName('M_スタッフ');
     const staffData = staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues();
 
-    // 同日既配置の確認用にT_シフト確定から当日データ取得
     const cfSheet = ss.getSheetByName('T_シフト確定');
     const cfLast = cfSheet.getLastRow();
-    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 19).getValues() : [];
+    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
 
-    const sameDayPlacements = {};  // staff_id → [配置リスト]
+    const sameDayPlacements = {};
     cfData.forEach(row => {
       const rowDate = row[1] instanceof Date
         ? Utilities.formatDate(row[1], 'Asia/Tokyo', 'yyyy-MM-dd')
@@ -306,7 +316,6 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
         const retired = String(row[16] || '').toUpperCase() === 'TRUE';
         if (retired) return false;
         const shiftKubun = String(row[12] || '');
-        // 日勤シフトに対応してる人だけ
         if (shiftKubun !== '日勤のみ' && shiftKubun !== '両方') return false;
         return true;
       })
@@ -330,7 +339,6 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
           isFacilityMatch: mainFac === facility
         };
       })
-      // メイン施設優先でソート
       .sort((a, b) => {
         if (a.isFacilityMatch && !b.isFacilityMatch) return -1;
         if (!a.isFacilityMatch && b.isFacilityMatch) return 1;
@@ -417,15 +425,11 @@ function testGetDayShiftCalendarData() {
   Logger.log(`事業所数: ${result.calendar.length}`);
 
   result.calendar.forEach(row => {
-    const totalPlacements = row.cells.reduce((sum, c) => sum + c.count, 0);
-    Logger.log(`  ${row.facility}: ${totalPlacements}件配置`);
-    // 1日目の詳細
-    const firstDay = row.cells[0];
-    if (firstDay.count > 0) {
-      firstDay.placements.forEach(p => {
-        Logger.log(`    ${firstDay.dateKey}: ${p.staff_name}(${p.shiftType})`);
-      });
-    }
+    Logger.log(`\n【${row.jigyosho}】 定員${row.capacity} / ${row.buildings.length}施設`);
+    row.buildings.forEach(b => {
+      const total = b.cells.reduce((sum, c) => sum + c.count, 0);
+      Logger.log(`  📍 ${b.facility}: ${total}件配置`);
+    });
   });
 }
 

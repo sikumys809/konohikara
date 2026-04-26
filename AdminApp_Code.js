@@ -1,5 +1,6 @@
 // ============================================
-// 管理画面サーバー処理 v1 (2026-04-19)
+// 管理画面サーバー処理 v2 (2026-04-26)
+// 変更: 夜勤エンジンにロックガード追加
 // ============================================
 
 // ============================================
@@ -255,7 +256,7 @@ function getStaffDetail(adminStaffId, targetStaffId) {
         isRetired: String(row[16]).toUpperCase() === 'TRUE',
         note: row[17] || '',
         role: row[18] || '',
-        mainRoles: row[19] || '',  // T列: 主職種 (カンマ区切り)
+        mainRoles: row[19] || '',
       },
       rowIndex: i + 1
     };
@@ -274,7 +275,6 @@ function updateStaff(adminStaffId, targetStaffId, updates) {
   const sheet = ss.getSheetByName('M_スタッフ');
   const data = sheet.getDataRange().getValues();
   
-  // メール重複チェック
   if (updates.email) {
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]) !== String(targetStaffId) 
@@ -372,7 +372,7 @@ function updateStaff(adminStaffId, targetStaffId, updates) {
   sheet.getRange(sheetRow, 17).setValue(updates.isRetired ? 'TRUE' : 'FALSE');
   if (updates.note !== undefined) sheet.getRange(sheetRow, 18).setValue(updates.note);
   if (updates.role !== undefined) sheet.getRange(sheetRow, 19).setValue(updates.role);
-  if (updates.mainRoles !== undefined) sheet.getRange(sheetRow, 20).setValue(updates.mainRoles); // T列
+  if (updates.mainRoles !== undefined) sheet.getRange(sheetRow, 20).setValue(updates.mainRoles);
   
   SpreadsheetApp.flush();
   
@@ -442,7 +442,6 @@ function getAllFacilities(adminStaffId) {
     });
   }
   
-  // 利用中スタッフ数カウント
   const staffSheet = ss.getSheetByName('M_スタッフ');
   const staffData = staffSheet.getDataRange().getValues();
   const usageMap = {};
@@ -586,7 +585,6 @@ function deleteFacility(adminStaffId, facilityName) {
   
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   
-  // 使用中チェック
   const staffSheet = ss.getSheetByName('M_スタッフ');
   const staffData = staffSheet.getDataRange().getValues();
   let usageCount = 0;
@@ -821,7 +819,6 @@ function getOperationLogs(adminStaffId, filters) {
         }).join(' ').toLowerCase();
         if (!blob.includes(kw)) continue;
       } catch (e) {
-        // 安全にスキップ
       }
     }
     
@@ -908,6 +905,11 @@ function executeNightShiftEngine(adminStaffId, targetYM) {
   const admin = checkAdminAuth(adminStaffId, 'シフト作成');
   if (!admin.authorized) {
     return { success: false, message: admin.message };
+  }
+  
+  // ★ 追加: ロック中は実行不可（保険として最終承認者でも拒否）
+  if (isMonthLocked(targetYM)) {
+    return { success: false, message: targetYM + 'はロック中です。編集するには最終承認者にロック解除を依頼してください。' };
   }
   
   const startTime = new Date().getTime();
@@ -1158,7 +1160,6 @@ function updateShiftSlot(adminStaffId, targetYM, dateKey, unitId, updates) {
     return { success: false, message: admin.message };
   }
   
-  // 月次ロックチェック
   if (isMonthLocked(targetYM)) {
     return { success: false, message: targetYM + 'はロック中です。編集するには最終承認者にロック解除を依頼してください。' };
   }
@@ -1306,6 +1307,10 @@ function getShiftsForApproval(adminStaffId, targetYM) {
   const [year, month] = targetYM.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   
+  const NIGHT_SHIFT_SET = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const DAY_SHIFT_SET = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
+  
+  // ===== M_ユニット (夜勤用) =====
   const unitSheet = ss.getSheetByName('M_ユニット');
   const unitData = unitSheet.getDataRange().getValues();
   const units = [];
@@ -1321,21 +1326,49 @@ function getShiftsForApproval(adminStaffId, targetYM) {
     });
   }
   
+  // ===== M_事業所配置基準 (日勤用 / 事業所一覧) =====
+  let dayFacilities = [];
+  let facilityBuildings = {};
+  const baseSheet = ss.getSheetByName('M_事業所配置基準');
+  if (baseSheet) {
+    const baseData = baseSheet.getRange(2, 1, baseSheet.getLastRow() - 1, 8).getValues();
+    dayFacilities = baseData.map(row => ({
+      name: String(row[0]).trim(),
+      capacity: parseInt(row[1]) || 0
+    })).filter(f => f.name);
+    
+    dayFacilities.forEach(f => { facilityBuildings[f.name] = new Set(); });
+    unitData.forEach((row, i) => {
+      if (i === 0) return;
+      const jig = String(row[1] || '').trim();
+      const building = String(row[3] || '').trim();
+      if (jig && building && facilityBuildings[jig]) {
+        facilityBuildings[jig].add(building);
+      }
+    });
+  }
+  
+  // ===== T_シフト確定 読み込み =====
   const shiftSheet = ss.getSheetByName('T_シフト確定');
   const shiftData = shiftSheet.getDataRange().getValues();
-  const shifts = {};
+  const nightShifts = {};
+  const dayShifts = {};
   let draftCount = 0, confirmedCount = 0;
   let lastUpdated = null;
   
   for (let i = 1; i < shiftData.length; i++) {
     const row = shiftData[i];
-    const date = row[1];
-    if (!(date instanceof Date)) continue;
+    let date = row[1];
+    if (typeof date === 'string') {
+      date = new Date(date);
+    }
+    if (!(date instanceof Date) || isNaN(date.getTime())) continue;
     if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
     
     const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
     const status = row[12] || '仮';
     const updated = row[13];
+    const shiftType = String(row[8] || '').trim();
     
     if (status === '確定') confirmedCount++;
     else draftCount++;
@@ -1344,19 +1377,39 @@ function getShiftsForApproval(adminStaffId, targetYM) {
       if (!lastUpdated || updated > lastUpdated) lastUpdated = updated;
     }
     
-    const key = dateKey + '_' + row[2];
-    shifts[key] = {
-      shift_id: row[0],
-      dateKey: dateKey,
-      unit_id: row[2],
-      staff_id: row[6] ? String(row[6]).trim() : '',
-      staff_name: row[7] || '',
-      shift_type: row[8] || '',
-      status: status,
-      updated: updated instanceof Date ? Utilities.formatDate(updated, 'Asia/Tokyo', 'MM/dd HH:mm') : '',
-    };
+    const updatedStr = updated instanceof Date 
+      ? Utilities.formatDate(updated, 'Asia/Tokyo', 'MM/dd HH:mm') : '';
+    
+    if (NIGHT_SHIFT_SET.has(shiftType)) {
+      const key = dateKey + '_' + row[2];
+      nightShifts[key] = {
+        shift_id: row[0],
+        dateKey: dateKey,
+        unit_id: row[2],
+        staff_id: row[6] ? String(row[6]).trim() : '',
+        staff_name: row[7] || '',
+        shift_type: shiftType,
+        status: status,
+        updated: updatedStr,
+      };
+    } else if (DAY_SHIFT_SET.has(shiftType)) {
+      const jigyosho = String(row[3] || '').trim();
+      const facility = String(row[4] || '').trim();
+      const key = jigyosho + '||' + facility + '||' + dateKey;
+      if (!dayShifts[key]) dayShifts[key] = [];
+      dayShifts[key].push({
+        shift_id: row[0],
+        dateKey: dateKey,
+        staff_id: row[6] ? String(row[6]).trim() : '',
+        staff_name: row[7] || '',
+        shift_type: shiftType,
+        status: status,
+        updated: updatedStr,
+      });
+    }
   }
   
+  // ===== 夜勤カレンダー構築 =====
   const calendar = [];
   for (const unit of units) {
     const row = { unit: unit, days: [] };
@@ -1368,14 +1421,48 @@ function getShiftsForApproval(adminStaffId, targetYM) {
         day: day,
         dateKey: dateKey,
         dow: d.getDay(),
-        shift: shifts[key] || null,
+        shift: nightShifts[key] || null,
       });
     }
     calendar.push(row);
   }
   
+  // ===== 日勤カレンダー構築 =====
+  const days = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateKey = year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    const d = new Date(dateKey + 'T00:00:00');
+    days.push({ day: day, dateKey: dateKey, dow: d.getDay() });
+  }
+  
+  const dayCalendar = dayFacilities.map(f => {
+    const buildings = Array.from(facilityBuildings[f.name] || []).sort();
+    const buildingRows = buildings.map(b => {
+      const cells = days.map(d => {
+        const key = f.name + '||' + b + '||' + d.dateKey;
+        const placements = dayShifts[key] || [];
+        return {
+          day: d.day,
+          dateKey: d.dateKey,
+          dow: d.dow,
+          count: placements.length,
+          placements: placements,
+        };
+      });
+      return { facility: b, cells: cells };
+    });
+    return {
+      jigyosho: f.name,
+      capacity: f.capacity,
+      buildings: buildingRows,
+    };
+  });
+  
   const totalSlots = units.length * daysInMonth;
-  const assignedCount = Object.keys(shifts).length;
+  const assignedCount = Object.keys(nightShifts).length;
+  
+  let dayCount = 0;
+  Object.keys(dayShifts).forEach(k => { dayCount += dayShifts[k].length; });
   
   return {
     success: true,
@@ -1383,14 +1470,20 @@ function getShiftsForApproval(adminStaffId, targetYM) {
     year: year,
     month: month,
     daysInMonth: daysInMonth,
+    days: days,
     calendar: calendar,
+    dayCalendar: dayCalendar,
     summary: {
-      totalSlots: totalSlots,
-      assigned: assignedCount,
+      totalSlots: totalSlots + dayFacilities.length * daysInMonth,
+      assigned: assignedCount + dayCount,
+      nightCount: assignedCount,
+      dayCount: dayCount,
       draft: draftCount,
       confirmed: confirmedCount,
-      unassigned: totalSlots - assignedCount,
-      confirmRate: assignedCount > 0 ? Math.round(confirmedCount / assignedCount * 100) : 0,
+      unassigned: (totalSlots + dayFacilities.length * daysInMonth) - (assignedCount + dayCount),
+      confirmRate: (draftCount + confirmedCount) > 0 
+        ? Math.round(confirmedCount / (draftCount + confirmedCount) * 100) 
+        : 0,
       lastUpdated: lastUpdated instanceof Date ? Utilities.formatDate(lastUpdated, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') : '',
     },
     canApprove: admin.roles.indexOf('最終承認者') >= 0,
@@ -1414,8 +1507,11 @@ function approveShifts(adminStaffId, targetYM) {
   const updates = [];
   
   for (let i = 1; i < data.length; i++) {
-    const date = data[i][1];
-    if (!(date instanceof Date)) continue;
+    let date = data[i][1];
+    if (typeof date === 'string') {
+      date = new Date(date);
+    }
+    if (!(date instanceof Date) || isNaN(date.getTime())) continue;
     if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
     
     const currentStatus = data[i][12];
@@ -1436,7 +1532,6 @@ function approveShifts(adminStaffId, targetYM) {
   
   SpreadsheetApp.flush();
   
-  // 自動ロック
   _setMonthLock(targetYM, true, admin, '確定化に伴う自動ロック');
   
   writeAdminLog(
@@ -1470,8 +1565,11 @@ function revertApproval(adminStaffId, targetYM) {
   const updates = [];
   
   for (let i = 1; i < data.length; i++) {
-    const date = data[i][1];
-    if (!(date instanceof Date)) continue;
+    let date = data[i][1];
+    if (typeof date === 'string') {
+      date = new Date(date);
+    }
+    if (!(date instanceof Date) || isNaN(date.getTime())) continue;
     if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
     
     const currentStatus = data[i][12];
@@ -1492,7 +1590,6 @@ function revertApproval(adminStaffId, targetYM) {
   
   SpreadsheetApp.flush();
   
-  // 自動ロック解除
   _setMonthLock(targetYM, false, admin, '確定取消に伴う自動ロック解除');
   
   writeAdminLog(
@@ -1524,7 +1621,6 @@ function isMonthLocked(targetYM) {
   let latestLocked = false;
   let found = false;
   
-  // 最後に見つかった行のロック状態を採用 (型安全比較)
   for (let i = 1; i < data.length; i++) {
     if (_ymMatches(data[i][0], targetYM)) {
       latestLocked = String(data[i][1]).toUpperCase() === 'TRUE';
@@ -1535,7 +1631,6 @@ function isMonthLocked(targetYM) {
 }
 
 
-// 年月比較ヘルパー (Date型・文字列型の両方に対応)
 function _ymMatches(cellVal, targetYM) {
   if (cellVal instanceof Date) {
     const ym = Utilities.formatDate(cellVal, 'Asia/Tokyo', 'yyyy-MM');
@@ -1549,32 +1644,26 @@ function _setMonthLock(targetYM, locked, admin, memo) {
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   let sheet = ss.getSheetByName('T_月次ロック');
   
-  // シートがなければ作成
   if (!sheet) {
     sheet = ss.insertSheet('T_月次ロック');
     sheet.getRange(1, 1, 1, 7).setValues([['対象年月', 'ロック状態', '取得者ID', '氏名', '取得日時', '期限', 'メモ']]);
     sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#4a148c').setFontColor('#ffffff');
   }
   
-  // A列(対象年月)を強制的に文字列書式に (Date変換防止)
   sheet.getRange('A2:A1000').setNumberFormat('@');
-  // B列(ロック状態)も文字列に
   sheet.getRange('B2:B1000').setNumberFormat('@');
   
   const data = sheet.getDataRange().getValues();
   const now = new Date();
   let targetRow = -1;
   
-  // 既存行を探す (型安全比較)
   for (let i = 1; i < data.length; i++) {
     if (_ymMatches(data[i][0], targetYM)) {
       targetRow = i + 1;
-      // break せず、最後の行を採用 (重複行がある場合の対策)
     }
   }
   
   if (targetRow > 0) {
-    // 既存行を更新 (A列も文字列で再書込して統一)
     sheet.getRange(targetRow, 1).setValue(String(targetYM));
     sheet.getRange(targetRow, 2).setValue(locked ? 'TRUE' : 'FALSE');
     if (locked) {
@@ -1588,7 +1677,6 @@ function _setMonthLock(targetYM, locked, admin, memo) {
     }
     sheet.getRange(targetRow, 7).setValue(memo || '');
   } else {
-    // 新規行を追加
     sheet.appendRow([
       String(targetYM),
       locked ? 'TRUE' : 'FALSE',
@@ -1599,7 +1687,6 @@ function _setMonthLock(targetYM, locked, admin, memo) {
       memo || '',
     ]);
     const newRowIdx = sheet.getLastRow();
-    // A列・B列を文字列固定
     sheet.getRange(newRowIdx, 1).setNumberFormat('@');
     sheet.getRange(newRowIdx, 1).setValue(String(targetYM));
     sheet.getRange(newRowIdx, 2).setNumberFormat('@');
@@ -1627,7 +1714,6 @@ function getLockStatus(adminStaffId, targetYM) {
   }
   
   const data = sheet.getDataRange().getValues();
-  // 最後に一致する行を返す (重複行がある場合は最新を採用)
   let result = null;
   for (let i = 1; i < data.length; i++) {
     if (_ymMatches(data[i][0], targetYM)) {
@@ -1687,7 +1773,6 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
   const [year, month] = targetYM.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   
-  // 指定施設のユニット取得
   const unitSheet = ss.getSheetByName('M_ユニット');
   const unitData = unitSheet.getDataRange().getValues();
   const units = [];
@@ -1708,7 +1793,6 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
     return { success: false, message: '施設「' + facility + '」のユニットが見つかりません' };
   }
   
-  // シフト確定データ
   const shiftSheet = ss.getSheetByName('T_シフト確定');
   const shiftData = shiftSheet.getDataRange().getValues();
   const shifts = {};
@@ -1722,7 +1806,6 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
     const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
     const key = dateKey + '_' + row[2];
     
-    // Date型を時刻文字列に正規化 (JSON化失敗対策)
     const startVal = row[9];
     const endVal = row[10];
     const startStr = (startVal instanceof Date) 
@@ -1741,7 +1824,6 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
     };
   }
   
-  // カレンダー型データ構築
   const rows = [];
   const dowChars = ['日','月','火','水','木','金','土'];
   for (let day = 1; day <= daysInMonth; day++) {
@@ -1801,7 +1883,6 @@ function getFacilitiesWithShifts(adminStaffId, targetYM) {
 
 // ============================================
 // T_月次ロック 重複行クリーンアップ (手動実行用)
-// 同じ年月の複数行を1行にまとめる (最新の状態を保持)
 // ============================================
 
 function cleanupMonthLockSheet() {
@@ -1818,7 +1899,6 @@ function cleanupMonthLockSheet() {
     return;
   }
   
-  // 年月ごとの最新行を保持
   const latestByYM = {};
   for (let i = 1; i < data.length; i++) {
     let ymKey;
@@ -1830,21 +1910,17 @@ function cleanupMonthLockSheet() {
     }
     if (!ymKey) continue;
     
-    // 既存エントリより後の行で上書き (最新を採用)
     latestByYM[ymKey] = data[i];
   }
   
-  // データ部分を全部クリア
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, 7).clearContent();
   }
   
-  // A列・B列を文字列書式に
   sheet.getRange('A2:A1000').setNumberFormat('@');
   sheet.getRange('B2:B1000').setNumberFormat('@');
   
-  // 最新行のみ書き戻す
   const ymKeys = Object.keys(latestByYM).sort();
   if (ymKeys.length > 0) {
     const rows = ymKeys.map(k => {

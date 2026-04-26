@@ -1,7 +1,6 @@
 // ============================================================
-// Step 4-3 v2: 日勤充足率レポート
-// 修正内容: V_日勤充足 シートの充足率セルを文字列フォーマット(@)に固定
-//           → "67.0%" が数値 0.67 に自動変換されるバグを修正
+// Step 4-3 v3: 日勤充足率レポート (18列構造対応)
+// 変更点: row[17]→[16] (nightH), row[18]→[17] (dayH), getRange 19→18
 // ============================================================
 
 const FULFILLMENT_SHEET_NAME = 'V_日勤充足';
@@ -138,9 +137,10 @@ function _loadFulfillmentContext(ym) {
     };
   });
 
+  // T_シフト確定 (18列構造)
   const cfSheet = ss.getSheetByName('T_シフト確定');
   const cfLast = cfSheet.getLastRow();
-  const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 19).getValues() : [];
+  const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
 
   const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
   const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);
@@ -162,8 +162,8 @@ function _loadFulfillmentContext(ym) {
       jigyosho: String(row[3]).trim(),
       staff_id: String(row[6]).trim(),
       shiftType: shift,
-      dayH: parseFloat(row[18]) || 0,
-      nightH: parseFloat(row[17]) || 0
+      dayH: parseFloat(row[17]) || 0,    // ★ R列(17) 日勤換算 (旧 row[18])
+      nightH: parseFloat(row[16]) || 0   // ★ Q列(16) 夜勤換算 (旧 row[17])
     };
 
     if (dayShiftSet.has(shift)) records.push(rec);
@@ -224,10 +224,7 @@ function _writeFulfillmentSheet(ym, rows) {
   sheet.getRange(4, 2, 2, 1).merge();
 
   if (rows.length > 0) {
-    // ★★ 修正ポイント ★★
-    // 充足率セル(E,H,K,N列)を文字列フォーマット(@)に固定してから書き込む
-    // これをしないとGoogle Sheetsが "67.0%" を数値 0.67 に自動変換してしまう
-    const rateColumns = [5, 8, 11, 14];  // E, H, K, N列
+    const rateColumns = [5, 8, 11, 14];
     rateColumns.forEach(col => {
       sheet.getRange(6, col, rows.length, 1).setNumberFormat('@');
     });

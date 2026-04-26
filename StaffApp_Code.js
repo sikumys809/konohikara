@@ -89,19 +89,35 @@ function calcMonthsSinceHire(hireDate) {
   return months >= 0 ? months : null;
 }
 
-function getSubmitPeriodInfo() {
+function getSubmitPeriodInfo(staffId) {
   const now = new Date();
   const day = now.getDate();
   const year = now.getFullYear();
   const month = now.getMonth();
-
+  
   const targetDate = new Date(year, month + 1, 1);
   const targetYear = targetDate.getFullYear();
   const targetMonth = targetDate.getMonth() + 1;
   const targetYM = targetYear + '-' + String(targetMonth).padStart(2, '0');
-
+  
+  // ★ オーバーライド判定（個人 → 全体 → 通常ロジック）
+  const override = staffId ? checkSubmitOverride(staffId, targetYM, now) : null;
+  if (override) {
+    return {
+      isOpen: true,
+      targetYM: targetYM,
+      targetYear: targetYear,
+      targetMonth: targetMonth,
+      message: targetYear + '年' + targetMonth + '月分の希望を提出できます (特例開放: ' + override.reason + ')',
+      startDay: SUBMIT_START_DAY,
+      endDay: SUBMIT_END_DAY,
+      isOverride: true,
+      overrideType: override.type,
+    };
+  }
+  
   const isOpen = day >= SUBMIT_START_DAY && day <= SUBMIT_END_DAY;
-
+  
   let openMsg = '';
   if (isOpen) {
     openMsg = targetYear + '年' + targetMonth + '月分の希望を提出できます(〜' + SUBMIT_END_DAY + '日まで)';
@@ -110,7 +126,7 @@ function getSubmitPeriodInfo() {
   } else {
     openMsg = '提出期間外です。次回: 来月' + SUBMIT_START_DAY + '日から';
   }
-
+  
   return {
     isOpen: isOpen,
     targetYM: targetYM,
@@ -119,7 +135,69 @@ function getSubmitPeriodInfo() {
     message: openMsg,
     startDay: SUBMIT_START_DAY,
     endDay: SUBMIT_END_DAY,
+    isOverride: false,
   };
+}
+
+// ============================================
+// 提出期間オーバーライド判定
+// ============================================
+function checkSubmitOverride(staffId, targetYM, today) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('T_提出期間オーバーライド');
+    if (!sheet) return null;
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return null;
+    
+    const todayStr = Utilities.formatDate(today, 'Asia/Tokyo', 'yyyy-MM-dd');
+    
+    let personalMatch = null;
+    let globalMatch = null;
+    
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const rowStaffId = row[1];
+      const rowTargetYM = String(row[3] || '').trim();
+      const startDate = row[4];
+      const endDate = row[5];
+      const unrestricted = row[6] === true || row[6] === 'TRUE' || row[6] === 'true';
+      const memo = row[10] || '';
+      
+      // 対象月チェック (空なら全月対象)
+      if (rowTargetYM && rowTargetYM !== targetYM) continue;
+      
+      // 期間チェック (unrestricted=true なら期間制限なし)
+      if (!unrestricted) {
+        if (startDate) {
+          const startStr = startDate instanceof Date 
+            ? Utilities.formatDate(startDate, 'Asia/Tokyo', 'yyyy-MM-dd')
+            : String(startDate);
+          if (todayStr < startStr) continue;
+        }
+        if (endDate) {
+          const endStr = endDate instanceof Date 
+            ? Utilities.formatDate(endDate, 'Asia/Tokyo', 'yyyy-MM-dd')
+            : String(endDate);
+          if (todayStr > endStr) continue;
+        }
+      }
+      
+      // マッチ
+      const reason = memo || (unrestricted ? '期間制限なし' : '特例開放');
+      if (Number(rowStaffId) === Number(staffId)) {
+        personalMatch = { type: 'personal', reason: reason };
+      } else if (Number(rowStaffId) === 0) {
+        globalMatch = { type: 'global', reason: reason };
+      }
+    }
+    
+    return personalMatch || globalMatch;
+  } catch (e) {
+    Logger.log('checkSubmitOverride エラー: ' + e.message);
+    return null;
+  }
 }
 
 // ============================================
@@ -346,7 +424,7 @@ function submitRequests(staffId, name, yearMonth, facilities, requests, freqType
     return { success: false, message: yearMonth + 'はシフト確定済みです。修正が必要な場合は管理者にご連絡ください。' };
   }
   
-  const period = getSubmitPeriodInfo();
+  const period = getSubmitPeriodInfo(staffId);
   if (!period.isOpen) {
     return { success: false, message: '現在は提出期間外です(毎月' + SUBMIT_START_DAY + '日〜' + SUBMIT_END_DAY + '日)' };
   }
