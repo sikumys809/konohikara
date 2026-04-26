@@ -419,7 +419,7 @@ function loadPeriodInfo() {
     window.targetYear = info.targetYear;
     window.targetMonth = info.targetMonth;
     renderCalendar();
-  }).getSubmitPeriodInfo();
+  }).getSubmitPeriodInfo(currentUser.staff_id);
 }
 
 function loadMyRequests() {

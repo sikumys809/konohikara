@@ -159,7 +159,12 @@ function checkSubmitOverride(staffId, targetYM, today) {
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const rowStaffId = row[1];
-      const rowTargetYM = String(row[3] || '').trim();
+      let rowTargetYM = '';
+      if (row[3] instanceof Date) {
+        rowTargetYM = Utilities.formatDate(row[3], 'Asia/Tokyo', 'yyyy-MM');
+      } else if (row[3]) {
+        rowTargetYM = String(row[3]).trim();
+      }
       const startDate = row[4];
       const endDate = row[5];
       const unrestricted = row[6] === true || row[6] === 'TRUE' || row[6] === 'true';

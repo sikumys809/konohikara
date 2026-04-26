@@ -194,7 +194,10 @@ function addSubmitOverride(adminStaffId, params) {
   ];
   
   sheet.appendRow(row);
-  
+  // target_ym 列を強制的に文字列フォーマットに固定
+  const lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow, 4).setNumberFormat('@');
+
   // 操作ログ
   try {
     logAdminOperation(adminStaffId, admin.name, '提出期間オーバーライド追加', 'オーバーライド', overrideId, '', JSON.stringify(row), '対象: ' + staffName);
