@@ -218,8 +218,22 @@
 
   <div id="tab-shifts" class="hidden">
     <div class="card">
-      <h2>確定シフト</h2>
-      <div id="shiftList" class="small">読み込み中...</div>
+      <div class="my-shifts-container">
+        <h2 style="margin-bottom: 12px;">確定シフト</h2>
+
+        <div class="month-toggle" style="display: flex; gap: 8px; margin-bottom: 12px; background: #f3f4f6; padding: 4px; border-radius: 8px;">
+          <button id="myShiftsTabThis" class="month-toggle-btn active" onclick="switchMyShiftsMonth('this')" style="flex: 1; padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; background: white; color: #6366f1;">
+            今月
+          </button>
+          <button id="myShiftsTabNext" class="month-toggle-btn" onclick="switchMyShiftsMonth('next')" style="flex: 1; padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; background: transparent; color: #6b7280;">
+            来月
+          </button>
+        </div>
+
+        <div id="myShiftsLabel" style="font-size: 14px; color: #4b5563; margin-bottom: 8px; padding: 0 4px;"></div>
+
+        <div id="myShiftsList"></div>
+      </div>
     </div>
   </div>
 
@@ -725,20 +739,107 @@ function switchTab(event, name) {
   ['submit', 'shifts', 'attendance', 'profile'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
   });
-  if (name === 'shifts') loadShifts();
+  if (name === 'shifts') loadMyShifts();
   else if (name === 'attendance') loadAttendance();
   else if (name === 'profile') loadProfile();
 }
 
-function loadShifts() {
+function loadMyShifts() {
+  const mode = window.myShiftsMonthMode || 'this';
+  const today = new Date();
+  let targetDate;
+  if (mode === 'next') {
+    targetDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  } else {
+    targetDate = new Date(today.getFullYear(), today.getMonth(), 1);
+  }
+  const yearMonth = targetDate.getFullYear() + '-' + String(targetDate.getMonth() + 1).padStart(2, '0');
+  const monthLabel = targetDate.getFullYear() + '年' + (targetDate.getMonth() + 1) + '月';
+
+  document.getElementById('myShiftsLabel').textContent = monthLabel + 'のシフト';
+  document.getElementById('myShiftsList').innerHTML = '<div style="color:#9ca3af;text-align:center;padding:20px;">読込中...</div>';
+
   google.script.run.withSuccessHandler(shifts => {
-    const box = document.getElementById('shiftList');
-    if (shifts.length === 0) box.innerHTML = '確定シフトはまだありません';
-    else box.innerHTML = shifts.map(s => {
-      const time = currentUser.shiftTimes[s.shift] || '';
-      return `<div style="padding: 8px 0; border-bottom: 1px solid #f2f2f7;">${s.date} ${s.shift} (${time}) @ ${s.facility}</div>`;
-    }).join('');
-  }).getMyShifts(currentUser.staff_id, window.currentYM);
+    renderMyShifts(shifts, monthLabel);
+  }).withFailureHandler(err => {
+    document.getElementById('myShiftsList').innerHTML = '<div style="color:#ef4444;padding:12px;">エラー: ' + err + '</div>';
+  }).getMyShifts(currentUser.staff_id, yearMonth);
+}
+
+function switchMyShiftsMonth(mode) {
+  window.myShiftsMonthMode = mode;
+
+  const thisBtn = document.getElementById('myShiftsTabThis');
+  const nextBtn = document.getElementById('myShiftsTabNext');
+
+  if (mode === 'next') {
+    nextBtn.style.background = 'white';
+    nextBtn.style.color = '#6366f1';
+    thisBtn.style.background = 'transparent';
+    thisBtn.style.color = '#6b7280';
+  } else {
+    thisBtn.style.background = 'white';
+    thisBtn.style.color = '#6366f1';
+    nextBtn.style.background = 'transparent';
+    nextBtn.style.color = '#6b7280';
+  }
+
+  loadMyShifts();
+}
+
+function renderMyShifts(shifts, monthLabel) {
+  const container = document.getElementById('myShiftsList');
+
+  if (!shifts || shifts.length === 0) {
+    container.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:30px;background:#f9fafb;border-radius:8px;">' + monthLabel + 'のシフトはまだ確定されていません</div>';
+    return;
+  }
+
+  // 件数サマリ
+  const days = new Set(shifts.map(s => s.date)).size;
+  let html = '<div style="font-size:12px;color:#6b7280;margin-bottom:10px;padding:0 4px;">計' + shifts.length + '件 (' + days + '日分)</div>';
+
+  // 今日の日付 yyyy-MM-dd
+  const today = new Date();
+  const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+  html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+
+  for (const s of shifts) {
+    const d = new Date(s.date + 'T00:00:00+09:00');
+    const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+    const day = d.getDate();
+    const month = d.getMonth() + 1;
+    const isToday = s.date === todayStr;
+    const isPast = s.date < todayStr;
+
+    let bg = '#fff', border = '#e5e7eb', textColor = '#111827';
+    if (isToday) {
+      bg = '#fef3c7';
+      border = '#f59e0b';
+    } else if (isPast) {
+      bg = '#f9fafb';
+      border = '#e5e7eb';
+      textColor = '#9ca3af';
+    }
+
+    const dowColor = d.getDay() === 0 ? '#dc2626' : d.getDay() === 6 ? '#2563eb' : '#6b7280';
+    const timeStr = (s.start && s.end) ? s.start + '-' + s.end : '';
+
+    html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:10px 12px;color:${textColor};">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="font-size:14px;font-weight:600;">
+          ${month}/${day} <span style="color:${dowColor};">(${dow})</span>
+          ${isToday ? '<span style="background:#f59e0b;color:white;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:4px;">今日</span>' : ''}
+        </div>
+        <div style="font-size:13px;color:#6366f1;font-weight:600;">${escapeHtml(s.shift)}${timeStr ? ' <span style="color:#6b7280;font-weight:400;">' + escapeHtml(timeStr) + '</span>' : ''}</div>
+      </div>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px;">📍 ${escapeHtml(s.facility)}</div>
+    </div>`;
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 function loadAttendance() {

@@ -23,7 +23,7 @@ const COL_REQ = {
 const COL_SHIFT = {
   ID:0, DATE:1, UNIT_ID:2, JIGYOSHO:3, FACILITY:4,
   UNIT:5, STAFF_ID:6, NAME:7, SHIFT_TYPE:8,
-  START:9, END:10, COUNT:11, ALERT:12, STATUS:13, UPDATED:14,
+  START:9, END:10, COUNT:11, STATUS:12, UPDATED:13,
 };
 
 const SUBMIT_START_DAY = 10;
@@ -741,24 +741,51 @@ function getMotivationMessage(staffId) {
 function getMyShifts(staffId, yearMonth) {
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const sheet = ss.getSheetByName('T_シフト確定');
+  if (!sheet) return [];
+
   const data = sheet.getDataRange().getValues();
-  const results = [];
+  if (data.length < 2) return [];
+
+  const targetSid = String(staffId);
+  const result = [];
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (String(row[COL_SHIFT.STAFF_ID]).trim() !== String(staffId).trim()) continue;
-    if (String(row[COL_SHIFT.STATUS]).toUpperCase() !== '確定') continue;
-    const dateStr = row[COL_SHIFT.DATE] instanceof Date
-      ? Utilities.formatDate(new Date(row[COL_SHIFT.DATE]), 'Asia/Tokyo', 'yyyy-MM-dd')
-      : String(row[COL_SHIFT.DATE]);
-    if (dateStr.substring(0, 7) !== yearMonth) continue;
-    results.push({
+    const rowSid = String(row[COL_SHIFT.STAFF_ID]);
+    if (rowSid !== targetSid) continue;
+
+    const status = String(row[COL_SHIFT.STATUS] || '').trim();
+    if (status !== '確定') continue;
+
+    const dateVal = row[COL_SHIFT.DATE];
+    const dateStr = dateVal instanceof Date
+      ? Utilities.formatDate(dateVal, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(dateVal).substring(0, 10);
+
+    if (!dateStr.startsWith(yearMonth)) continue;
+
+    // 時刻フィールドのパース (Date型・文字列両対応)
+    const parseTime = (val) => {
+      if (!val) return '';
+      if (val instanceof Date) return Utilities.formatDate(val, 'Asia/Tokyo', 'HH:mm');
+      const s = String(val).trim();
+      if (/^\d{1,2}:\d{2}$/.test(s)) return s.padStart(5, '0');
+      const m = s.match(/(\d{2}):(\d{2}):\d{2}/);
+      if (m) return m[1] + ':' + m[2];
+      return s;
+    };
+
+    result.push({
       date: dateStr,
-      facility: row[COL_SHIFT.FACILITY],
-      shift: row[COL_SHIFT.SHIFT_TYPE],
+      facility: String(row[COL_SHIFT.FACILITY] || ''),
+      shift: String(row[COL_SHIFT.SHIFT_TYPE] || ''),
+      start: parseTime(row[COL_SHIFT.START]),
+      end: parseTime(row[COL_SHIFT.END]),
     });
   }
-  return results.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  result.sort((a, b) => a.date.localeCompare(b.date));
+  return result;
 }
 
 // ============================================
@@ -859,4 +886,82 @@ function isMonthLockedForStaff(yearMonth) {
 function checkMonthLockForStaff(yearMonth) {
   const locked = isMonthLockedForStaff(yearMonth);
   return { success: true, locked: locked };
+}
+
+function debugGetMyShifts() {
+  Logger.log('=== STAFF_SS_ID: ' + STAFF_SS_ID + ' ===');
+
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  Logger.log('Spreadsheet: ' + ss.getName());
+
+  const sheet = ss.getSheetByName('T_シフト確定');
+  if (!sheet) {
+    Logger.log('❌ T_シフト確定 シート見つからず');
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  Logger.log('総行数: ' + data.length);
+  Logger.log('ヘッダ行: ' + JSON.stringify(data[0]));
+
+  // COL_SHIFT 確認
+  Logger.log('COL_SHIFT.STAFF_ID = ' + COL_SHIFT.STAFF_ID);
+  Logger.log('COL_SHIFT.DATE = ' + COL_SHIFT.DATE);
+  Logger.log('COL_SHIFT.STATUS = ' + COL_SHIFT.STATUS);
+  Logger.log('COL_SHIFT.SHIFT_TYPE = ' + COL_SHIFT.SHIFT_TYPE);
+  Logger.log('COL_SHIFT.START = ' + COL_SHIFT.START);
+  Logger.log('COL_SHIFT.END = ' + COL_SHIFT.END);
+  Logger.log('COL_SHIFT.FACILITY = ' + COL_SHIFT.FACILITY);
+
+  // 中村仁美さん (staff_id=5) の行を探す
+  let nakamuraCount = 0;
+  let nakamuraStatusVarieties = {};
+  let dateMonths = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const sid = String(row[COL_SHIFT.STAFF_ID]);
+
+    if (sid === '5') {
+      nakamuraCount++;
+      const status = String(row[COL_SHIFT.STATUS] || '');
+      nakamuraStatusVarieties[status] = (nakamuraStatusVarieties[status] || 0) + 1;
+
+      const dateVal = row[COL_SHIFT.DATE];
+      const dateStr = dateVal instanceof Date
+        ? Utilities.formatDate(dateVal, 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(dateVal).substring(0, 10);
+      const ym = dateStr.substring(0, 7);
+      dateMonths[ym] = (dateMonths[ym] || 0) + 1;
+
+      // 最初の3件は詳細ログ
+      if (nakamuraCount <= 3) {
+        Logger.log('--- 中村仁美 行' + (i+1) + ' ---');
+        Logger.log('  date: ' + dateVal + ' → ' + dateStr);
+        Logger.log('  status: ' + status);
+        Logger.log('  shift: ' + row[COL_SHIFT.SHIFT_TYPE]);
+        Logger.log('  facility: ' + row[COL_SHIFT.FACILITY]);
+        Logger.log('  start: ' + row[COL_SHIFT.START] + ' (型:' + typeof row[COL_SHIFT.START] + ')');
+        Logger.log('  end: ' + row[COL_SHIFT.END]);
+      }
+    }
+  }
+
+  Logger.log('========');
+  Logger.log('中村仁美 (staff_id=5) 総行数: ' + nakamuraCount);
+  Logger.log('ステータス内訳: ' + JSON.stringify(nakamuraStatusVarieties));
+  Logger.log('月別内訳: ' + JSON.stringify(dateMonths));
+
+  // 実際に getMyShifts を呼ぶ
+  Logger.log('========');
+  Logger.log('getMyShifts(5, "2026-05") 実行...');
+  const result = getMyShifts(5, '2026-05');
+  Logger.log('結果件数: ' + result.length);
+  if (result.length > 0) {
+    Logger.log('最初の1件: ' + JSON.stringify(result[0]));
+  }
+
+  Logger.log('getMyShifts("5", "2026-05") (文字列版) 実行...');
+  const result2 = getMyShifts("5", '2026-05');
+  Logger.log('結果件数: ' + result2.length);
 }
