@@ -739,6 +739,7 @@ function getMotivationMessage(staffId) {
 // シフト確定取得
 // ============================================
 function getMyShifts(staffId, yearMonth) {
+  Logger.log('getMyShifts called: staffId=' + staffId + ' (型:' + typeof staffId + '), yearMonth=' + yearMonth);
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const sheet = ss.getSheetByName('T_シフト確定');
   if (!sheet) return [];
@@ -922,7 +923,7 @@ function debugGetMyShifts() {
     const row = data[i];
     const sid = String(row[COL_SHIFT.STAFF_ID]);
 
-    if (sid === '5') {
+    if (sid === '5' || sid === '13') {
       nakamuraCount++;
       const status = String(row[COL_SHIFT.STATUS] || '');
       nakamuraStatusVarieties[status] = (nakamuraStatusVarieties[status] || 0) + 1;
@@ -964,4 +965,12 @@ function debugGetMyShifts() {
   Logger.log('getMyShifts("5", "2026-05") (文字列版) 実行...');
   const result2 = getMyShifts("5", '2026-05');
   Logger.log('結果件数: ' + result2.length);
+
+  Logger.log('========');
+  Logger.log('getMyShifts(13, "2026-05") 実行...');
+  const result13 = getMyShifts(13, '2026-05');
+  Logger.log('staff_id=13 (水野永吉) 結果件数: ' + result13.length);
+  if (result13.length > 0) {
+    Logger.log('最初の1件: ' + JSON.stringify(result13[0]));
+  }
 }

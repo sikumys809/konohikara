@@ -151,7 +151,7 @@
 
   <div class="tab-bar">
     <div class="tab active" onclick="switchTab(event, 'submit')">希望提出</div>
-    <div class="tab" onclick="switchTab(event, 'shifts')">確定シフト</div>
+    <div id="shiftsTab" class="tab" onclick="switchTab(event, 'shifts')">確定シフト</div>
     <div class="tab" onclick="switchTab(event, 'attendance')">打刻</div>
     <div class="tab" onclick="switchTab(event, 'profile')">マイページ</div>
   </div>
@@ -458,6 +458,7 @@ function loadMyRequests() {
       document.getElementById('freqCount').value = validData[0].freqCount || 8;
 
       updateSubmittedBanner();
+      checkConfirmedShiftsAndHideSubmission();
     } else {
       hasSubmitted = false;
       requests = [];
@@ -505,6 +506,28 @@ function updateSubmittedBanner() {
   } else {
     banner.classList.add('hidden');
   }
+}
+
+function checkConfirmedShiftsAndHideSubmission() {
+  const today = new Date();
+  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const nextYM = nextMonth.getFullYear() + '-' + String(nextMonth.getMonth() + 1).padStart(2, '0');
+
+  // 1. 確定シフトの件数を取得
+  google.script.run.withSuccessHandler(shifts => {
+    const hasConfirmed = shifts && shifts.length > 0;
+    if (!hasConfirmed) return;
+
+    // 2. 確定がある場合、提出期間情報を取得して判定
+    google.script.run.withSuccessHandler(periodInfo => {
+      const isPeriodClosed = periodInfo && periodInfo.isOpen === false;
+      if (isPeriodClosed) {
+        // 確定あり + 提出期間外 → 提出済みバナーを隠す
+        const sec = document.getElementById('submittedBanner');
+        if (sec) sec.style.display = 'none';
+      }
+    }).getSubmitPeriodInfo(currentUser.staff_id);
+  }).getMyShifts(currentUser.staff_id, nextYM);
 }
 
 function updateSubmitButton() {
@@ -759,11 +782,37 @@ function loadMyShifts() {
   document.getElementById('myShiftsLabel').textContent = monthLabel + 'のシフト';
   document.getElementById('myShiftsList').innerHTML = '<div style="color:#9ca3af;text-align:center;padding:20px;">読込中...</div>';
 
-  google.script.run.withSuccessHandler(shifts => {
-    renderMyShifts(shifts, monthLabel);
-  }).withFailureHandler(err => {
-    document.getElementById('myShiftsList').innerHTML = '<div style="color:#ef4444;padding:12px;">エラー: ' + err + '</div>';
-  }).getMyShifts(currentUser.staff_id, yearMonth);
+  // 来月選択時、提出期間内ならまず警告を出す
+  if (mode === 'next') {
+    google.script.run.withSuccessHandler(periodInfo => {
+      const isOpen = periodInfo && periodInfo.isOpen === true;
+
+      // 来月のシフトを取得
+      google.script.run.withSuccessHandler(shifts => {
+        if (isOpen) {
+          // 提出期間内 → 警告 + (もし確定があれば) リスト表示
+          const warning = '<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px;border-radius:6px;margin-bottom:12px;font-size:13px;color:#92400e;">⚠️ 来月分は提出受付中です（まだ確定されていません）</div>';
+          if (shifts && shifts.length > 0) {
+            renderMyShifts(shifts, monthLabel, warning + '<div style="font-size:11px;color:#6b7280;margin-bottom:8px;">※以下は管理者による暫定確定です。最終確定までに変更される可能性があります。</div>');
+          } else {
+            document.getElementById('myShiftsList').innerHTML = warning;
+          }
+        } else {
+          // 提出期間外 → 通常表示
+          renderMyShifts(shifts, monthLabel);
+        }
+      }).withFailureHandler(err => {
+        document.getElementById('myShiftsList').innerHTML = '<div style="color:#ef4444;padding:12px;">エラー: ' + err + '</div>';
+      }).getMyShifts(currentUser.staff_id, yearMonth);
+    }).getSubmitPeriodInfo(currentUser.staff_id);
+  } else {
+    // 今月選択時 → 通常表示
+    google.script.run.withSuccessHandler(shifts => {
+      renderMyShifts(shifts, monthLabel);
+    }).withFailureHandler(err => {
+      document.getElementById('myShiftsList').innerHTML = '<div style="color:#ef4444;padding:12px;">エラー: ' + err + '</div>';
+    }).getMyShifts(currentUser.staff_id, yearMonth);
+  }
 }
 
 function switchMyShiftsMonth(mode) {
@@ -787,17 +836,18 @@ function switchMyShiftsMonth(mode) {
   loadMyShifts();
 }
 
-function renderMyShifts(shifts, monthLabel) {
+function renderMyShifts(shifts, monthLabel, prefixHtml) {
   const container = document.getElementById('myShiftsList');
+  const prefix = prefixHtml || '';
 
   if (!shifts || shifts.length === 0) {
-    container.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:30px;background:#f9fafb;border-radius:8px;">' + monthLabel + 'のシフトはまだ確定されていません</div>';
+    container.innerHTML = prefix + '<div style="color:#9ca3af;text-align:center;padding:30px;background:#f9fafb;border-radius:8px;">' + monthLabel + 'のシフトはまだ確定されていません</div>';
     return;
   }
 
   // 件数サマリ
   const days = new Set(shifts.map(s => s.date)).size;
-  let html = '<div style="font-size:12px;color:#6b7280;margin-bottom:10px;padding:0 4px;">計' + shifts.length + '件 (' + days + '日分)</div>';
+  let html = prefix + '<div style="font-size:12px;color:#6b7280;margin-bottom:10px;padding:0 4px;">計' + shifts.length + '件 (' + days + '日分)</div>';
 
   // 今日の日付 yyyy-MM-dd
   const today = new Date();
