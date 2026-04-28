@@ -481,7 +481,7 @@ function updateSubmittedBanner() {
 
     const dateList = requests.map(r => {
       const shifts = r.shifts.map(s => {
-        const time = currentUser.shiftTimes[s] || '';
+        const time = (currentUser.shiftTimes[s] && currentUser.shiftTimes[s].label) || '';
         return s + '(' + time + ')';
       }).join(' / ');
       return `<div style="padding:3px 0;">📅 ${formatDateJP(r.date)} → ${shifts}</div>`;
@@ -579,7 +579,7 @@ function renderBulkShifts() {
   const box = document.getElementById('bulkShiftChips');
   box.innerHTML = currentUser.allowedShifts.map(s => {
     const isChecked = bulkShiftSelection.includes(s);
-    const time = currentUser.shiftTimes[s] || '';
+    const time = (currentUser.shiftTimes[s] && currentUser.shiftTimes[s].label) || '';
     return `
       <label class="shift-chip ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleBulkShift('${s}')">
         <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
@@ -690,7 +690,7 @@ function renderRequests() {
   list.innerHTML = requests.map((r, idx) => {
     const shiftChips = currentUser.allowedShifts.map(s => {
       const isChecked = r.shifts.includes(s);
-      const time = currentUser.shiftTimes[s] || '';
+      const time = (currentUser.shiftTimes[s] && currentUser.shiftTimes[s].label) || '';
       return `
         <label class="shift-chip ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleRequestShift(${idx}, '${s}')">
           <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
@@ -1001,7 +1001,7 @@ function loadTemplates() {
 function renderTemplateCard(t) {
   const wdLabels = ['月','火','水','木','金','土','日'];
   const wdText = (t.weekdays || []).sort((a,b)=>a-b).map(n => wdLabels[n-1]).join('・');
-  const shiftTime = (currentUser.shiftTimes && currentUser.shiftTimes[t.shiftType]) || '';
+  const shiftTime = (currentUser.shiftTimes && currentUser.shiftTimes[t.shiftType] && currentUser.shiftTimes[t.shiftType].label) || '';
 
   const subTags = (t.subFacs && t.subFacs.length > 0)
     ? `<div class="tpl-meta">サブ: ${t.subFacs.join('、')}</div>` : '';
@@ -1094,7 +1094,7 @@ function applyWeekdayPreset(preset) {
 function renderTplShiftType(template) {
   const sel = document.getElementById('tplShiftType');
   sel.innerHTML = currentUser.allowedShifts.map(s => {
-    const time = currentUser.shiftTimes[s] || '';
+    const time = (currentUser.shiftTimes[s] && currentUser.shiftTimes[s].label) || '';
     return `<option value="${s}">${s} (${time})</option>`;
   }).join('');
   if (template && template.shiftType) sel.value = template.shiftType;

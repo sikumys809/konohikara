@@ -31,13 +31,51 @@ const SUBMIT_END_DAY = 22;
 
 // シフト時間定義
 const SHIFT_TIMES = {
-   '夜勤A': '20:00-05:00',
-  '夜勤B': '22:00-07:00',
-  '夜勤C': '22:00-08:00',
-  '早出8h': '06:00-15:00',
-  '早出4h': '06:00-10:00',
-  '遅出8h': '13:00-22:00',
-  '遅出4h': '13:00-17:00'
+  '夜勤A': {
+    label: '20:00-05:00',
+    start: '20:00', end: '05:00',
+    breaks: [{ start: '02:00', end: '03:00' }],
+    workHours: 8
+  },
+  '夜勤B': {
+    label: '22:00-07:00',
+    start: '22:00', end: '07:00',
+    breaks: [{ start: '02:00', end: '03:00' }],
+    workHours: 8
+  },
+  '夜勤C': {
+    label: '22:00-08:00',
+    start: '22:00', end: '08:00',
+    breaks: [
+      { start: '02:00', end: '03:00' },
+      { start: '05:00', end: '06:00' }
+    ],
+    workHours: 8
+  },
+  '早出8h': {
+    label: '07:00-16:00',
+    start: '07:00', end: '16:00',
+    breaks: [{ start: '11:00', end: '12:00' }],
+    workHours: 8
+  },
+  '早出4h': {
+    label: '07:00-11:00',
+    start: '07:00', end: '11:00',
+    breaks: [],
+    workHours: 4
+  },
+  '遅出8h': {
+    label: '13:00-22:00',
+    start: '13:00', end: '22:00',
+    breaks: [{ start: '18:00', end: '19:00' }],
+    workHours: 8
+  },
+  '遅出4h': {
+    label: '13:00-17:00',
+    start: '13:00', end: '17:00',
+    breaks: [],
+    workHours: 4
+  }
 };
 
 function doGet(e) {

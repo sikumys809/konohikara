@@ -582,8 +582,8 @@ const SHIFT_PATTERNS = {
   '夜勤A':   { start: '20:00', end: '05:00', nightHours: 6, dayHours: 0, breakMinutes: 60 },
   '夜勤B':   { start: '22:00', end: '07:00', nightHours: 6, dayHours: 2, breakMinutes: 60 },
   '夜勤C':   { start: '22:00', end: '08:00', nightHours: 6, dayHours: 2, breakMinutes: 120 },
-  '早出8h':  { start: '06:00', end: '15:00', nightHours: 0, dayHours: 8, breakMinutes: 60 },
-  '早出4h':  { start: '06:00', end: '10:00', nightHours: 0, dayHours: 4, breakMinutes: 0 },
+  '早出8h':  { start: '07:00', end: '16:00', nightHours: 0, dayHours: 8, breakMinutes: 60 },
+  '早出4h':  { start: '07:00', end: '11:00', nightHours: 0, dayHours: 4, breakMinutes: 0 },
   '遅出8h':  { start: '13:00', end: '22:00', nightHours: 0, dayHours: 8, breakMinutes: 60 },
   '遅出4h':  { start: '13:00', end: '17:00', nightHours: 0, dayHours: 4, breakMinutes: 0 }
 };

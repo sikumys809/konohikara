@@ -52,7 +52,7 @@ const NSE = {
     '夜勤A': { start: '20:00', end: '05:00', isNight: true },
     '夜勤B': { start: '22:00', end: '07:00', isNight: true },
     '夜勤C': { start: '22:00', end: '08:00', isNight: true },
-    '日勤早出': { start: '06:00', end: '15:00', isNight: false },
+    '日勤早出': { start: '07:00', end: '16:00', isNight: false },
     '日勤遅出': { start: '13:00', end: '22:00', isNight: false },
   },
   
