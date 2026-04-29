@@ -2150,30 +2150,39 @@ function addStaff(adminStaffId, params) {
 
     const newId = maxId + 1;
 
-    // 新行データ (M_スタッフは18列構造)
-    // ID, 氏名, メール, 電話, 雇用, 資格, 入社日, 入社月, 区分, メイン, セカンド, サブ, シフト区分, 許可シフト, 保護, VIP, 退職, 備考
+    // 新行データ (M_スタッフは20列構造)
+    // A:ID B:氏名 C:メール D:電話 E:雇用 F:資格 G:入社日 H:入社月 I:区分
+    // J:メイン K:セカンド L:サブ M:シフト区分 N:許可シフト
+    // O:保護 P:VIP Q:退職 R:備考 S:役割 T:主職種
     const newRow = [
       newId,
       name,
       email,
       String(params.phone || '').trim(),
       String(params.employment || '').trim(),
-      '', // 資格 (空)
+      '', // F: 資格 (空)
       params.hireDate || '',
-      '', // 入社月 (自動計算 or 後で)
-      '', // 区分 (空)
-      '', // メイン
-      '', // セカンド
-      '', // サブ
-      '', // シフト区分
-      '', // 許可シフト
-      'FALSE', // 保護
-      'FALSE', // VIP
-      'FALSE', // 退職
-      String(params.note || '').trim(),
+      '', // H: 入社月 (自動計算 or 後で)
+      '', // I: 区分 (空)
+      '', // J: メイン
+      '', // K: セカンド
+      '', // L: サブ
+      '', // M: シフト区分
+      '', // N: 許可シフト
+      'FALSE', // O: 保護
+      'FALSE', // P: VIP
+      'FALSE', // Q: 退職
+      String(params.note || '').trim(),  // R: 備考
+      '', // S: 役割
+      '', // T: 主職種
     ];
 
     sheet.appendRow(newRow);
+
+    // 新規追加行の S列(役割) と T列(主職種) の入力規則を明示的にクリア
+    // (前行から継承された誤った規則を除去)
+    const newRowIdx = sheet.getLastRow();
+    sheet.getRange(newRowIdx, 19, 1, 2).clearDataValidations();
 
     // 操作ログ記録
     try {
