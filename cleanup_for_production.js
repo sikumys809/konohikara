@@ -50,9 +50,16 @@ function cleanupForProduction() {
         if (name === 'サブ施設候補' || name === 'サブ施設' || name === 'sub_facs') colMap.sub = i;
         if (name === 'シフト区分' || name === 'shift_kubun') colMap.kubun = i;
         if (name === '許可シフト種別' || name === '許可シフト' || name === 'allowed_shifts') colMap.allowed = i;
+        if (name === '雇用形態' || name === 'employment') colMap.employment = i;
+        if (name === 'スタッフ区分' || name === 'staff_kubun') colMap.staffKubun = i;
+        if (name === '保護フラグ' || name === 'protected') colMap.protected = i;
+        if (name === 'VIP重要フラグ' || name === 'vip') colMap.vip = i;
+        if (name === '備考' || name === 'remarks') colMap.remarks = i;
+        if (name === '役割' || name === 'role') colMap.role = i;
+        if (name === '主職種' || name === 'main_job') colMap.mainJob = i;
       });
 
-      const targetCols = ['main', 'second', 'sub', 'kubun', 'allowed'].filter(k => colMap[k] !== undefined);
+      const targetCols = ['main', 'second', 'sub', 'kubun', 'allowed', 'employment', 'staffKubun', 'protected', 'vip', 'remarks', 'role', 'mainJob'].filter(k => colMap[k] !== undefined);
       log.push('M_スタッフ クリア対象列: ' + targetCols.join(', ') + ' (列インデックス: ' + targetCols.map(k => colMap[k]).join(', ') + ')');
 
       const numRows = data.length - 1;

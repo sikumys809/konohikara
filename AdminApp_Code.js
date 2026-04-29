@@ -224,9 +224,10 @@ function getAllStaffList(adminStaffId) {
       isRetired: String(row[16]).toUpperCase() === 'TRUE',
       note: row[17] || '',
       role: row[18] || '',
+      mainRoles: row[19] || '',
     });
   }
-  
+
   return { success: true, staff: staffList };
 }
 
@@ -356,7 +357,7 @@ function updateStaff(adminStaffId, targetStaffId, updates) {
   track(17, '備考', updates.note, oldRow[17]);
   track(18, '役割', updates.role, oldRow[18]);
   track(19, '主職種', updates.mainRoles, oldRow[19]);
-  
+
   if (changes.length === 0) {
     return { success: true, message: '変更はありませんでした', changedCount: 0 };
   }

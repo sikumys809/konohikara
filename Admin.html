@@ -1303,7 +1303,7 @@ function renderEditForm() {
   const facilityOptsSecond = ['<option value="">(未選択)</option>']
     .concat(facilities.map(f => `<option value="${escapeAttr(f)}" ${f === s.secondFacility ? 'selected' : ''}>${escapeHtml(f)}</option>`)).join('');
   
-  const allShifts = ['夜勤A', '夜勤B', '夜勤C', '日勤早出', '日勤遅出'];
+  const allShifts = ['夜勤A', '夜勤B', '夜勤C', '早出8h', '早出4h', '遅出8h', '遅出4h'];
   const currentShifts = s.allowedShifts ? s.allowedShifts.split(',').map(x => x.trim()) : [];
   
   const currentRoles = s.role ? s.role.split(',').map(x => x.trim()) : [];
@@ -3881,8 +3881,8 @@ function showDsAddForm() {
         <div>
           <label style="font-size: 12px;">シフト種別</label>
           <select id="dsAddShiftType" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #d1d5db;">
-            <option value="早出8h">早出8h (06:00-15:00)</option>
-            <option value="早出4h">早出4h (06:00-10:00)</option>
+            <option value="早出8h">早出8h (07:00-16:00)</option>
+            <option value="早出4h">早出4h (07:00-11:00)</option>
             <option value="遅出8h">遅出8h (13:00-22:00)</option>
             <option value="遅出4h">遅出4h (13:00-17:00)</option>
           </select>
