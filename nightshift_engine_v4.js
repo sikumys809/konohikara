@@ -761,3 +761,376 @@ function testRWarningsV4() {
   
   Logger.log('\n=== 完了 ===');
 }
+
+// ============================================================
+// Step 3.2.5: assignByScoreV4 (配置メインロジック)
+// ============================================================
+function assignByScoreV4(ctx) {
+  Logger.log('assignByScoreV4: 配置開始 (' + ctx.slots.length + 'スロット × 3シフト)');
+  
+  ctx.pendingWarnings = [];  // 警告書き込み用バッファ
+  let assignedCount = 0;
+  let warningCount = 0;
+  let unassignedCount = 0;
+  
+  // 全スロットを処理
+  for (let si = 0; si < ctx.slots.length; si++) {
+    const slot = ctx.slots[si];
+    if (slot.assignment) continue;  // 既に埋まってる (将来の保護配置等)
+    
+    // 各夜勤シフトで候補検索
+    let allCandidatesByShift = {};  // {夜勤A: [...], 夜勤B: [...], 夜勤C: [...]}
+    for (const shift of NSE_V4.NIGHT_SHIFTS) {
+      const candidates = findCandidatesV4(ctx, slot, shift);
+      candidates.forEach(function(c) {
+        c.score = calcScoreV4(ctx, c.staff, c.wish, slot);
+        c.warnings = checkAllRWarningsV4(c.staff, slot, shift, ctx);
+        c.shift = shift;
+      });
+      if (candidates.length > 0) allCandidatesByShift[shift] = candidates;
+    }
+    
+    // 全候補を1つの配列にまとめて優先順位ソート
+    let allCands = [];
+    Object.keys(allCandidatesByShift).forEach(function(s) {
+      allCands = allCands.concat(allCandidatesByShift[s]);
+    });
+    
+    if (allCands.length === 0) {
+      unassignedCount++;
+      continue;
+    }
+    
+    // ソート: VIP > 警告なし > スコア降順
+    allCands.sort(function(a, b) {
+      // 1. VIP優先
+      const aVIP = a.staff.isVIP ? 1 : 0;
+      const bVIP = b.staff.isVIP ? 1 : 0;
+      if (aVIP !== bVIP) return bVIP - aVIP;
+      // 2. 警告なし優先
+      const aNoWarn = (a.warnings.length === 0) ? 1 : 0;
+      const bNoWarn = (b.warnings.length === 0) ? 1 : 0;
+      if (aNoWarn !== bNoWarn) return bNoWarn - aNoWarn;
+      // 3. スコア降順
+      return b.score - a.score;
+    });
+    
+    // 最優先候補を採用
+    const top = allCands[0];
+    const wh = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[top.shift])
+      ? (SHIFT_PATTERNS[top.shift].dayHours + SHIFT_PATTERNS[top.shift].nightHours)
+      : 8;
+    
+    slot.assignment = {
+      staff_id: top.staff.staff_id,
+      staff_name: top.staff.name,
+      shift: top.shift,
+      score: top.score,
+      warnings: top.warnings,
+      reason: top.warnings.length > 0 ? '警告あり配置(承認待ち)' : '通常配置'
+    };
+    
+    // ctx.staffAssignedDates に反映
+    if (!ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey]) {
+      ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey] = [];
+    }
+    ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey].push({
+      shift: top.shift,
+      jigyosho: slot.jigyosho,
+      facility: slot.facility,
+      unit: slot.unit_name,
+      workHours: wh
+    });
+    ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
+    
+    assignedCount++;
+    
+    // 警告レコードをバッファ
+    if (top.warnings.length > 0) {
+      top.warnings.forEach(function(w) {
+        ctx.pendingWarnings.push({
+          shift_kind: 'night',
+          target_ym: ctx.targetYM,
+          date: slot.dateKey,
+          jigyosho: slot.jigyosho,
+          facility: slot.facility,
+          unit: slot.unit_name,
+          staff_id: top.staff.staff_id,
+          staff_name: top.staff.name,
+          rule_id: w.ruleId,
+          level: w.level,
+          message: w.message
+        });
+        warningCount++;
+      });
+    }
+  }
+  
+  Logger.log('assignByScoreV4: 配置完了');
+  Logger.log('  配置済み: ' + assignedCount + 'スロット');
+  Logger.log('  警告レコード: ' + warningCount + '件');
+  Logger.log('  未配置: ' + unassignedCount + 'スロット');
+  
+  return {
+    assignedCount: assignedCount,
+    warningCount: warningCount,
+    unassignedCount: unassignedCount
+  };
+}
+
+// ============================================================
+// テスト用: ダミー希望データを投入してassignByScoreV4を動作確認
+// 注: 実際のT_希望提出シートには書き込まない、ctxの中だけ
+// ============================================================
+function testAssignByScoreV4() {
+  Logger.log('=== Step 3.2.5 assignByScoreV4 動作確認 ===');
+  const ym = '2026-05';
+  const ctx = loadEngineContextV4(ym);
+  generateSlotsV4(ctx);
+  
+  // ダミー希望を ctx に直接注入 (シートには書き込まない)
+  // 既存のスタッフ (staff_id=2 水野惠子, staff_id=3 など) に希望を投入
+  const staffIds = Object.keys(ctx.staffMap).slice(0, 10);  // 先頭10名
+  Logger.log('ダミー希望投入対象スタッフ: ' + staffIds.length + '名');
+  
+  // 5/1 〜 5/5 に夜勤A/B/Cの希望を投入
+  let dummyWishCount = 0;
+  for (let day = 1; day <= 5; day++) {
+    const dateKey = '2026-05-' + String(day).padStart(2, '0');
+    const date = new Date(dateKey + 'T00:00:00');
+    
+    staffIds.forEach(function(sid, idx) {
+      const shift = ['夜勤A', '夜勤B', '夜勤C'][idx % 3];
+      const staff = ctx.staffMap[sid];
+      
+      // allowedShifts に当該シフトが含まれてるスタッフだけ
+      if (staff.allowedShifts.indexOf(shift) === -1) return;
+      
+      const wish = {
+        requestId: 'DUMMY-' + sid + '-' + dateKey + '-' + shift,
+        staff_id: sid,
+        name: staff.name,
+        date: date,
+        dateKey: dateKey,
+        shift: shift,
+        isNight: true,
+        mainFac: staff.mainFac,
+        secondFac: staff.secondFac,
+        subFacs: staff.subFacs,
+        comment: '',
+      };
+      ctx.wishes.push(wish);
+      if (!ctx.wishesByStaff[sid]) ctx.wishesByStaff[sid] = [];
+      ctx.wishesByStaff[sid].push(wish);
+      const sdKey = sid + '_' + dateKey;
+      if (!ctx.wishesByStaffDay[sdKey]) ctx.wishesByStaffDay[sdKey] = [];
+      ctx.wishesByStaffDay[sdKey].push(wish);
+      const dsKey = dateKey + '_' + shift;
+      if (!ctx.wishesByDayShift[dsKey]) ctx.wishesByDayShift[dsKey] = [];
+      ctx.wishesByDayShift[dsKey].push(wish);
+      dummyWishCount++;
+    });
+  }
+  Logger.log('ダミー希望投入: ' + dummyWishCount + '件 (5/1〜5/5)');
+  
+  // 配置実行
+  Logger.log('\n--- 配置実行 ---');
+  const startTs = Date.now();
+  const result = assignByScoreV4(ctx);
+  const elapsed = ((Date.now() - startTs) / 1000).toFixed(2);
+  Logger.log('処理時間: ' + elapsed + '秒');
+  
+  // 結果サマリー
+  Logger.log('\n--- 配置結果 ---');
+  let withWarning = 0;
+  let withoutWarning = 0;
+  ctx.slots.forEach(function(s) {
+    if (s.assignment) {
+      if (s.assignment.warnings.length > 0) withWarning++;
+      else withoutWarning++;
+    }
+  });
+  Logger.log('警告なし配置: ' + withoutWarning);
+  Logger.log('警告あり配置: ' + withWarning);
+  Logger.log('未配置スロット: ' + (ctx.slots.length - withWarning - withoutWarning));
+  
+  // 配置サンプル表示 (5件)
+  Logger.log('\n--- 配置サンプル ---');
+  let shown = 0;
+  for (const slot of ctx.slots) {
+    if (slot.assignment && shown < 5) {
+      const a = slot.assignment;
+      Logger.log(slot.dateKey + ' / ' + slot.facility + ' / ' + slot.unit_name +
+                 ' → ' + a.staff_name + ' (' + a.shift + ', score=' + a.score + ', warnings=' + a.warnings.length + ')');
+      shown++;
+    }
+  }
+  
+  // 警告サンプル
+  if (ctx.pendingWarnings.length > 0) {
+    Logger.log('\n--- 警告サンプル (先頭3件) ---');
+    ctx.pendingWarnings.slice(0, 3).forEach(function(w) {
+      Logger.log(w.rule_id + ' / ' + w.date + ' / ' + w.staff_name + ': ' + w.message);
+    });
+  }
+  
+  Logger.log('\n=== 完了 ===');
+}
+
+// ============================================================
+// Step 3.2.6: writeShiftResultsV4 + メインエントリ
+// ============================================================
+
+// ============================================================
+// writeShiftResultsV4: T_シフト確定 + V_警告チェック への書き込み
+// インクリメンタル: 対象月の既存夜勤レコード(夜勤A/B/C)を削除→新規挿入
+// 日勤レコードは保持
+// ============================================================
+function writeShiftResultsV4(ctx) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(NSE_V4.SHEET_NAME_CONF);
+  if (!sheet) throw new Error('T_シフト確定シートが見つからない');
+  
+  Logger.log('writeShiftResultsV4: 書き込み開始');
+  
+  // 1. 対象月の既存夜勤レコードを削除 (日勤データは残す)
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const allData = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+    const rowsToDelete = [];
+    for (let i = 0; i < allData.length; i++) {
+      const ym = _v4_normYm(allData[i][NSE_V4.COL_CONF_YM]);
+      const shift = String(allData[i][NSE_V4.COL_CONF_SHIFT] || '').trim();
+      // 対象月 かつ 夜勤シフト
+      if (ym === ctx.targetYM && NSE_V4.NIGHT_SHIFTS.indexOf(shift) !== -1) {
+        rowsToDelete.push(i + 2); // 1-indexed + ヘッダー1行
+      }
+    }
+    // 後ろから削除 (前から削除すると行番号がずれる)
+    rowsToDelete.reverse().forEach(function(rowNum) {
+      sheet.deleteRow(rowNum);
+    });
+    Logger.log('  既存夜勤レコード削除: ' + rowsToDelete.length + '件');
+  }
+  
+  // 2. 配置結果を T_シフト確定 に書き込み
+  const newRows = [];
+  const now = new Date();
+  let placedCount = 0;
+  
+  for (const slot of ctx.slots) {
+    if (!slot.assignment) continue;
+    const a = slot.assignment;
+    const shiftPat = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[a.shift])
+      ? SHIFT_PATTERNS[a.shift]
+      : { start: '', end: '', dayHours: 0, nightHours: 8 };
+    
+    const requestId = 'NSE-V4-' + ctx.targetYM + '-' + slot.unit.unit_id + '-' + slot.dateKey + '-' + a.shift;
+    const status = a.warnings.length > 0 ? '警告承認待ち' : '仮';
+    
+    // T_シフト確定 18列構造
+    const row = [
+      requestId,                  // A: request_id
+      slot.date,                  // B: date
+      ctx.targetYM,               // C: year_month
+      slot.jigyosho,              // D: jigyosho
+      slot.facility,              // E: facility
+      slot.unit_name,             // F: unit
+      a.staff_id,                 // G: staff_id
+      a.staff_name,               // H: staff_name
+      a.shift,                    // I: shift_type
+      shiftPat.start,             // J: start
+      shiftPat.end,               // K: end
+      a.reason,                   // L: reason
+      status,                     // M: status
+      now,                        // N: updated_at
+      shiftPat.start,             // O: actual_start (初期は予定と同じ)
+      shiftPat.end,               // P: actual_end
+      shiftPat.nightHours,        // Q: night_hours
+      shiftPat.dayHours,          // R: day_hours
+    ];
+    newRows.push(row);
+    placedCount++;
+  }
+  
+  if (newRows.length > 0) {
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, newRows.length, 18).setValues(newRows);
+    Logger.log('  新規夜勤レコード書き込み: ' + newRows.length + '件');
+  }
+  
+  // 3. 既存の警告レコード (対象月+夜勤) を削除
+  if (typeof deleteWarningsForMonth === 'function') {
+    const deletedCount = deleteWarningsForMonth(ctx.targetYM, 'night');
+    Logger.log('  既存警告レコード削除: ' + deletedCount + '件');
+  }
+  
+  // 4. 新規警告レコードを書き込み
+  let warningCount = 0;
+  if (ctx.pendingWarnings && ctx.pendingWarnings.length > 0) {
+    if (typeof addWarning !== 'function') {
+      throw new Error('addWarning 関数が見つからない (warning_system.js が必要)');
+    }
+    for (const w of ctx.pendingWarnings) {
+      addWarning(w);
+      warningCount++;
+    }
+    Logger.log('  新規警告レコード書き込み: ' + warningCount + '件');
+  }
+  
+  return {
+    placedCount: placedCount,
+    warningCount: warningCount
+  };
+}
+
+// ============================================================
+// runNightShiftEngineV4: メインエントリ
+// 引数: targetYM (e.g. "2026-05")
+// ============================================================
+function runNightShiftEngineV4(targetYM) {
+  const overallStart = Date.now();
+  Logger.log('===== runNightShiftEngineV4 開始: ' + targetYM + ' =====');
+  
+  // 1. ctx 構築
+  Logger.log('[1/4] ctx構築...');
+  const ctx = loadEngineContextV4(targetYM);
+  Logger.log('  ユニット: ' + ctx.units.length + ' / スタッフ: ' + Object.keys(ctx.staffMap).length + ' / 希望: ' + ctx.wishes.length);
+  
+  // 2. スロット生成
+  Logger.log('[2/4] スロット生成...');
+  generateSlotsV4(ctx);
+  Logger.log('  スロット: ' + ctx.slots.length);
+  
+  // 3. 配置実行
+  Logger.log('[3/4] 配置実行...');
+  const result = assignByScoreV4(ctx);
+  
+  // 4. 書き込み
+  Logger.log('[4/4] 書き込み...');
+  const writeResult = writeShiftResultsV4(ctx);
+  
+  const elapsed = ((Date.now() - overallStart) / 1000).toFixed(2);
+  Logger.log('===== 完了: ' + elapsed + '秒 =====');
+  Logger.log('配置: ' + writeResult.placedCount + '件 / 警告: ' + writeResult.warningCount + '件 / 未配置: ' + result.unassignedCount + 'スロット');
+  
+  return {
+    targetYM: targetYM,
+    elapsed: elapsed,
+    placedCount: writeResult.placedCount,
+    warningCount: writeResult.warningCount,
+    unassignedCount: result.unassignedCount
+  };
+}
+
+// ============================================================
+// テスト用エントリ (実データ書き込みあり)
+// ============================================================
+function testRunNightShiftEngineV4() {
+  Logger.log('=== Step 3.2.6 メインエントリ動作確認 ===');
+  Logger.log('注意: T_シフト確定 + V_警告チェック に実データ書き込みします');
+  Logger.log('');
+  const result = runNightShiftEngineV4('2026-05');
+  Logger.log('');
+  Logger.log('結果: ' + JSON.stringify(result, null, 2));
+}
