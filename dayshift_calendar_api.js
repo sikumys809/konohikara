@@ -296,7 +296,7 @@ function updateDayShiftSlot(adminStaffId, params) {
 /**
  * 候補スタッフ一覧取得 (18列構造)
  */
-function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
+function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, shiftType) {
   try {
     const auth = _checkDayShiftExecPermission(adminStaffId);
     if (!auth.ok) return { success: false, message: auth.message };
@@ -310,20 +310,43 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
     const cfLast = cfSheet.getLastRow();
     const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
 
-    const sameDayPlacements = {};
+    // ★ Phase 5.1.2: スタッフID → kubun (新人判定用) のマップを先に作る
+    const staffKubunMap = {};
+    staffData.forEach(row => {
+      staffKubunMap[String(row[0])] = String(row[8] || '').trim();  // I列: 区分
+    });
+
+    // 同日 全配置を集計 (W2/N2 判定用)
+    const sameDayPlacements = {};   // staff_id → [{shift, facility, jigyosho}, ...]
+    const sameDayJigPlacements = {}; // jigyosho → [{staff_id, kubun, ...}, ...]  N2判定用
     cfData.forEach(row => {
       const rowDate = row[1] instanceof Date
         ? Utilities.formatDate(row[1], 'Asia/Tokyo', 'yyyy-MM-dd')
         : String(row[1]);
       if (rowDate === dateKey) {
         const sid = String(row[6]);
+        const shift = String(row[8]);
+        const fac = String(row[4]);
+        const jig = String(row[3]);
         if (!sameDayPlacements[sid]) sameDayPlacements[sid] = [];
-        sameDayPlacements[sid].push({
-          shift: String(row[8]),
-          facility: String(row[4])
+        sameDayPlacements[sid].push({ shift: shift, facility: fac, jigyosho: jig });
+        if (!sameDayJigPlacements[jig]) sameDayJigPlacements[jig] = [];
+        sameDayJigPlacements[jig].push({
+          staff_id: sid, shift: shift, facility: fac,
+          kubun: staffKubunMap[sid] || ''
         });
       }
     });
+
+    // ★ Phase 5.1.2: 対象事業所の通常スタッフ数を計算 (N2 判定用)
+    // facility パラメータが事業所名 (GHコノヒカラ等) の前提
+    const targetJigyosho = facility;  // 事業所名として扱う
+    const placementsAtJig = sameDayJigPlacements[targetJigyosho] || [];
+    const normalStaffCountAtJig = placementsAtJig.filter(p => {
+      return p.kubun !== '新人1ヶ月' && p.kubun !== '新人2ヶ月';
+    }).length;
+
+    const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
 
     const candidates = staffData
       .filter(row => {
@@ -339,8 +362,34 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
         const mainFac = String(row[9] || '');
         const mainRoles = String(row[19] || '世話人');
         const allowedShifts = String(row[13] || '').split(',').map(s => s.trim()).filter(Boolean);
+        const kubun = String(row[8] || '').trim();
 
         const existingPlacements = sameDayPlacements[sid] || [];
+
+        // ★ Phase 5.1.2: W2/N2 警告判定
+        const warnings = [];
+
+        // W2: 候補シフトが「遅出8h」 かつ 同日に夜勤A/B/C配置あり
+        if (shiftType === '遅出8h') {
+          const hasNightShift = existingPlacements.some(p => NIGHT_SHIFTS.indexOf(p.shift) !== -1);
+          if (hasNightShift) {
+            warnings.push({
+              ruleId: 'W2',
+              level: 'warning_block',
+              message: '同日(' + dateKey + ')に夜勤配置あり。遅出8h(〜22:00)を追加すると連続勤務NG'
+            });
+          }
+        }
+
+        // N2: 候補が新人 かつ 当該事業所に通常スタッフ0人
+        const isNewbie = (kubun === '新人1ヶ月' || kubun === '新人2ヶ月');
+        if (isNewbie && normalStaffCountAtJig === 0) {
+          warnings.push({
+            ruleId: 'N2',
+            level: 'warning_only',
+            message: '同一事業所(' + targetJigyosho + ')・同一日(' + dateKey + ')に通常スタッフ0人で新人(' + kubun + ')のみ配置'
+          });
+        }
 
         return {
           staff_id: sid,
@@ -348,12 +397,20 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility) {
           mainFacility: mainFac,
           mainRoles: mainRoles,
           allowedShifts: allowedShifts,
+          kubun: kubun,
           alreadyAssigned: existingPlacements.length > 0,
           existingPlacements: existingPlacements,
-          isFacilityMatch: mainFac === facility
+          isFacilityMatch: mainFac === facility,
+          warnings: warnings,
+          hasBlockWarning: warnings.some(w => w.level === 'warning_block'),
+          hasOnlyWarning: warnings.some(w => w.level === 'warning_only')
         };
       })
       .sort((a, b) => {
+        // block警告ありを末尾に
+        if (a.hasBlockWarning && !b.hasBlockWarning) return 1;
+        if (!a.hasBlockWarning && b.hasBlockWarning) return -1;
+        // メイン施設マッチ優先
         if (a.isFacilityMatch && !b.isFacilityMatch) return -1;
         if (!a.isFacilityMatch && b.isFacilityMatch) return 1;
         return a.name.localeCompare(b.name, 'ja');

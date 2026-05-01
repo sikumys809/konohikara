@@ -2440,3 +2440,56 @@ function testWarningApprovalAPIs() {
   
   Logger.log('\n=== 完了 ===');
 }
+
+
+// ============================================================
+// Step 5.1.2 テスト関数 (getDayShiftCandidateStaff の警告フラグ確認)
+// ============================================================
+function testCandidateWarnings() {
+  Logger.log('=== Step 5.1.2 候補スタッフの警告フラグ動作確認 ===');
+  
+  const adminId = '13';
+  const ym = '2026-05';
+  const dateKey = '2026-05-15';
+  const facility = 'GHコノヒカラ';
+  
+  // === ケース1: 早出8h (W2対象外、N2は配置状況次第) ===
+  Logger.log('\n--- ケース1: 早出8h (W2対象外) ---');
+  const r1 = getDayShiftCandidateStaff(adminId, ym, dateKey, facility, '早出8h');
+  Logger.log('success=' + r1.success + ' / 候補=' + (r1.candidates ? r1.candidates.length : 0) + '名');
+  if (r1.candidates && r1.candidates.length > 0) {
+    const withWarn = r1.candidates.filter(c => c.warnings && c.warnings.length > 0);
+    Logger.log('警告ありの候補: ' + withWarn.length + '名');
+    if (withWarn.length > 0) {
+      Logger.log('先頭3件:');
+      withWarn.slice(0, 3).forEach(c => {
+        Logger.log('  ' + c.name + ' (' + c.kubun + ') → ' + c.warnings.map(w => w.ruleId + '(' + w.level + ')').join(','));
+      });
+    } else {
+      Logger.log('全候補に警告なし (期待通り、配置0なので)');
+    }
+    Logger.log('先頭3名 (kubun表示確認):');
+    r1.candidates.slice(0, 3).forEach(c => {
+      Logger.log('  ' + c.name + ' / kubun=' + c.kubun + ' / hasBlock=' + c.hasBlockWarning + ' / hasOnly=' + c.hasOnlyWarning);
+    });
+  }
+  
+  // === ケース2: 遅出8h (W2チェック対象) ===
+  Logger.log('\n--- ケース2: 遅出8h (W2チェック対象、夜勤配置がなければ警告なし) ---');
+  const r2 = getDayShiftCandidateStaff(adminId, ym, dateKey, facility, '遅出8h');
+  Logger.log('success=' + r2.success + ' / 候補=' + (r2.candidates ? r2.candidates.length : 0) + '名');
+  if (r2.candidates) {
+    const withW2 = r2.candidates.filter(c => c.warnings && c.warnings.some(w => w.ruleId === 'W2'));
+    Logger.log('W2警告ありの候補: ' + withW2.length + '名 (期待: 0、夜勤配置なしのため)');
+  }
+  
+  // === ケース3: shiftType を渡さない (後方互換性) ===
+  Logger.log('\n--- ケース3: shiftType 未指定 (後方互換性) ---');
+  const r3 = getDayShiftCandidateStaff(adminId, ym, dateKey, facility);
+  Logger.log('success=' + r3.success + ' / 候補=' + (r3.candidates ? r3.candidates.length : 0) + '名');
+  if (r3.candidates && r3.candidates.length > 0) {
+    Logger.log('先頭1名のwarnings: ' + JSON.stringify(r3.candidates[0].warnings));
+  }
+  
+  Logger.log('\n=== 完了 ===');
+}
