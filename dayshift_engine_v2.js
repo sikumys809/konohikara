@@ -1356,3 +1356,172 @@ function testAssignByScoreV2() {
   Logger.log('');
   Logger.log('=== 完了 ===');
 }
+
+// ============================================================
+// Step 4.6: writeShiftResultsV2 + メインエントリ
+// ============================================================
+
+// ============================================================
+// writeShiftResultsV2: T_シフト確定 + V_警告チェック への書き込み
+// インクリメンタル: 対象月の既存日勤レコード(早出/遅出)を削除→新規挿入
+// 夜勤レコードは保持
+// ============================================================
+function writeShiftResultsV2(ctx) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DSE_V2.SHEET_NAME_CONF);
+  if (!sheet) throw new Error('T_シフト確定シートが見つからない');
+  
+  Logger.log('writeShiftResultsV2: 書き込み開始');
+  
+  // 1. 対象月の既存日勤レコードを削除 (夜勤データは残す)
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const allData = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+    const rowsToDelete = [];
+    for (let i = 0; i < allData.length; i++) {
+      const ym = _v2d_normYm(allData[i][DSE_V2.COL_CONF_YM]);
+      const shift = String(allData[i][DSE_V2.COL_CONF_SHIFT] || '').trim();
+      // 対象月 かつ 日勤シフト
+      if (ym === ctx.targetYM && DSE_V2.DAY_SHIFTS.indexOf(shift) !== -1) {
+        rowsToDelete.push(i + 2);
+      }
+    }
+    rowsToDelete.reverse().forEach(function(rowNum) {
+      sheet.deleteRow(rowNum);
+    });
+    Logger.log('  既存日勤レコード削除: ' + rowsToDelete.length + '件');
+  }
+  
+  // 2. 配置結果を T_シフト確定 に書き込み
+  const newRows = [];
+  const now = new Date();
+  let placedCount = 0;
+  
+  for (const slot of ctx.slots) {
+    if (!slot.assignment) continue;
+    const a = slot.assignment;
+    const shiftPat = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[slot.shift])
+      ? SHIFT_PATTERNS[slot.shift]
+      : { start: '', end: '', dayHours: 8, nightHours: 0 };
+    
+    const requestId = 'DSE-V2-' + ctx.targetYM + '-' + slot.jigyosho + '-' + slot.dateKey + '-' + slot.shift;
+    const hasBlock = a.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; });
+    const status = hasBlock ? '警告承認待ち' : '仮';
+    
+    // T_シフト確定 18列構造
+    const row = [
+      requestId,                  // A
+      slot.date,                  // B
+      ctx.targetYM,               // C
+      slot.jigyosho,              // D
+      '',                         // E: facility (日勤は事業所単位なので空)
+      '',                         // F: unit (日勤は空)
+      a.staff_id,                 // G
+      a.staff_name,               // H
+      slot.shift,                 // I
+      shiftPat.start,             // J
+      shiftPat.end,               // K
+      a.reason,                   // L
+      status,                     // M
+      now,                        // N
+      shiftPat.start,             // O
+      shiftPat.end,               // P
+      shiftPat.nightHours,        // Q
+      shiftPat.dayHours,          // R
+    ];
+    newRows.push(row);
+    placedCount++;
+  }
+  
+  if (newRows.length > 0) {
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, newRows.length, 18).setValues(newRows);
+    Logger.log('  新規日勤レコード書き込み: ' + newRows.length + '件');
+  }
+  
+  // 3. 既存の警告レコード (対象月+日勤) を削除
+  if (typeof deleteWarningsForMonth === 'function') {
+    const deletedCount = deleteWarningsForMonth(ctx.targetYM, 'day');
+    Logger.log('  既存日勤警告レコード削除: ' + deletedCount + '件');
+  }
+  
+  // 4. 新規警告レコードを書き込み
+  let warningCount = 0;
+  if (ctx.pendingWarnings && ctx.pendingWarnings.length > 0) {
+    if (typeof addWarning !== 'function') {
+      throw new Error('addWarning 関数が見つからない (warning_system.js が必要)');
+    }
+    for (const w of ctx.pendingWarnings) {
+      addWarning(w);
+      warningCount++;
+    }
+    Logger.log('  新規警告レコード書き込み: ' + warningCount + '件');
+  }
+  
+  return {
+    placedCount: placedCount,
+    warningCount: warningCount
+  };
+}
+
+// ============================================================
+// runDayShiftEngineV2: メインエントリ
+// 引数: targetYM (e.g. "2026-05")
+// ============================================================
+function runDayShiftEngineV2(targetYM) {
+  const overallStart = Date.now();
+  Logger.log('===== runDayShiftEngineV2 開始: ' + targetYM + ' =====');
+  
+  // 1. ctx 構築
+  Logger.log('[1/5] ctx構築...');
+  const ctx = loadEngineContextV2(targetYM);
+  Logger.log('  ユニット: ' + ctx.units.length + ' / スタッフ: ' + Object.keys(ctx.staffMap).length + ' / 希望: ' + ctx.wishes.length);
+  Logger.log('  事業所配置基準: ' + Object.keys(ctx.facilityBasis).length + '事業所');
+  
+  // 2. スロット生成
+  Logger.log('[2/5] スロット生成...');
+  generateSlotsV2(ctx);
+  Logger.log('  スロット: ' + ctx.slots.length);
+  
+  // 3. 配置実行
+  Logger.log('[3/5] 配置実行...');
+  const result = assignByScoreV2(ctx);
+  
+  // 4. 役割別時間集計 (確認用)
+  Logger.log('[4/5] 充足率計算...');
+  const roleHours = calcRoleHoursV2(ctx);
+  Object.keys(roleHours).forEach(function(jig) {
+    const r = roleHours[jig];
+    Logger.log('  ' + jig + ': 世話人=' + r.sewaRate.toFixed(0) + '% / 生活=' + r.seikatsuRate.toFixed(0) + '% / 特定=' + r.tokuteiRate.toFixed(0) + '% / サビ管=' + r.sabikanRate.toFixed(0) + '% / 管理者=' + r.kanrishaRate.toFixed(0) + '% / 看護師=' + r.nurseRate.toFixed(0) + '%');
+  });
+  
+  // 5. 書き込み
+  Logger.log('[5/5] 書き込み...');
+  const writeResult = writeShiftResultsV2(ctx);
+  
+  const elapsed = ((Date.now() - overallStart) / 1000).toFixed(2);
+  Logger.log('===== 完了: ' + elapsed + '秒 =====');
+  Logger.log('配置: ' + writeResult.placedCount + '件 / 警告: ' + writeResult.warningCount + '件 / 未配置: ' + result.unassignedCount + 'スロット');
+  
+  return {
+    targetYM: targetYM,
+    elapsed: elapsed,
+    placedCount: writeResult.placedCount,
+    warningBlockCount: result.warningBlockCount,
+    warningOnlyCount: result.warningOnlyCount,
+    unassignedCount: result.unassignedCount,
+    roleHours: roleHours
+  };
+}
+
+// ============================================================
+// テスト用エントリ (実データ書き込みあり)
+// ============================================================
+function testRunDayShiftEngineV2() {
+  Logger.log('=== Step 4.6 メインエントリ動作確認 ===');
+  Logger.log('注意: T_シフト確定 + V_警告チェック に実データ書き込みします (対象月=2026-05)');
+  Logger.log('');
+  const result = runDayShiftEngineV2('2026-05');
+  Logger.log('');
+  Logger.log('結果: ' + JSON.stringify(result, null, 2));
+}
