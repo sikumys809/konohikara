@@ -1,0 +1,5 @@
+**/_archive/**
+**/_archive_*.js
+*.js.bak
+node_modules/**
+.git/**
