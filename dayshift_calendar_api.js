@@ -129,6 +129,19 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       };
     });
 
+    // ★ Step 5.1.1: 警告レコード取得 (カレンダーセルのマーク表示用)
+    let warnings = [];
+    try {
+      if (typeof getWarnings === 'function') {
+        warnings = getWarnings({
+          shift_kind: 'day',
+          target_ym: ym
+        });
+      }
+    } catch (e) {
+      Logger.log('警告取得エラー (続行): ' + e.message);
+    }
+
     return {
       success: true,
       yearMonth: ym,
@@ -136,7 +149,8 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       month: month,
       days: days,
       calendar: calendar,
-      canEdit: true
+      canEdit: true,
+      warnings: warnings  // ★ Step 5.1.1: 警告リスト追加
     };
   } catch (e) {
     Logger.log('getDayShiftCalendarData エラー: ' + e.message);

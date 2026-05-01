@@ -1514,6 +1514,26 @@ function approveShifts(adminStaffId, targetYM) {
     return { success: false, message: admin.message };
   }
   
+  // ★ Step 5.1.4: 未承認のblock警告チェック (日勤+夜勤両方)
+  try {
+    if (typeof hasUnapprovedBlockWarnings === 'function') {
+      const dayBlock = hasUnapprovedBlockWarnings(targetYM, 'day');
+      const nightBlock = hasUnapprovedBlockWarnings(targetYM, 'night');
+      if (dayBlock || nightBlock) {
+        const which = [];
+        if (dayBlock) which.push('日勤');
+        if (nightBlock) which.push('夜勤');
+        return {
+          success: false,
+          message: '未承認のblock警告があります (' + which.join('+') + ')。警告承認画面で承認後に再実行してください。',
+          hasUnapprovedBlock: true
+        };
+      }
+    }
+  } catch (e) {
+    Logger.log('警告チェックエラー (続行): ' + e.message);
+  }
+  
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const [year, month] = targetYM.split('-').map(Number);
   const sheet = ss.getSheetByName('T_シフト確定');
@@ -2208,4 +2228,215 @@ function addStaff(adminStaffId, params) {
   } catch (e) {
     return { success: false, message: 'エラー: ' + e.message };
   }
+}
+
+// ============================================================
+// Step 5.2: 警告承認API (4関数)
+// 仕様書: https://app.notion.com/p/353ec81ceecf81379cd2e6b3ffc2307d
+// warning_system.js のラッパー (権限チェック + adminログ記録付き)
+// ============================================================
+
+// ============================================================
+// getPendingWarnings: 警告一覧取得 (フィルタ可)
+// 引数: adminStaffId, targetYM, shiftKind ('day'/'night'/null=両方), levelOnly ('block'/'only'/null=両方)
+// 権限: シフト作成 or 最終承認者
+// ============================================================
+function getPendingWarnings(adminStaffId, targetYM, shiftKind, levelOnly) {
+  try {
+    const admin = checkAdminAuth(adminStaffId, 'シフト作成');
+    if (!admin.authorized) {
+      const adminApprove = checkAdminAuth(adminStaffId, '最終承認者');
+      if (!adminApprove.authorized) {
+        return { success: false, message: '権限なし' };
+      }
+    }
+    
+    if (typeof getWarnings !== 'function') {
+      return { success: false, message: 'warning_system.js が読み込まれていない' };
+    }
+    
+    const filter = {};
+    if (targetYM) filter.target_ym = targetYM;
+    if (shiftKind) filter.shift_kind = shiftKind;
+    
+    let warnings = getWarnings(filter);
+    
+    // levelOnly フィルタ
+    if (levelOnly === 'block') {
+      warnings = warnings.filter(function(w) { return w.level === 'warning_block'; });
+    } else if (levelOnly === 'only') {
+      warnings = warnings.filter(function(w) { return w.level === 'warning_only'; });
+    }
+    
+    return {
+      success: true,
+      count: warnings.length,
+      warnings: warnings
+    };
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
+}
+
+// ============================================================
+// getWarningSummary: 警告サマリー (種別別件数)
+// 引数: adminStaffId, targetYM
+// 戻り値: { day: {block, only, blockUnapproved}, night: {block, only, blockUnapproved} }
+// ============================================================
+function getWarningSummary(adminStaffId, targetYM) {
+  try {
+    const admin = checkAdminAuth(adminStaffId, 'シフト作成');
+    if (!admin.authorized) {
+      const adminApprove = checkAdminAuth(adminStaffId, '最終承認者');
+      if (!adminApprove.authorized) {
+        return { success: false, message: '権限なし' };
+      }
+    }
+    
+    if (typeof getWarnings !== 'function') {
+      return { success: false, message: 'warning_system.js が読み込まれていない' };
+    }
+    
+    const allWarnings = getWarnings({ target_ym: targetYM });
+    
+    const summary = {
+      day: { block: 0, only: 0, blockUnapproved: 0 },
+      night: { block: 0, only: 0, blockUnapproved: 0 }
+    };
+    
+    allWarnings.forEach(function(w) {
+      const kind = w.shift_kind === 'day' ? 'day' : (w.shift_kind === 'night' ? 'night' : null);
+      if (!kind) return;
+      
+      if (w.level === 'warning_block') {
+        summary[kind].block++;
+        if (w.status !== '承認済') summary[kind].blockUnapproved++;
+      } else if (w.level === 'warning_only') {
+        summary[kind].only++;
+      }
+    });
+    
+    return {
+      success: true,
+      targetYM: targetYM,
+      summary: summary,
+      totalCount: allWarnings.length
+    };
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
+}
+
+// ============================================================
+// approveWarningRecord: 警告1件承認 (最終承認者のみ)
+// ============================================================
+function approveWarningRecord(adminStaffId, warningId) {
+  try {
+    const admin = checkAdminAuth(adminStaffId, '最終承認者');
+    if (!admin.authorized) {
+      return { success: false, message: admin.message };
+    }
+    
+    if (typeof approveWarning !== 'function') {
+      return { success: false, message: 'warning_system.js が読み込まれていない' };
+    }
+    
+    const result = approveWarning(warningId, admin.name);
+    if (!result || !result.success) {
+      return result || { success: false, message: '承認失敗' };
+    }
+    
+    // adminログ記録
+    try {
+      writeAdminLog(
+        admin.staff_id, admin.name, admin.role,
+        '警告承認', 'V_警告チェック', warningId,
+        '未承認', '承認済',
+        '警告ID ' + warningId + ' を承認'
+      );
+    } catch (e) {
+      Logger.log('ログ記録エラー: ' + e.message);
+    }
+    
+    return result;
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
+}
+
+// ============================================================
+// unapproveWarningRecord: 警告承認取消 (最終承認者のみ)
+// ============================================================
+function unapproveWarningRecord(adminStaffId, warningId) {
+  try {
+    const admin = checkAdminAuth(adminStaffId, '最終承認者');
+    if (!admin.authorized) {
+      return { success: false, message: admin.message };
+    }
+    
+    if (typeof unapproveWarning !== 'function') {
+      return { success: false, message: 'warning_system.js が読み込まれていない' };
+    }
+    
+    const result = unapproveWarning(warningId);
+    if (!result || !result.success) {
+      return result || { success: false, message: '承認取消失敗' };
+    }
+    
+    // adminログ記録
+    try {
+      writeAdminLog(
+        admin.staff_id, admin.name, admin.role,
+        '警告承認取消', 'V_警告チェック', warningId,
+        '承認済', '未承認',
+        '警告ID ' + warningId + ' の承認を取消'
+      );
+    } catch (e) {
+      Logger.log('ログ記録エラー: ' + e.message);
+    }
+    
+    return result;
+  } catch (e) {
+    return { success: false, message: 'エラー: ' + e.message };
+  }
+}
+
+
+// ============================================================
+// Step 5.2 テスト関数 (簡易動作確認)
+// ============================================================
+function testWarningApprovalAPIs() {
+  Logger.log('=== Step 5.2 警告承認API 動作確認 ===');
+  Logger.log('対象: 自分のadminStaffId=13, 対象月=2026-05');
+  
+  const adminId = '13';  // 水野永吉 (最終承認者想定)
+  const ym = '2026-05';
+  
+  Logger.log('\n--- 1. getWarningSummary ---');
+  const summary = getWarningSummary(adminId, ym);
+  Logger.log(JSON.stringify(summary, null, 2));
+  
+  Logger.log('\n--- 2. getPendingWarnings (全件) ---');
+  const all = getPendingWarnings(adminId, ym, null, null);
+  Logger.log('success=' + all.success + ' / count=' + (all.count || 0));
+  if (all.warnings && all.warnings.length > 0) {
+    Logger.log('先頭3件:');
+    all.warnings.slice(0, 3).forEach(function(w) {
+      Logger.log('  ' + w.warning_id + ' | ' + w.shift_kind + ' | ' + w.rule_id + ' | ' + w.level + ' | ' + w.status + ' | ' + w.staff_name);
+    });
+  }
+  
+  Logger.log('\n--- 3. getPendingWarnings (block のみ) ---');
+  const blocks = getPendingWarnings(adminId, ym, null, 'block');
+  Logger.log('block警告: ' + (blocks.count || 0) + '件');
+  
+  Logger.log('\n--- 4. getPendingWarnings (only のみ) ---');
+  const onlies = getPendingWarnings(adminId, ym, null, 'only');
+  Logger.log('only警告: ' + (onlies.count || 0) + '件');
+  
+  Logger.log('\n--- 5. approveWarningRecord (mock_id でテスト) ---');
+  const approveTest = approveWarningRecord(adminId, 'NONEXISTENT-ID');
+  Logger.log('存在しないID: success=' + approveTest.success + ' / msg=' + approveTest.message);
+  
+  Logger.log('\n=== 完了 ===');
 }
