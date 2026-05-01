@@ -2493,3 +2493,89 @@ function testCandidateWarnings() {
   
   Logger.log('\n=== 完了 ===');
 }
+
+
+// ============================================================
+// Step 5.1.3 テスト関数 (updateDayShiftSlot 警告統合の動作確認)
+// ============================================================
+function testUpdateDayShiftSlotWithWarnings() {
+  Logger.log('=== Step 5.1.3 updateDayShiftSlot 警告統合 動作確認 ===');
+  Logger.log('注意: T_シフト確定 + V_警告チェック に実データ書き込みします');
+  Logger.log('テスト終了時に追加した配置は削除します');
+  Logger.log('');
+  
+  const adminId = '13';
+  const ym = '2026-05';
+  const testDate = '2026-05-25';   // テスト用 (月末側で実データ汚染回避)
+  const testFacility = 'リフレ要町';  // M_ユニットに存在する施設名
+  const testStaffId = '13';        // 水野永吉 (自分でテスト)
+  
+  // === テスト1: action='add' で配置追加 ===
+  Logger.log('--- テスト1: action=add (新規配置) ---');
+  const addResult = updateDayShiftSlot(adminId, {
+    action: 'add',
+    date: testDate,
+    facility: testFacility,
+    staff_id: testStaffId,
+    shiftType: '早出8h'
+  });
+  Logger.log('success=' + addResult.success + ' / msg=' + addResult.message);
+  if (addResult.warnings) {
+    Logger.log('警告: ' + addResult.warnings.length + '件 / hasBlock=' + addResult.hasBlockWarning);
+    addResult.warnings.forEach(function(w) {
+      Logger.log('  ' + w.ruleId + ' (' + w.level + '): ' + w.message);
+    });
+  }
+  
+  // === テスト2: 警告レコード確認 ===
+  Logger.log('');
+  Logger.log('--- テスト2: V_警告チェック の状態確認 ---');
+  const warns = getWarnings({
+    shift_kind: 'day',
+    target_ym: ym,
+    date: testDate
+  });
+  Logger.log('対象日(' + testDate + ')の警告: ' + warns.length + '件');
+  warns.forEach(function(w) {
+    Logger.log('  ' + w.warning_id + ' / ' + w.rule_id + ' / ' + w.level + ' / ' + w.staff_name);
+  });
+  
+  // === テスト3: クリーンアップ (action='delete') ===
+  Logger.log('');
+  Logger.log('--- テスト3: action=delete (テストデータ削除) ---');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfSheet = ss.getSheetByName('T_シフト確定');
+  const cfData = cfSheet.getDataRange().getValues();
+  let foundRow = 0;
+  for (let i = 1; i < cfData.length; i++) {
+    const rowDate = cfData[i][1] instanceof Date
+      ? Utilities.formatDate(cfData[i][1], 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(cfData[i][1]).substring(0, 10);
+    if (rowDate === testDate && String(cfData[i][6]) === testStaffId &&
+        String(cfData[i][8]) === '早出8h' && String(cfData[i][4]) === testFacility) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+  
+  if (foundRow > 0) {
+    Logger.log('テスト配置を発見 (rowIndex=' + foundRow + ')、削除実行');
+    const delResult = updateDayShiftSlot(adminId, {
+      action: 'delete',
+      rowIndex: foundRow
+    });
+    Logger.log('success=' + delResult.success + ' / msg=' + delResult.message);
+    
+    const afterWarns = getWarnings({
+      shift_kind: 'day',
+      target_ym: ym,
+      date: testDate
+    });
+    Logger.log('削除後の警告数: ' + afterWarns.length + '件');
+  } else {
+    Logger.log('テスト配置が見つかりませんでした (既に削除済?)');
+  }
+  
+  Logger.log('');
+  Logger.log('=== 完了 ===');
+}

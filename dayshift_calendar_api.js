@@ -185,8 +185,21 @@ function updateDayShiftSlot(adminStaffId, params) {
       }
       const rowData = sheet.getRange(params.rowIndex, 1, 1, 18).getValues()[0];
       const deletedInfo = `${rowData[1]} ${rowData[7]} ${rowData[8]} @ ${rowData[4]}`;
+      
+      // ★ Phase 5.1.3.B: 削除前に staff情報を保存 (警告レコード削除用)
+      const delDateKey = rowData[1] instanceof Date
+        ? Utilities.formatDate(rowData[1], 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(rowData[1]).substring(0, 10);
+      const delYM = delDateKey.substring(0, 7);
+      const delStaffId = String(rowData[6]);
+      const delJigyosho = String(rowData[3]);
+      
       sheet.deleteRow(params.rowIndex);
       _recordSlotEditLog(adminStaffId, auth.name, 'delete', null, deletedInfo);
+      
+      // ★ Phase 5.1.3.B: 関連警告レコードも削除 (新警告は0件で差し替え)
+      _replaceDayShiftWarnings(delStaffId, delDateKey, delJigyosho, delYM, []);
+      
       return { success: true, message: '配置を削除しました', action: 'delete' };
     }
 
@@ -223,7 +236,26 @@ function updateDayShiftSlot(adminStaffId, params) {
 
       _recordSlotEditLog(adminStaffId, auth.name, 'update',
         `${beforeInfo}`, `${staffInfo.name} ${params.shiftType}`);
-      return { success: true, message: '配置を更新しました', action: 'update' };
+      
+      // ★ Phase 5.1.3.C: 警告判定 + レコード差し替え
+      const updDateKey = beforeRow[1] instanceof Date
+        ? Utilities.formatDate(beforeRow[1], 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(beforeRow[1]).substring(0, 10);
+      const updYM = updDateKey.substring(0, 7);
+      const updJigyosho = String(beforeRow[3]);
+      const updFacility = String(beforeRow[4]);
+      const updWarnings = _evaluateDayShiftWarnings(
+        params.staff_id, updDateKey, updJigyosho, updFacility, params.shiftType, updYM
+      );
+      _replaceDayShiftWarnings(params.staff_id, updDateKey, updJigyosho, updYM, updWarnings);
+      
+      return {
+        success: true,
+        message: '配置を更新しました',
+        action: 'update',
+        warnings: updWarnings,
+        hasBlockWarning: updWarnings.some(function(w) { return w.level === 'warning_block'; })
+      };
     }
 
     if (action === 'add') {
@@ -282,7 +314,20 @@ function updateDayShiftSlot(adminStaffId, params) {
 
       _recordSlotEditLog(adminStaffId, auth.name, 'add', null,
         `${params.date} ${staffInfo.name} ${params.shiftType} @ ${params.facility}`);
-      return { success: true, message: '配置を追加しました', action: 'add' };
+      
+      // ★ Phase 5.1.3.C: 警告判定 + レコード差し替え
+      const addWarnings = _evaluateDayShiftWarnings(
+        params.staff_id, params.date, jigyosho, params.facility, params.shiftType, ym
+      );
+      _replaceDayShiftWarnings(params.staff_id, params.date, jigyosho, ym, addWarnings);
+      
+      return {
+        success: true,
+        message: '配置を追加しました',
+        action: 'add',
+        warnings: addWarnings,
+        hasBlockWarning: addWarnings.some(function(w) { return w.level === 'warning_block'; })
+      };
     }
 
     return { success: false, message: '不正なaction: ' + action };
@@ -443,8 +488,10 @@ function _findStaffDefaultFacility(staffId) {
 }
 
 function _generateNewDayShiftId(sheet, ym) {
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
   const prefix = `SHIFT_${ym}_D`;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return prefix + '0001';
+  const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   let maxNum = 0;
   data.forEach(row => {
     const v = String(row[0]);
@@ -514,4 +561,185 @@ function testGetCandidates() {
   result.candidates.slice(0, 10).forEach(c => {
     Logger.log(`  ${c.staff_id} ${c.name} / メイン:${c.mainFacility} / マッチ:${c.isFacilityMatch} / 既配置:${c.alreadyAssigned}`);
   });
+}
+
+// ============================================================
+// Phase 5.1.3.A: 日勤配置の警告判定 + 警告レコード差し替え ヘルパー
+// ============================================================
+
+/**
+ * 日勤配置に対する W2/N2 警告判定
+ * @param {string} staffId - スタッフID
+ * @param {string} dateKey - yyyy-MM-dd
+ * @param {string} jigyosho - 事業所名
+ * @param {string} facility - 施設名 (空でもOK)
+ * @param {string} shift - シフト種別 (早出8h等)
+ * @param {string} ym - yyyy-MM
+ * @returns {Array} [{ruleId, level, message}, ...]
+ */
+function _evaluateDayShiftWarnings(staffId, dateKey, jigyosho, facility, shift, ym) {
+  const warnings = [];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. スタッフ情報取得 (kubun判定用)
+    const staffSheet = ss.getSheetByName('M_スタッフ');
+    let candidateKubun = '';
+    const staffData = staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues();
+    const staffKubunMap = {};
+    staffData.forEach(function(row) {
+      const sid = String(row[0]);
+      staffKubunMap[sid] = String(row[8] || '').trim();
+      if (sid === String(staffId)) {
+        candidateKubun = String(row[8] || '').trim();
+      }
+    });
+
+    // 2. 該当日の全配置を取得
+    const cfSheet = ss.getSheetByName('T_シフト確定');
+    const cfLast = cfSheet.getLastRow();
+    if (cfLast > 1) {
+      const cfData = cfSheet.getRange(2, 1, cfLast - 1, 18).getValues();
+      const sameDayCandidatePlacements = [];  // 候補本人の同日配置
+      const sameDayJigPlacements = [];        // 当該事業所の同日配置 (全スタッフ)
+
+      cfData.forEach(function(row) {
+        const rowDate = row[1] instanceof Date
+          ? Utilities.formatDate(row[1], 'Asia/Tokyo', 'yyyy-MM-dd')
+          : String(row[1]);
+        if (rowDate !== dateKey) return;
+
+        const rowStaffId = String(row[6]);
+        const rowShift = String(row[8]);
+        const rowJig = String(row[3]);
+
+        if (rowStaffId === String(staffId)) {
+          sameDayCandidatePlacements.push({ shift: rowShift, jigyosho: rowJig });
+        }
+        if (rowJig === jigyosho) {
+          sameDayJigPlacements.push({
+            staff_id: rowStaffId,
+            shift: rowShift,
+            kubun: staffKubunMap[rowStaffId] || ''
+          });
+        }
+      });
+
+      // W2: shift==='遅出8h' && 同日に夜勤A/B/C
+      if (shift === '遅出8h') {
+        const hasNight = sameDayCandidatePlacements.some(function(p) {
+          return NIGHT_SHIFTS.indexOf(p.shift) !== -1;
+        });
+        if (hasNight) {
+          warnings.push({
+            ruleId: 'W2',
+            level: 'warning_block',
+            message: '同日(' + dateKey + ')に夜勤配置あり。遅出8h(〜22:00)を追加すると連続勤務NG'
+          });
+        }
+      }
+
+      // N2: 候補が新人 && 当該事業所に通常スタッフ0人
+      const isNewbie = (candidateKubun === '新人1ヶ月' || candidateKubun === '新人2ヶ月');
+      if (isNewbie) {
+        const normalCount = sameDayJigPlacements.filter(function(p) {
+          return p.staff_id !== String(staffId) &&
+                 p.kubun !== '新人1ヶ月' && p.kubun !== '新人2ヶ月';
+        }).length;
+        if (normalCount === 0) {
+          warnings.push({
+            ruleId: 'N2',
+            level: 'warning_only',
+            message: '同一事業所(' + jigyosho + ')・同一日(' + dateKey + ')に通常スタッフ0人で新人(' + candidateKubun + ')のみ配置'
+          });
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log('_evaluateDayShiftWarnings エラー: ' + e.message);
+  }
+
+  return warnings;
+}
+
+/**
+ * 日勤配置の警告レコードを差し替え
+ * 古い警告(同staff_id, 同date, 同jigyosho, shift_kind=day) を削除 → 新規追加
+ * @param {string} staffId
+ * @param {string} dateKey
+ * @param {string} jigyosho
+ * @param {string} ym
+ * @param {Array} newWarnings - [{ruleId, level, message}, ...]
+ */
+function _replaceDayShiftWarnings(staffId, dateKey, jigyosho, ym, newWarnings) {
+  try {
+    if (typeof getWarnings !== 'function' ||
+        typeof deleteWarning !== 'function' ||
+        typeof addWarning !== 'function') {
+      Logger.log('_replaceDayShiftWarnings: warning_system.js 未読込のためスキップ');
+      return;
+    }
+
+    // 既存警告を取得して、該当するものを削除
+    const existing = getWarnings({
+      shift_kind: 'day',
+      target_ym: ym
+    });
+    let deletedCount = 0;
+    existing.forEach(function(w) {
+      if (String(w.staff_id) === String(staffId) &&
+          String(w.date) === String(dateKey) &&
+          String(w.jigyosho) === String(jigyosho)) {
+        try {
+          deleteWarning(w.warning_id);
+          deletedCount++;
+        } catch (e) {
+          Logger.log('警告削除エラー (' + w.warning_id + '): ' + e.message);
+        }
+      }
+    });
+
+    // 新規警告を追加
+    let addedCount = 0;
+    if (newWarnings && newWarnings.length > 0) {
+      // staff_name 取得
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const staffSheet = ss.getSheetByName('M_スタッフ');
+      let staffName = '';
+      const staffData = staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 2).getValues();
+      for (let i = 0; i < staffData.length; i++) {
+        if (String(staffData[i][0]) === String(staffId)) {
+          staffName = String(staffData[i][1]);
+          break;
+        }
+      }
+
+      newWarnings.forEach(function(w) {
+        try {
+          addWarning({
+            shift_kind: 'day',
+            target_ym: ym,
+            date: dateKey,
+            jigyosho: jigyosho,
+            facility: '',
+            unit: '',
+            staff_id: staffId,
+            staff_name: staffName,
+            rule_id: w.ruleId,
+            level: w.level,
+            message: w.message
+          });
+          addedCount++;
+        } catch (e) {
+          Logger.log('警告追加エラー: ' + e.message);
+        }
+      });
+    }
+
+    Logger.log('_replaceDayShiftWarnings: 削除=' + deletedCount + ' / 追加=' + addedCount);
+  } catch (e) {
+    Logger.log('_replaceDayShiftWarnings エラー: ' + e.message);
+  }
 }
