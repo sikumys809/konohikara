@@ -357,3 +357,108 @@ function testWorkConstraints() {
   
   Logger.log('\n=== 完了 ===');
 }
+
+// ============================================================
+// Step 2.3: 兼務NG判定
+// ============================================================
+
+// 同時刻NGの役割ペア (順序不問)
+const PROHIBITED_ROLE_PAIRS = [
+  ['サビ管', '世話人'],
+  ['サビ管', '生活支援員'],
+  ['サビ管', '看護師'],
+  ['世話人', '生活支援員']
+];
+
+// 内部: 役割ペアが禁止リストにあるか
+function _isPairProhibited(roleA, roleB) {
+  if (roleA === roleB) return false; // 同じ役割は対象外
+  for (let i = 0; i < PROHIBITED_ROLE_PAIRS.length; i++) {
+    const pair = PROHIBITED_ROLE_PAIRS[i];
+    if ((pair[0] === roleA && pair[1] === roleB) ||
+        (pair[0] === roleB && pair[1] === roleA)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+// 2人のスタッフ (役割の組み合わせ) が同時刻NGか
+// rolesA, rolesB: 役割の配列
+// 例: isCombinationProhibited(['世話人'], ['生活支援員']) → true (H2)
+// ============================================================
+function isCombinationProhibited(rolesA, rolesB) {
+  if (!Array.isArray(rolesA) || !Array.isArray(rolesB)) return false;
+  for (let i = 0; i < rolesA.length; i++) {
+    for (let j = 0; j < rolesB.length; j++) {
+      if (_isPairProhibited(rolesA[i], rolesB[j])) return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+// 1人のスタッフが複数役割を同時刻に担う場合のNG判定
+// roles: 役割の配列
+// 例: hasInternalRoleConflict(['世話人', '生活支援員']) → true (H2)
+//     hasInternalRoleConflict(['管理者', '世話人']) → false (兼務OK)
+// ============================================================
+function hasInternalRoleConflict(roles) {
+  if (!Array.isArray(roles) || roles.length < 2) return false;
+  for (let i = 0; i < roles.length; i++) {
+    for (let j = i + 1; j < roles.length; j++) {
+      if (_isPairProhibited(roles[i], roles[j])) return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+// テスト関数 (Step 2.3)
+// ============================================================
+function testRoleCombinations() {
+  Logger.log('=== 兼務NG判定テスト (Step 2.3) ===');
+  
+  // 1. isCombinationProhibited (2人の組み合わせ)
+  Logger.log('\n--- isCombinationProhibited ---');
+  const pairCases = [
+    [['世話人'], ['生活支援員'], true,  'H2 世話人×生活支援員'],
+    [['サビ管'], ['世話人'], true,      'H4 サビ管×世話人'],
+    [['サビ管'], ['生活支援員'], true,  'H4 サビ管×生活支援員'],
+    [['サビ管'], ['看護師'], true,      'H5 サビ管×看護師'],
+    [['管理者'], ['世話人'], false,     '管理者×世話人 OK'],
+    [['管理者'], ['サビ管'], false,     '管理者×サビ管 OK'],
+    [['看護師'], ['世話人'], false,     '看護師×世話人 OK'],
+    [['看護師'], ['生活支援員'], false, '看護師×生活支援員 OK'],
+    [['世話人'], ['世話人'], false,     '同じ役割同士 OK'],
+    [['管理者', '世話人'], ['看護師'], false, '管理者+世話人 vs 看護師 OK'],
+    [['管理者', '世話人'], ['生活支援員'], true, '世話人 vs 生活支援員でNG'],
+    [['看護師'], ['サビ管'], true,      '逆順でも判定 NG']
+  ];
+  pairCases.forEach(function(c) {
+    const actual = isCombinationProhibited(c[0], c[1]);
+    const ok = actual === c[2] ? 'OK' : 'NG';
+    Logger.log(ok + ' ' + JSON.stringify(c[0]) + ' vs ' + JSON.stringify(c[1]) + ' -> ' + actual + ' (期待:' + c[2] + ') [' + c[3] + ']');
+  });
+  
+  // 2. hasInternalRoleConflict (1人内の役割競合)
+  Logger.log('\n--- hasInternalRoleConflict ---');
+  const internalCases = [
+    [['世話人', '生活支援員'], true,             'H2 世話人+生活支援員 同時刻NG'],
+    [['サビ管', '世話人'], true,                 'H4 サビ管+世話人 同時刻NG'],
+    [['サビ管', '看護師'], true,                 'H5 サビ管+看護師 同時刻NG'],
+    [['管理者', '世話人'], false,                '管理者+世話人 OK'],
+    [['管理者', '世話人', '看護師'], false,      '管理者+世話人+看護師 3つOK'],
+    [['管理者', '世話人', '生活支援員'], true,   'H3 世話人+生活支援員NG'],
+    [['世話人'], false,                          '単一役割 OK'],
+    [[], false,                                  '空配列 OK']
+  ];
+  internalCases.forEach(function(c) {
+    const actual = hasInternalRoleConflict(c[0]);
+    const ok = actual === c[1] ? 'OK' : 'NG';
+    Logger.log(ok + ' ' + JSON.stringify(c[0]) + ' -> ' + actual + ' (期待:' + c[1] + ') [' + c[2] + ']');
+  });
+  
+  Logger.log('\n=== 完了 ===');
+}
