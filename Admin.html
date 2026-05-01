@@ -101,6 +101,13 @@
   .shift-type-chip { padding: 6px 12px; border: 1px solid #d2d2d7; border-radius: 18px; font-size: 12px; cursor: pointer; background: #fff; }
   .shift-type-chip.selected { background: #6366f1; color: #fff; border-color: #6366f1; }
   .retired-warning { background: #fef2f2; color: #991b1b; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 3px solid #dc2626; font-size: 13px; }
+
+/* Phase 5.4: 候補リストの警告表示 */
+.ds-candidate.ds-cand-block { background: #fef2f2 !important; border-color: #fca5a5 !important; }
+.ds-candidate.ds-cand-only { background: #f0f9ff !important; border-color: #93c5fd !important; }
+.ds-cand-warn { font-size: 11px; padding: 4px 8px; margin-top: 4px; border-radius: 3px; line-height: 1.4; }
+.ds-cand-warn-block { background: #fee2e2; color: #991b1b; border-left: 2px solid #dc2626; }
+.ds-cand-warn-only { background: #dbeafe; color: #1e40af; border-left: 2px solid #3b82f6; }
 </style>
 </head>
 <body>
@@ -4256,15 +4263,32 @@ function renderDsCandidates() {
   }
   document.getElementById('dsCandidateList').innerHTML = list.map(c => {
     const matchBadge = c.isFacilityMatch ? '<span class="ds-match-badge">メイン施設</span>' : '';
-    const warnBadge = c.alreadyAssigned ? '<span class="ds-match-badge ds-warn-badge">⚠既配置</span>' : '';
+    const assignedBadge = c.alreadyAssigned ? '<span class="ds-match-badge ds-warn-badge">⚠既配置</span>' : '';
     const existing = c.alreadyAssigned
       ? c.existingPlacements.map(e => `${e.shift}@${e.facility}`).join(', ')
       : '';
     const selected = dsViewState.selectedCandidate === c.staff_id ? 'selected' : '';
+    
+    // ★ Phase 5.4: 警告バッジ + メッセージ表示
+    let warnHtml = '';
+    let extraClass = '';
+    if (c.warnings && c.warnings.length > 0) {
+      if (c.hasBlockWarning) {
+        extraClass = ' ds-cand-block';
+        const blockMsgs = c.warnings.filter(w => w.level === 'warning_block').map(w => '[' + w.ruleId + '] ' + w.message);
+        warnHtml = '<div class="ds-cand-warn ds-cand-warn-block">⚠️ ' + escapeHtml(blockMsgs.join(' / ')) + '</div>';
+      } else if (c.hasOnlyWarning) {
+        extraClass = ' ds-cand-only';
+        const onlyMsgs = c.warnings.filter(w => w.level === 'warning_only').map(w => '[' + w.ruleId + '] ' + w.message);
+        warnHtml = '<div class="ds-cand-warn ds-cand-warn-only">ℹ️ ' + escapeHtml(onlyMsgs.join(' / ')) + '</div>';
+      }
+    }
+    
     return `
-      <div class="ds-candidate ${selected}" data-sid="${c.staff_id}" data-name="${escapeAttr(c.name)}" onclick="selectDsCandidate('${c.staff_id}')">
-        <div class="ds-cand-name">${matchBadge}${warnBadge}${escapeHtml(c.name)}</div>
+      <div class="ds-candidate ${selected}${extraClass}" data-sid="${c.staff_id}" data-name="${escapeAttr(c.name)}" onclick="selectDsCandidate('${c.staff_id}')">
+        <div class="ds-cand-name">${matchBadge}${assignedBadge}${escapeHtml(c.name)}</div>
         <div class="ds-cand-sub">メイン:${escapeHtml(c.mainFacility || '-')} / 職種:${escapeHtml(c.mainRoles)}${existing ? ' / 当日:' + escapeHtml(existing) : ''}</div>
+        ${warnHtml}
       </div>
     `;
   }).join('');
@@ -4298,6 +4322,18 @@ function confirmDsAdd() {
   const shiftType = document.getElementById('dsAddShiftType').value;
   const cell = dsViewState.editingCell;
 
+  // ★ Phase 5.4: 配置前にblock警告ありなら確認ダイアログ
+  const cand = (dsViewState.candidates || []).find(c => c.staff_id === dsViewState.selectedCandidate);
+  if (cand && cand.hasBlockWarning) {
+    const blockMsgs = cand.warnings
+      .filter(w => w.level === 'warning_block')
+      .map(w => '・[' + w.ruleId + '] ' + w.message)
+      .join('\n');
+    if (!confirm('⚠️ block警告があります\n\n' + blockMsgs + '\n\n配置すると承認待ち状態になります。続行しますか?')) {
+      return;
+    }
+  }
+
   const btns = document.querySelectorAll('#dsAddFormArea button');
   btns.forEach(b => b.disabled = true);
 
@@ -4306,6 +4342,15 @@ function confirmDsAdd() {
     if (!res.success) {
       alert('エラー: ' + res.message);
       return;
+    }
+    // ★ Phase 5.4: 配置成功時の警告通知
+    if (res.warnings && res.warnings.length > 0) {
+      const msgs = res.warnings.map(w => '[' + w.ruleId + '/' + (w.level === 'warning_block' ? 'block' : 'only') + '] ' + w.message).join('\n');
+      if (res.hasBlockWarning) {
+        alert('✓ 配置完了 (block警告ありで承認待ち)\n\n' + msgs + '\n\n→ 警告承認画面で承認してください');
+      } else {
+        alert('✓ 配置完了 (only警告あり、配置はそのまま)\n\n' + msgs);
+      }
     }
     closeDsCellEditor();
     loadDayShiftCalendar();
