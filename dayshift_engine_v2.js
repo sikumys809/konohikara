@@ -756,3 +756,603 @@ function testSlotsAndCandidatesV2() {
   Logger.log('');
   Logger.log('=== 完了 ===');
 }
+
+// ============================================================
+// Step 4.3: W2 / N2 警告チェック関数
+// ============================================================
+
+// ============================================================
+// W2: 当日 遅出8h → 当日 夜勤A/B/C
+// 夜勤とは逆方向 (夜勤側のR2は遅出8h→夜勤、日勤側のW2は遅出8h→夜勤)
+// ただしこれは日勤エンジンの判定なので、配置中のシフトが「遅出8h」のとき、
+// 同日に既に夜勤A/B/Cが配置されていたら警告
+// ============================================================
+function checkW2WarningV2(staff, slot, ctx) {
+  // W2は「当日が遅出8h」の場合のみ判定
+  if (slot.shift !== '遅出8h') return null;
+  
+  const sameDayAssigns = (ctx.staffAssignedDates[staff.staff_id] || {})[slot.dateKey] || [];
+  
+  for (const a of sameDayAssigns) {
+    if (DSE_V2.NIGHT_SHIFTS.indexOf(a.shift) !== -1) {
+      return {
+        ruleId: 'W2',
+        level: WARNING_LEVEL.BLOCK,
+        message: '同日(' + slot.dateKey + ')の遅出8h(〜22:00) → 同日' + a.shift + ' は連続勤務NG'
+      };
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// N2: 同一施設・同一日 通常スタッフ0人で新人のみ
+// 仕様書: 日勤は配置充足優先のため、警告のみで自動除外しない
+// ============================================================
+function checkN2WarningV2(staff, slot, ctx) {
+  const isCandidateNewbie = staff.isNewbie1 || staff.isNewbie2;
+  if (!isCandidateNewbie) return null;
+  
+  // その日その事業所に配置済みの全スタッフを確認 (注: 日勤は事業所単位)
+  const dateKey = slot.dateKey;
+  const targetJigyosho = slot.jigyosho;
+  
+  for (const sid of Object.keys(ctx.staffAssignedDates)) {
+    const assigns = ctx.staffAssignedDates[sid][dateKey] || [];
+    for (const a of assigns) {
+      if (a.jigyosho !== targetJigyosho) continue;
+      const otherStaff = ctx.staffMap[sid];
+      if (!otherStaff) continue;
+      if (!otherStaff.isNewbie1 && !otherStaff.isNewbie2) {
+        return null;  // 通常>=1人 確保
+      }
+    }
+  }
+  
+  return {
+    ruleId: 'N2',
+    level: WARNING_LEVEL.ONLY,  // 警告のみ (自動除外しない)
+    message: '同一事業所(' + targetJigyosho + ')・同一日(' + dateKey + ') に通常スタッフ0人で新人(' + staff.kubun + ')のみ配置'
+  };
+}
+
+// ============================================================
+// 統合: 配置候補に対して全警告チェック
+// ============================================================
+function checkAllWarningsV2(staff, slot, ctx) {
+  const warnings = [];
+  const w2 = checkW2WarningV2(staff, slot, ctx);
+  if (w2) warnings.push(w2);
+  const n2 = checkN2WarningV2(staff, slot, ctx);
+  if (n2) warnings.push(n2);
+  return warnings;
+}
+
+// ============================================================
+// テスト関数: W2 / N2 警告チェック
+// ============================================================
+function testWarningsV2() {
+  Logger.log('=== Step 4.3 W2/N2 警告チェック ===');
+  
+  // mock ctx
+  const ctx = {
+    staffMap: {
+      '13': { staff_id: '13', name: '水野永吉', kubun: '通常', isNewbie1: false, isNewbie2: false },
+      '14': { staff_id: '14', name: '新人花子', kubun: '新人1ヶ月', isNewbie1: true, isNewbie2: false },
+      '15': { staff_id: '15', name: '新人次郎', kubun: '新人2ヶ月', isNewbie1: false, isNewbie2: true },
+      '99': { staff_id: '99', name: '通常太郎', kubun: '通常', isNewbie1: false, isNewbie2: false }
+    },
+    staffAssignedDates: {
+      '13': {
+        '2026-05-15': [{ shift: '夜勤A', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }]
+      },
+      '99': {
+        '2026-05-15': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }]
+      },
+      '15': {
+        '2026-05-16': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }]
+      }
+    }
+  };
+  
+  // === W2 テスト ===
+  Logger.log('\n--- W2 (同日 遅出8h ← 同日に夜勤あり) ---');
+  // 13: 5/15 夜勤A済 → 5/15 遅出8h 配置 → W2警告
+  let r = checkW2WarningV2(ctx.staffMap['13'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ', shift: '遅出8h' }, ctx);
+  Logger.log('staff=13 / 5/15 / 遅出8h (夜勤A済) → ' + (r ? 'W2警告: ' + r.message : '警告なし') + ' (期待:W2警告)');
+  // 13: 5/15 夜勤A済 → 5/15 遅出4h 配置 → W2対象外 (4hは対象外)
+  r = checkW2WarningV2(ctx.staffMap['13'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ', shift: '遅出4h' }, ctx);
+  Logger.log('staff=13 / 5/15 / 遅出4h (夜勤A済) → ' + (r ? 'W2警告' : '警告なし') + ' (期待:なし W2対象外)');
+  // 13: 5/15 夜勤A済 → 5/15 早出8h 配置 → W2対象外 (早出は対象外)
+  r = checkW2WarningV2(ctx.staffMap['13'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ', shift: '早出8h' }, ctx);
+  Logger.log('staff=13 / 5/15 / 早出8h (夜勤A済) → ' + (r ? 'W2警告' : '警告なし') + ' (期待:なし 早出対象外)');
+  // 14: 配置なし → 5/15 遅出8h 配置 → 警告なし
+  r = checkW2WarningV2(ctx.staffMap['14'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ', shift: '遅出8h' }, ctx);
+  Logger.log('staff=14 / 5/15 / 遅出8h (配置なし) → ' + (r ? 'W2警告' : '警告なし') + ' (期待:なし)');
+  
+  // === N2 テスト ===
+  Logger.log('\n--- N2 (同一事業所・同一日 新人のみ) ---');
+  // 14 (新人) を 5/15 GHコノヒカラ → 通常99がいるので警告なし
+  r = checkN2WarningV2(ctx.staffMap['14'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ' }, ctx);
+  Logger.log('staff=14(新人1) / 5/15 / GHコノヒカラ (通常99あり) → ' + (r ? 'N2警告' : '警告なし') + ' (期待:なし)');
+  // 13 (通常) を 5/15 GHコノヒカラ → 候補が通常なので警告なし
+  r = checkN2WarningV2(ctx.staffMap['13'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ' }, ctx);
+  Logger.log('staff=13(通常) / 5/15 / GHコノヒカラ → ' + (r ? 'N2警告' : '警告なし') + ' (期待:なし 通常)');
+  // 14 (新人) を 5/16 GHコノヒカラ → 既存は新人15のみ → N2警告
+  r = checkN2WarningV2(ctx.staffMap['14'], { dateKey: '2026-05-16', jigyosho: 'GHコノヒカラ' }, ctx);
+  Logger.log('staff=14(新人1) / 5/16 / GHコノヒカラ (新人15のみ) → ' + (r ? 'N2警告: ' + r.message : '警告なし') + ' (期待:N2警告 level=ONLY)');
+  // 14 (新人) を 5/17 GHコノヒカラ → 配置なし → N2警告
+  r = checkN2WarningV2(ctx.staffMap['14'], { dateKey: '2026-05-17', jigyosho: 'GHコノヒカラ' }, ctx);
+  Logger.log('staff=14(新人1) / 5/17 / GHコノヒカラ (配置なし) → ' + (r ? 'N2警告: ' + r.message : '警告なし') + ' (期待:N2警告)');
+  
+  // === 統合テスト ===
+  Logger.log('\n--- checkAllWarningsV2 統合 ---');
+  // 13: 5/15 夜勤A済 → 5/15 遅出8h → W2のみ
+  let all = checkAllWarningsV2(ctx.staffMap['13'], { dateKey: '2026-05-15', jigyosho: 'GHコノヒカラ', shift: '遅出8h' }, ctx);
+  Logger.log('staff=13 / 5/15 / 遅出8h → 警告 ' + all.length + '件');
+  all.forEach(function(w) { Logger.log('  - ' + w.ruleId + ' (' + w.level + '): ' + w.message); });
+  
+  // 14 (新人): 5/17 GHコノヒカラ 早出8h → N2のみ
+  all = checkAllWarningsV2(ctx.staffMap['14'], { dateKey: '2026-05-17', jigyosho: 'GHコノヒカラ', shift: '早出8h' }, ctx);
+  Logger.log('staff=14 / 5/17 / 早出8h → 警告 ' + all.length + '件');
+  all.forEach(function(w) { Logger.log('  - ' + w.ruleId + ' (' + w.level + '): ' + w.message); });
+  
+  Logger.log('\n=== 完了 ===');
+}
+
+// ============================================================
+// Step 4.4: 役割別時間集計 + 管理者の二重計上
+// ============================================================
+
+// ============================================================
+// _v2d_pickPrimaryRole: スタッフの主役割を1つ選ぶ (ヒエラルキー優先)
+// 兼任時は配置文脈で1つに絞る (※管理者は別計上のため除外)
+// 優先順: サビ管 > 看護師 > 生活支援員 > 世話人
+// ============================================================
+function _v2d_pickPrimaryRole(staff) {
+  if (!staff || !Array.isArray(staff.mainRoles)) return '';
+  const roles = staff.mainRoles;
+  if (roles.indexOf('サビ管') !== -1) return 'サビ管';
+  if (roles.indexOf('看護師') !== -1) return '看護師';
+  if (roles.indexOf('生活支援員') !== -1) return '生活支援員';
+  if (roles.indexOf('世話人') !== -1) return '世話人';
+  return '';
+}
+
+// ============================================================
+// calcRoleHoursV2: 各事業所の役割別時間を集計
+// ★管理者の二重計上ルール:
+//   管理者として勤務した時間 → 管理者h + 兼任先(世話人/生活支援員/サビ管)h に同時加算
+// ============================================================
+function calcRoleHoursV2(ctx) {
+  const result = {};
+  
+  // 各事業所を初期化
+  Object.keys(ctx.facilityBasis).forEach(function(jig) {
+    const basis = ctx.facilityBasis[jig];
+    result[jig] = {
+      jigyosho: jig,
+      sewaH: 0,
+      seikatsuH: 0,
+      sabikanH: 0,
+      kanrishaH: 0,
+      tokuteiH: 0,  // 世話人h + 生活支援員h
+      nurseStaffSet: {},  // ユニーク看護師ID
+      nurseCount: 0,
+      // 必要時間 (基準値コピー)
+      needSewaH: basis.needSewaH,
+      needSeikatsuH: basis.needSeikatsuH,
+      needTokuteiH: basis.needTokuteiH,
+      needSabikanH: basis.needSabikanH,
+      needKanrishaH: basis.needKanrishaH,
+      nurseRequired: basis.nurseRequired,
+      // 充足率 (後から計算)
+      sewaRate: 0,
+      seikatsuRate: 0,
+      tokuteiRate: 0,
+      sabikanRate: 0,
+      kanrishaRate: 0,
+      nurseRate: 0,
+    };
+  });
+  
+  // 全配置を走査
+  Object.keys(ctx.staffAssignedDates).forEach(function(sid) {
+    const staff = ctx.staffMap[sid];
+    if (!staff) return;
+    
+    Object.keys(ctx.staffAssignedDates[sid]).forEach(function(d) {
+      ctx.staffAssignedDates[sid][d].forEach(function(a) {
+        const jig = a.jigyosho;
+        if (!result[jig]) return;
+        const r = result[jig];
+        const h = a.workHours || 0;
+        const isNight = a.isNight || (DSE_V2.NIGHT_SHIFTS.indexOf(a.shift) !== -1);
+        
+        // 夜勤の日勤カウント加算 (B/Cのみ、各2h)
+        let dayH = h;
+        if (isNight) {
+          // 夜勤は基本日勤カウントしない、ただし夜勤B/Cは早朝日勤として2h加算
+          if (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[a.shift]) {
+            dayH = SHIFT_PATTERNS[a.shift].dayHours;  // B=2, C=2, A=0
+          } else {
+            dayH = 0;
+          }
+        }
+        
+        if (dayH === 0) return;  // 日勤カウントなし
+        
+        // ★管理者の二重計上
+        if (staff.isKanrisha) {
+          r.kanrishaH += dayH;
+        }
+        
+        // 役割別カウント (管理者と他職種は同時加算可)
+        const role = _v2d_pickPrimaryRole(staff);
+        if (role === 'サビ管') r.sabikanH += dayH;
+        else if (role === '生活支援員') r.seikatsuH += dayH;
+        else if (role === '世話人') r.sewaH += dayH;
+        // 看護師は時間ではなく人数判定
+        if (staff.isNurse) r.nurseStaffSet[sid] = true;
+      });
+    });
+  });
+  
+  // 集計後処理: tokuteiH = sewaH + seikatsuH、看護師人数、充足率
+  Object.keys(result).forEach(function(jig) {
+    const r = result[jig];
+    r.tokuteiH = r.sewaH + r.seikatsuH;
+    r.nurseCount = Object.keys(r.nurseStaffSet).length;
+    r.sewaRate = r.needSewaH > 0 ? (r.sewaH / r.needSewaH * 100) : 0;
+    r.seikatsuRate = r.needSeikatsuH > 0 ? (r.seikatsuH / r.needSeikatsuH * 100) : 0;
+    r.tokuteiRate = r.needTokuteiH > 0 ? (r.tokuteiH / r.needTokuteiH * 100) : 0;
+    r.sabikanRate = r.needSabikanH > 0 ? (r.sabikanH / r.needSabikanH * 100) : 0;
+    r.kanrishaRate = r.needKanrishaH > 0 ? (r.kanrishaH / r.needKanrishaH * 100) : 0;
+    r.nurseRate = r.nurseRequired > 0 ? (r.nurseCount / r.nurseRequired * 100) : 0;
+  });
+  
+  return result;
+}
+
+// ============================================================
+// テスト関数: 役割別時間集計 (管理者二重計上を含む)
+// ============================================================
+function testRoleHoursV2() {
+  Logger.log('=== Step 4.4 役割別時間集計 + 管理者二重計上 ===');
+  
+  // mock ctx
+  const ctx = {
+    facilityBasis: {
+      'GHコノヒカラ': {
+        needSewaH: 814.86,
+        needSeikatsuH: 248.00,
+        needTokuteiH: 1470.29,
+        needSabikanH: 177.14,
+        needKanrishaH: 177.14,
+        nurseRequired: 2,
+      }
+    },
+    staffMap: {
+      // 管理者+世話人兼任
+      '1': {
+        staff_id: '1', name: '水野恵子', mainRoles: ['管理者', '世話人'],
+        isKanrisha: true, isSabikan: false, isSewa: true, isSeikatsu: false, isNurse: false
+      },
+      // 通常世話人 (160h月勤務)
+      '2': {
+        staff_id: '2', name: '世話人A', mainRoles: ['世話人'],
+        isKanrisha: false, isSabikan: false, isSewa: true, isSeikatsu: false, isNurse: false
+      },
+      // 生活支援員
+      '3': {
+        staff_id: '3', name: '生活支援員A', mainRoles: ['生活支援員'],
+        isKanrisha: false, isSabikan: false, isSewa: false, isSeikatsu: true, isNurse: false
+      },
+      // サビ管 (80h)
+      '4': {
+        staff_id: '4', name: 'サビ管A', mainRoles: ['サビ管'],
+        isKanrisha: false, isSabikan: true, isSewa: false, isSeikatsu: false, isNurse: false
+      },
+      // 看護師 (32h)
+      '5': {
+        staff_id: '5', name: '看護師A', mainRoles: ['看護師'],
+        isKanrisha: false, isSabikan: false, isSewa: false, isSeikatsu: false, isNurse: true
+      },
+      // 看護師B
+      '6': {
+        staff_id: '6', name: '看護師B', mainRoles: ['看護師'],
+        isKanrisha: false, isSabikan: false, isSewa: false, isSeikatsu: false, isNurse: true
+      }
+    },
+    staffAssignedDates: {
+      // 管理者(兼世話人) staff=1: 早出8h × 20日 = 160h
+      '1': {},
+      // 世話人 staff=2: 早出8h × 20日 = 160h
+      '2': {},
+      // 生活支援員 staff=3: 遅出8h × 30日 = 240h
+      '3': {},
+      // サビ管 staff=4: 早出8h × 10日 = 80h
+      '4': {},
+      // 看護師 staff=5: 遅出4h × 8日 = 32h
+      '5': {},
+      // 看護師 staff=6: 早出4h × 8日 = 32h
+      '6': {}
+    }
+  };
+  
+  // 配置データ生成 (mock)
+  const generateAssigns = function(sid, shift, count, hours) {
+    for (let i = 1; i <= count; i++) {
+      const dateKey = '2026-05-' + String(i).padStart(2, '0');
+      ctx.staffAssignedDates[sid][dateKey] = [{
+        shift: shift, jigyosho: 'GHコノヒカラ',
+        facility: 'リフレ要町', unit: '', workHours: hours,
+        isNight: false, isDay: true
+      }];
+    }
+  };
+  generateAssigns('1', '早出8h', 20, 8);   // 管理者+世話人 = 160h
+  generateAssigns('2', '早出8h', 20, 8);   // 世話人 = 160h
+  generateAssigns('3', '遅出8h', 30, 8);   // 生活支援員 = 240h
+  generateAssigns('4', '早出8h', 10, 8);   // サビ管 = 80h
+  generateAssigns('5', '遅出4h', 8, 4);    // 看護師 = 32h
+  generateAssigns('6', '早出4h', 8, 4);    // 看護師 = 32h
+  
+  Logger.log('--- 配置内容 ---');
+  Logger.log('staff=1 管理者+世話人: 早出8h × 20日 = 160h');
+  Logger.log('staff=2 世話人: 早出8h × 20日 = 160h');
+  Logger.log('staff=3 生活支援員: 遅出8h × 30日 = 240h');
+  Logger.log('staff=4 サビ管: 早出8h × 10日 = 80h');
+  Logger.log('staff=5 看護師: 遅出4h × 8日 = 32h');
+  Logger.log('staff=6 看護師: 早出4h × 8日 = 32h');
+  
+  Logger.log('');
+  Logger.log('--- calcRoleHoursV2 実行 ---');
+  const result = calcRoleHoursV2(ctx);
+  
+  const r = result['GHコノヒカラ'];
+  Logger.log('');
+  Logger.log('=== GHコノヒカラ 集計結果 ===');
+  Logger.log('世話人h: ' + r.sewaH + 'h (期待:320h ← 管理者160 + 世話人160)');
+  Logger.log('生活支援員h: ' + r.seikatsuH + 'h (期待:240h)');
+  Logger.log('特定加配h: ' + r.tokuteiH + 'h (期待:560h ← 世話人320 + 生活支援員240)');
+  Logger.log('サビ管h: ' + r.sabikanH + 'h (期待:80h)');
+  Logger.log('管理者h: ' + r.kanrishaH + 'h (期待:160h ← 管理者は二重計上)');
+  Logger.log('看護師人数: ' + r.nurseCount + ' (期待:2)');
+  Logger.log('');
+  Logger.log('=== 充足率 ===');
+  Logger.log('世話人: ' + r.sewaRate.toFixed(1) + '% (320 / ' + r.needSewaH + ')');
+  Logger.log('生活支援員: ' + r.seikatsuRate.toFixed(1) + '% (240 / ' + r.needSeikatsuH + ')');
+  Logger.log('特定加配: ' + r.tokuteiRate.toFixed(1) + '% (560 / ' + r.needTokuteiH + ')');
+  Logger.log('サビ管: ' + r.sabikanRate.toFixed(1) + '% (80 / ' + r.needSabikanH + ')');
+  Logger.log('管理者: ' + r.kanrishaRate.toFixed(1) + '% (160 / ' + r.needKanrishaH + ')');
+  Logger.log('看護師: ' + r.nurseRate.toFixed(1) + '% (2 / ' + r.nurseRequired + ')');
+  
+  Logger.log('');
+  Logger.log('=== 完了 ===');
+}
+
+// ============================================================
+// Step 4.5: assignByScoreV2 配置メインロジック
+// ============================================================
+function assignByScoreV2(ctx) {
+  Logger.log('assignByScoreV2: 配置開始 (' + ctx.slots.length + 'スロット)');
+  
+  ctx.pendingWarnings = [];
+  let assignedCount = 0;
+  let warningBlockCount = 0;
+  let warningOnlyCount = 0;
+  let unassignedCount = 0;
+  
+  // スロットを日付順×事業所×シフト順に処理 (配置済みを順次反映するため)
+  for (let si = 0; si < ctx.slots.length; si++) {
+    const slot = ctx.slots[si];
+    if (slot.assignment) continue;
+    
+    // 不足職種を毎回再計算 (動的加点)
+    const shortage = calcRoleShortage(ctx);
+    
+    // 候補抽出 (ハード除外済み)
+    const candidates = findCandidatesV2(ctx, slot);
+    if (candidates.length === 0) {
+      unassignedCount++;
+      continue;
+    }
+    
+    // 各候補のスコア + 警告判定
+    candidates.forEach(function(c) {
+      c.score = calcScoreV2(ctx, c.staff, c.wish, slot, shortage);
+      c.warnings = checkAllWarningsV2(c.staff, slot, ctx);
+      // W2警告 = 自動除外+警告 (block) → 候補としては残すが、他に候補がいれば優先される
+      // N2警告 = 警告のみ (only) → 配置はそのまま、警告だけ記録
+    });
+    
+    // ソート: VIP > 警告blockなし > スコア降順
+    candidates.sort(function(a, b) {
+      // 1. VIP優先
+      const aVIP = a.staff.isVIP ? 1 : 0;
+      const bVIP = b.staff.isVIP ? 1 : 0;
+      if (aVIP !== bVIP) return bVIP - aVIP;
+      // 2. block警告なし優先 (only警告は配置に影響しない)
+      const aBlock = a.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; }) ? 1 : 0;
+      const bBlock = b.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; }) ? 1 : 0;
+      if (aBlock !== bBlock) return aBlock - bBlock;
+      // 3. スコア降順
+      return b.score - a.score;
+    });
+    
+    // 最優先候補を採用
+    const top = candidates[0];
+    const wh = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[slot.shift])
+      ? (SHIFT_PATTERNS[slot.shift].dayHours + SHIFT_PATTERNS[slot.shift].nightHours)
+      : 8;
+    
+    const hasBlock = top.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; });
+    const reason = hasBlock ? '警告あり配置(承認待ち)' : '通常配置';
+    
+    slot.assignment = {
+      staff_id: top.staff.staff_id,
+      staff_name: top.staff.name,
+      shift: slot.shift,
+      score: top.score,
+      warnings: top.warnings,
+      reason: reason
+    };
+    
+    // ctx.staffAssignedDates に反映
+    if (!ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey]) {
+      ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey] = [];
+    }
+    ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey].push({
+      shift: slot.shift,
+      jigyosho: slot.jigyosho,
+      facility: '',  // 日勤は事業所単位
+      unit: '',
+      workHours: wh,
+      isNight: false,
+      isDay: true
+    });
+    ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
+    
+    assignedCount++;
+    
+    // 警告レコードをバッファ
+    top.warnings.forEach(function(w) {
+      ctx.pendingWarnings.push({
+        shift_kind: 'day',
+        target_ym: ctx.targetYM,
+        date: slot.dateKey,
+        jigyosho: slot.jigyosho,
+        facility: '',
+        unit: '',
+        staff_id: top.staff.staff_id,
+        staff_name: top.staff.name,
+        rule_id: w.ruleId,
+        level: w.level,
+        message: w.message
+      });
+      if (w.level === WARNING_LEVEL.BLOCK) warningBlockCount++;
+      else warningOnlyCount++;
+    });
+  }
+  
+  Logger.log('assignByScoreV2: 配置完了');
+  Logger.log('  配置済み: ' + assignedCount + 'スロット');
+  Logger.log('  警告(block): ' + warningBlockCount + '件');
+  Logger.log('  警告(only): ' + warningOnlyCount + '件');
+  Logger.log('  未配置: ' + unassignedCount + 'スロット');
+  
+  return {
+    assignedCount: assignedCount,
+    warningBlockCount: warningBlockCount,
+    warningOnlyCount: warningOnlyCount,
+    unassignedCount: unassignedCount
+  };
+}
+
+// ============================================================
+// テスト関数: ダミー希望投入で動作確認
+// ============================================================
+function testAssignByScoreV2() {
+  Logger.log('=== Step 4.5 assignByScoreV2 動作確認 ===');
+  const ym = '2026-05';
+  const ctx = loadEngineContextV2(ym);
+  generateSlotsV2(ctx);
+  
+  // ダミー希望: 既存スタッフの先頭10名に 5/1〜5/5 の早出8h希望を投入
+  const staffIds = Object.keys(ctx.staffMap).slice(0, 10);
+  Logger.log('ダミー希望投入対象スタッフ: ' + staffIds.length + '名');
+  
+  let dummyWishCount = 0;
+  for (let day = 1; day <= 5; day++) {
+    const dateKey = '2026-05-' + String(day).padStart(2, '0');
+    const date = new Date(dateKey + 'T00:00:00');
+    
+    staffIds.forEach(function(sid) {
+      const staff = ctx.staffMap[sid];
+      
+      // ★テスト用: allowedShifts と mainFac を強制設定
+      if (staff.allowedShifts.indexOf('早出8h') === -1) {
+        staff.allowedShifts.push('早出8h');
+      }
+      const targetJig = (staff.mainFac && staff.mainFac.indexOf('GH') === 0) ? staff.mainFac : 'GHコノヒカラ';
+      staff.mainFac = targetJig;
+      
+      const wish = {
+        requestId: 'DUMMY-' + sid + '-' + dateKey,
+        staff_id: sid,
+        name: staff.name,
+        date: date,
+        dateKey: dateKey,
+        shift: '早出8h',
+        isNight: false,
+        isDay: true,
+        mainFac: targetJig,
+        secondFac: staff.secondFac,
+        subFacs: staff.subFacs,
+        comment: '',
+      };
+      ctx.wishes.push(wish);
+      if (!ctx.wishesByStaff[sid]) ctx.wishesByStaff[sid] = [];
+      ctx.wishesByStaff[sid].push(wish);
+      const sdKey = sid + '_' + dateKey;
+      if (!ctx.wishesByStaffDay[sdKey]) ctx.wishesByStaffDay[sdKey] = [];
+      ctx.wishesByStaffDay[sdKey].push(wish);
+      const dsKey = dateKey + '_早出8h';
+      if (!ctx.wishesByDayShift[dsKey]) ctx.wishesByDayShift[dsKey] = [];
+      ctx.wishesByDayShift[dsKey].push(wish);
+      dummyWishCount++;
+    });
+  }
+  Logger.log('ダミー希望投入: ' + dummyWishCount + '件');
+  
+  if (dummyWishCount === 0) {
+    Logger.log('⚠ 投入できる希望がない (allowedShifts未設定の可能性)');
+    Logger.log('=== 中断 ===');
+    return;
+  }
+  
+  // 配置実行
+  Logger.log('');
+  Logger.log('--- 配置実行 ---');
+  const startTs = Date.now();
+  const result = assignByScoreV2(ctx);
+  const elapsed = ((Date.now() - startTs) / 1000).toFixed(2);
+  Logger.log('処理時間: ' + elapsed + '秒');
+  
+  // 結果サマリー
+  let withWarning = 0, withoutWarning = 0;
+  ctx.slots.forEach(function(s) {
+    if (s.assignment) {
+      if (s.assignment.warnings.length > 0) withWarning++;
+      else withoutWarning++;
+    }
+  });
+  Logger.log('警告なし配置: ' + withoutWarning);
+  Logger.log('警告あり配置: ' + withWarning);
+  
+  // 配置サンプル (5件)
+  Logger.log('');
+  Logger.log('--- 配置サンプル ---');
+  let shown = 0;
+  for (const slot of ctx.slots) {
+    if (slot.assignment && shown < 5) {
+      const a = slot.assignment;
+      Logger.log(slot.dateKey + ' / ' + slot.jigyosho + ' / ' + slot.shift +
+                 ' → ' + a.staff_name + ' (score=' + a.score + ', warnings=' + a.warnings.length + ')');
+      shown++;
+    }
+  }
+  
+  // 警告サンプル
+  if (ctx.pendingWarnings.length > 0) {
+    Logger.log('');
+    Logger.log('--- 警告サンプル (先頭3件) ---');
+    ctx.pendingWarnings.slice(0, 3).forEach(function(w) {
+      Logger.log(w.rule_id + ' (' + w.level + ') / ' + w.date + ' / ' + w.staff_name + ': ' + w.message);
+    });
+  }
+  
+  Logger.log('');
+  Logger.log('=== 完了 ===');
+}
