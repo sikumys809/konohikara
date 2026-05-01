@@ -674,6 +674,53 @@
 </div>
 
 <!-- ========== シフト確定(承認)ビュー ========== -->
+<!-- ========== ⚠️ 警告承認ビュー (Phase 5.5) ========== -->
+<div id="view-warnings" class="hidden" style="padding: 0;">
+  <div style="padding: 24px;">
+    <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
+    
+    <h2 style="margin-top: 16px;">⚠️ 警告承認</h2>
+    <p style="color: #6b7280; margin: 8px 0 16px 0;">配置時に発生したblock警告を承認します。承認後はシフト確定が可能になります。</p>
+    
+    <div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+      <label style="font-size: 13px;">対象月:
+        <select id="warnTargetYM" onchange="loadWarningsView()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; margin-left: 6px;"></select>
+      </label>
+      <label style="font-size: 13px;">レベル:
+        <select id="warnLevelFilter" onchange="renderWarningsTable()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; margin-left: 6px;">
+          <option value="">全て</option>
+          <option value="block">block (確定阻害)</option>
+          <option value="only">only (情報のみ)</option>
+        </select>
+      </label>
+      <label style="font-size: 13px;">シフト:
+        <select id="warnKindFilter" onchange="renderWarningsTable()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; margin-left: 6px;">
+          <option value="">全て</option>
+          <option value="day">日勤</option>
+          <option value="night">夜勤</option>
+        </select>
+      </label>
+      <label style="font-size: 13px;">状態:
+        <select id="warnStatusFilter" onchange="renderWarningsTable()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; margin-left: 6px;">
+          <option value="未承認">未承認のみ</option>
+          <option value="">全て</option>
+          <option value="承認済">承認済のみ</option>
+        </select>
+      </label>
+      <button onclick="loadWarningsView()" style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">🔄 再読込</button>
+    </div>
+    
+    <!-- サマリー -->
+    <div id="warningsSummary" style="margin-bottom: 16px;"></div>
+    
+    <!-- 一覧 -->
+    <div id="warningsTable" style="border: 1px solid #e5e7eb; border-radius: 8px; background: white; overflow: hidden;">
+      <div style="padding: 40px; text-align: center; color: #6b7280;">対象月を選択してください</div>
+    </div>
+  </div>
+</div>
+
+
 <div id="view-approve" class="hidden" style="padding: 0;">
   <div style="padding: 20px;">
     <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
@@ -1056,6 +1103,7 @@ function renderNavButtons() {
    { id: 'shift', icon: '🌙', title: '夜勤自動割当', desc: '夜勤希望を一括配置 + 編集', requires: 'canCreateShift' },
     { id: 'dayshift', icon: '☀️', title: '日勤自動割当', desc: '日勤希望を一括配置 + 充足率', requires: 'canCreateShift' },
     { id: 'approve', icon: '✅', title: 'シフト確定', desc: '仮→確定の承認', requires: 'canApprove' },
+    { id: 'warnings', icon: '⚠️', title: '警告承認', desc: '配置警告の承認・取消', requires: 'canApprove' },
     { id: 'submitOverride', icon: '📅', title: '提出期間管理', desc: '希望提出の特例開放', requires: 'canEditMaster' },
     { id: 'logs', icon: '📋', title: '操作ログ', desc: '変更履歴の確認', requires: null },
   ];
@@ -1104,10 +1152,195 @@ function navigateTo(id) {
   }
 }
 function showView(name) {
-  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve', 'dayshift', 'submitOverride'].forEach(v => {
+  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve', 'dayshift', 'submitOverride', 'warnings'].forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.classList.toggle('hidden', v !== name);
   });
+  // ★ Phase 5.5: 警告承認画面なら自動でデータ取得
+  if (name === 'warnings') {
+    initWarningsView();
+  }
+}
+
+// ============================================================
+// Phase 5.5: 警告承認画面
+// ============================================================
+const warningsViewState = {
+  targetYM: null,
+  allWarnings: [],
+  summary: null
+};
+
+function initWarningsView() {
+  // 対象月セレクトの初期化
+  const sel = document.getElementById('warnTargetYM');
+  if (sel && sel.options.length === 0) {
+    const now = new Date();
+    const months = [];
+    for (let i = -2; i <= 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      months.push(ym);
+    }
+    sel.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
+    const currentYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    sel.value = currentYm;
+  }
+  loadWarningsView();
+}
+
+function loadWarningsView() {
+  const ym = document.getElementById('warnTargetYM').value;
+  if (!ym) return;
+  warningsViewState.targetYM = ym;
+  
+  document.getElementById('warningsTable').innerHTML = 
+    '<div style="padding: 40px; text-align: center; color: #6b7280;">⏳ 読み込み中...</div>';
+  
+  // サマリー + 一覧を並列取得
+  google.script.run.withSuccessHandler(function(res) {
+    if (res.success) {
+      warningsViewState.summary = res.summary;
+      renderWarningsSummaryPanel(res.summary);
+    }
+  }).getWarningSummary(currentAdmin.staff_id, ym);
+  
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res.success) {
+      document.getElementById('warningsTable').innerHTML = 
+        '<div style="padding: 20px; color: #991b1b;">エラー: ' + (res.message || '不明') + '</div>';
+      return;
+    }
+    warningsViewState.allWarnings = res.warnings || [];
+    renderWarningsTable();
+  }).withFailureHandler(function(err) {
+    document.getElementById('warningsTable').innerHTML = 
+      '<div style="padding: 20px; color: #991b1b;">通信エラー: ' + err + '</div>';
+  }).getPendingWarnings(currentAdmin.staff_id, ym, null, null);
+}
+
+function renderWarningsSummaryPanel(summary) {
+  const totalUnapprovedBlock = summary.day.blockUnapproved + summary.night.blockUnapproved;
+  const totalBlock = summary.day.block + summary.night.block;
+  const totalOnly = summary.day.only + summary.night.only;
+  
+  let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">`;
+  html += `<div style="padding: 12px; background: ${totalUnapprovedBlock > 0 ? '#fee2e2' : '#d1fae5'}; border-radius: 6px;">
+    <div style="font-size: 12px; color: #6b7280;">未承認block警告</div>
+    <div style="font-size: 24px; font-weight: 700; color: ${totalUnapprovedBlock > 0 ? '#dc2626' : '#059669'};">${totalUnapprovedBlock}</div>
+    <div style="font-size: 11px; color: #6b7280;">日勤${summary.day.blockUnapproved} / 夜勤${summary.night.blockUnapproved}</div>
+  </div>`;
+  html += `<div style="padding: 12px; background: #f3f4f6; border-radius: 6px;">
+    <div style="font-size: 12px; color: #6b7280;">block警告 (累計)</div>
+    <div style="font-size: 24px; font-weight: 700; color: #1f2937;">${totalBlock}</div>
+    <div style="font-size: 11px; color: #6b7280;">日勤${summary.day.block} / 夜勤${summary.night.block}</div>
+  </div>`;
+  html += `<div style="padding: 12px; background: #dbeafe; border-radius: 6px;">
+    <div style="font-size: 12px; color: #6b7280;">only警告</div>
+    <div style="font-size: 24px; font-weight: 700; color: #1e40af;">${totalOnly}</div>
+    <div style="font-size: 11px; color: #6b7280;">日勤${summary.day.only} / 夜勤${summary.night.only}</div>
+  </div>`;
+  html += '</div>';
+  
+  document.getElementById('warningsSummary').innerHTML = html;
+}
+
+function renderWarningsTable() {
+  const all = warningsViewState.allWarnings || [];
+  const lvF = document.getElementById('warnLevelFilter').value;
+  const knF = document.getElementById('warnKindFilter').value;
+  const stF = document.getElementById('warnStatusFilter').value;
+  
+  const filtered = all.filter(function(w) {
+    if (lvF === 'block' && w.level !== 'warning_block') return false;
+    if (lvF === 'only' && w.level !== 'warning_only') return false;
+    if (knF && w.shift_kind !== knF) return false;
+    if (stF && w.status !== stF) return false;
+    return true;
+  });
+  
+  if (filtered.length === 0) {
+    document.getElementById('warningsTable').innerHTML = 
+      '<div style="padding: 40px; text-align: center; color: #6b7280;">該当する警告はありません</div>';
+    return;
+  }
+  
+  let html = '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+  html += '<thead><tr style="background: #4a148c; color: white;">';
+  html += '<th style="padding: 10px; text-align: left;">日付</th>';
+  html += '<th style="padding: 10px; text-align: left;">種別</th>';
+  html += '<th style="padding: 10px; text-align: left;">事業所</th>';
+  html += '<th style="padding: 10px; text-align: left;">スタッフ</th>';
+  html += '<th style="padding: 10px; text-align: left;">ルール</th>';
+  html += '<th style="padding: 10px; text-align: left;">レベル</th>';
+  html += '<th style="padding: 10px; text-align: left;">状態</th>';
+  html += '<th style="padding: 10px; text-align: left;">メッセージ</th>';
+  html += '<th style="padding: 10px; text-align: center;">操作</th>';
+  html += '</tr></thead><tbody>';
+  
+  filtered.forEach(function(w, i) {
+    const bg = i % 2 === 0 ? '#fafafa' : '#ffffff';
+    const lvColor = w.level === 'warning_block' ? '#dc2626' : '#3b82f6';
+    const lvLabel = w.level === 'warning_block' ? 'block' : 'only';
+    const stColor = w.status === '承認済' ? '#059669' : '#dc2626';
+    const kindLabel = w.shift_kind === 'day' ? '日勤' : '夜勤';
+    
+    let actionBtn = '';
+    if (w.level === 'warning_block') {
+      if (w.status === '承認済') {
+        actionBtn = `<button onclick="unapproveWarningAction('${w.warning_id}')" style="padding: 4px 10px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">取消</button>`;
+      } else {
+        actionBtn = `<button onclick="approveWarningAction('${w.warning_id}')" style="padding: 4px 10px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">承認</button>`;
+      }
+    } else {
+      actionBtn = '<span style="color: #9ca3af; font-size: 12px;">不要</span>';
+    }
+    
+    html += `<tr style="background: ${bg}; border-bottom: 1px solid #e5e7eb;">`;
+    html += `<td style="padding: 8px;">${w.date || ''}</td>`;
+    html += `<td style="padding: 8px;">${kindLabel}</td>`;
+    html += `<td style="padding: 8px;">${escapeHtml(w.jigyosho || '')}</td>`;
+    html += `<td style="padding: 8px;">${escapeHtml(w.staff_name || '')}</td>`;
+    html += `<td style="padding: 8px; font-weight: 600;">${w.rule_id || ''}</td>`;
+    html += `<td style="padding: 8px;"><span style="color: ${lvColor}; font-weight: 600;">${lvLabel}</span></td>`;
+    html += `<td style="padding: 8px;"><span style="color: ${stColor}; font-weight: 600;">${w.status || ''}</span></td>`;
+    html += `<td style="padding: 8px; color: #4b5563; max-width: 320px;">${escapeHtml(w.message || '')}</td>`;
+    html += `<td style="padding: 8px; text-align: center;">${actionBtn}</td>`;
+    html += '</tr>';
+  });
+  
+  html += '</tbody></table>';
+  document.getElementById('warningsTable').innerHTML = html;
+}
+
+function approveWarningAction(warningId) {
+  if (!confirm('警告ID ' + warningId + ' を承認しますか?')) return;
+  
+  google.script.run.withSuccessHandler(function(res) {
+    if (res.success) {
+      alert('✓ ' + (res.message || '承認しました'));
+      loadWarningsView();
+    } else {
+      alert('✗ ' + (res.message || 'エラー'));
+    }
+  }).withFailureHandler(function(err) {
+    alert('通信エラー: ' + err);
+  }).approveWarningRecord(currentAdmin.staff_id, warningId);
+}
+
+function unapproveWarningAction(warningId) {
+  if (!confirm('警告ID ' + warningId + ' の承認を取消しますか?')) return;
+  
+  google.script.run.withSuccessHandler(function(res) {
+    if (res.success) {
+      alert('✓ ' + (res.message || '承認を取消しました'));
+      loadWarningsView();
+    } else {
+      alert('✗ ' + (res.message || 'エラー'));
+    }
+  }).withFailureHandler(function(err) {
+    alert('通信エラー: ' + err);
+  }).unapproveWarningRecord(currentAdmin.staff_id, warningId);
 }
 
 // ========== ダッシュボード ==========
@@ -2707,7 +2940,7 @@ function renderWarningStatus(summary) {
         <div style="font-weight: 700; color: #991b1b; font-size: 14px;">⚠️ 未承認の警告 (block): ${totalUnapprovedBlock}件</div>
         <div style="font-size: 12px; color: #7f1d1d; margin-top: 4px;">日勤 ${summary.day.blockUnapproved}件 / 夜勤 ${summary.night.blockUnapproved}件</div>
         <div style="font-size: 13px; color: #991b1b; margin-top: 8px;">→ 確定不可。警告承認画面で承認後に再実行してください。</div>
-        <button onclick="alert('Phase 5.5 で警告承認画面を実装予定です。今は GAS の getPendingWarnings 関数で確認できます。')" 
+        <button onclick="showView('warnings')" 
                 style="margin-top: 10px; padding: 6px 14px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">
           🔍 警告承認画面へ →
         </button>
