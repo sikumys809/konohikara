@@ -965,6 +965,11 @@
 .shift-cal-table .day-sun { color: #dc2626; }
 .shift-cal-table .slot-cell { cursor: pointer; text-align: center; min-width: 70px; height: 40px; transition: opacity 0.15s; }
 .shift-cal-table .slot-cell:hover { opacity: 0.7; }
+/* ★ Phase 5.3: 警告マーク */
+.ds-cell { position: relative; }
+.ds-warn-mark { position: absolute; top: 1px; right: 2px; font-size: 11px; line-height: 1; cursor: help; pointer-events: auto; z-index: 5; }
+.ds-warn-block { color: #f59e0b; text-shadow: 0 0 2px rgba(245,158,11,0.4); }
+.ds-warn-only { color: #3b82f6; text-shadow: 0 0 2px rgba(59,130,246,0.3); }
 .shift-cal-table .slot-empty { background: #fef2f2; color: #9ca3af; font-size: 18px; }
 .shift-cal-table .slot-filled { background: #dbeafe; color: #1e40af; font-weight: 500; }
 .shift-cal-table .slot-confirmed { background: #d1fae5; color: #065f46; font-weight: 500; }
@@ -3749,6 +3754,30 @@ function renderDayShiftCalendar() {
     return;
   }
 
+  // ★ Phase 5.3: 警告マップを構築 (date+jigyosho単位で集約)
+  const warnByCell = {};
+  (data.warnings || []).forEach(function(w) {
+    const key = w.date + '_' + w.jigyosho;
+    if (!warnByCell[key]) warnByCell[key] = { block: 0, only: 0, msgs: [] };
+    if (w.level === 'warning_block') warnByCell[key].block++;
+    else warnByCell[key].only++;
+    var msg = '[' + (w.rule_id || '') + '] ' + (w.staff_name || '') + ': ' + (w.message || '');
+    warnByCell[key].msgs.push(msg);
+  });
+  function _wmark(jig, dateKey) {
+    const w = warnByCell[dateKey + '_' + jig];
+    if (!w || (w.block === 0 && w.only === 0)) return '';
+    const icon = w.block > 0 ? '⚠️' : 'ℹ️';
+    const cls = w.block > 0 ? 'ds-warn-block' : 'ds-warn-only';
+    const tip = w.msgs.join('\n')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    return '<span class="ds-warn-mark ' + cls + '" title="' + tip + '">' + icon + '</span>';
+  }
+
   let html = '<table class="ds-cal-table"><thead><tr>';
   html += '<th class="ds-fac-col">事業所 / 施設</th>';
   for (const d of data.days) {
@@ -3767,14 +3796,14 @@ function renderDayShiftCalendar() {
         html += `<td class="ds-fac-col" style="padding-left: 20px;"><span style="font-size: 12px;">📍 ${escapeHtml(b.facility)}</span></td>`;
         for (const cell of b.cells) {
           if (cell.count === 0) {
-            html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－</td>`;
+            html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.jigyosho, cell.dateKey)}</td>`;
           } else {
             const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
             const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
             const subParts = [];
             if (early > 0) subParts.push(`🌅${early}`);
             if (late > 0) subParts.push(`🌆${late}`);
-            html += `<td class="ds-cell" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} ${b.facility}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div></td>`;
+            html += `<td class="ds-cell" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} ${b.facility}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.jigyosho, cell.dateKey)}</td>`;
           }
         }
         html += '</tr>';
@@ -3785,14 +3814,14 @@ function renderDayShiftCalendar() {
       html += `<td class="ds-fac-col">${escapeHtml(row.facility)}<div style="font-size: 10px; color: #6b7280;">定員${row.capacity}</div></td>`;
       for (const cell of row.cells) {
         if (cell.count === 0) {
-          html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－</td>`;
+          html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.facility, cell.dateKey)}</td>`;
         } else {
           const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
           const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
           const subParts = [];
           if (early > 0) subParts.push(`🌅${early}`);
           if (late > 0) subParts.push(`🌆${late}`);
-          html += `<td class="ds-cell" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div></td>`;
+          html += `<td class="ds-cell" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.facility, cell.dateKey)}</td>`;
         }
       }
       html += '</tr>';
