@@ -222,7 +222,10 @@ function getWarningById(warningId) {
   const sheet = ss.getSheetByName(WARNING_SHEET_NAME);
   if (!sheet) return null;
   
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, WARNING_HEADERS.length).getValues();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;  // 空シート対応
+  
+  const data = sheet.getRange(2, 1, lastRow - 1, WARNING_HEADERS.length).getValues();
   for (let i = 0; i < data.length; i++) {
     if (data[i][0] === warningId) {
       return {
@@ -244,47 +247,63 @@ function getWarningById(warningId) {
 // ============================================================
 function approveWarning(warningId, approverName) {
   if (!warningId || !approverName) {
-    throw new Error('approveWarning: warningId と approverName は必須');
+    return { success: false, message: 'warningId と approverName は必須です' };
   }
   
   const w = getWarningById(warningId);
-  if (!w) throw new Error(`警告ID ${warningId} が見つからない`);
+  if (!w) {
+    return { success: false, message: '警告ID ' + warningId + ' が見つかりません' };
+  }
   if (w.level !== WARNING_LEVEL.BLOCK) {
-    throw new Error(`警告 ${warningId} は warning_only のため承認不要`);
+    return { success: false, message: '警告 ' + warningId + ' は warning_only のため承認不要です' };
   }
   if (w.status === WARNING_STATUS.APPROVED) {
-    Logger.log(`警告 ${warningId} は既に承認済`);
-    return false;
+    return { success: true, message: '警告 ' + warningId + ' は既に承認済です', alreadyApproved: true };
   }
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(WARNING_SHEET_NAME);
-  sheet.getRange(w.rowIndex, 14).setValue(WARNING_STATUS.APPROVED);
-  sheet.getRange(w.rowIndex, 15).setValue(approverName);
-  sheet.getRange(w.rowIndex, 16).setValue(new Date());
-  
-  Logger.log(`警告承認: ${warningId} by ${approverName}`);
-  return true;
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(WARNING_SHEET_NAME);
+    sheet.getRange(w.rowIndex, 14).setValue(WARNING_STATUS.APPROVED);
+    sheet.getRange(w.rowIndex, 15).setValue(approverName);
+    sheet.getRange(w.rowIndex, 16).setValue(new Date());
+    Logger.log('警告承認: ' + warningId + ' by ' + approverName);
+    return { success: true, message: '警告 ' + warningId + ' を承認しました', warningId: warningId };
+  } catch (e) {
+    return { success: false, message: '承認処理エラー: ' + e.message };
+  }
 }
 
 // ============================================================
 // 警告承認解除
 // ============================================================
 function unapproveWarning(warningId) {
-  const w = getWarningById(warningId);
-  if (!w) throw new Error(`警告ID ${warningId} が見つからない`);
-  if (w.level !== WARNING_LEVEL.BLOCK) {
-    throw new Error(`警告 ${warningId} は warning_only のため承認解除対象外`);
+  if (!warningId) {
+    return { success: false, message: 'warningId は必須です' };
   }
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(WARNING_SHEET_NAME);
-  sheet.getRange(w.rowIndex, 14).setValue(WARNING_STATUS.PENDING);
-  sheet.getRange(w.rowIndex, 15).setValue('');
-  sheet.getRange(w.rowIndex, 16).setValue('');
+  const w = getWarningById(warningId);
+  if (!w) {
+    return { success: false, message: '警告ID ' + warningId + ' が見つかりません' };
+  }
+  if (w.level !== WARNING_LEVEL.BLOCK) {
+    return { success: false, message: '警告 ' + warningId + ' は warning_only のため承認解除対象外です' };
+  }
+  if (w.status !== WARNING_STATUS.APPROVED) {
+    return { success: true, message: '警告 ' + warningId + ' は未承認状態です', alreadyPending: true };
+  }
   
-  Logger.log(`警告承認解除: ${warningId}`);
-  return true;
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(WARNING_SHEET_NAME);
+    sheet.getRange(w.rowIndex, 14).setValue(WARNING_STATUS.PENDING);
+    sheet.getRange(w.rowIndex, 15).setValue('');
+    sheet.getRange(w.rowIndex, 16).setValue('');
+    Logger.log('警告承認解除: ' + warningId);
+    return { success: true, message: '警告 ' + warningId + ' の承認を解除しました', warningId: warningId };
+  } catch (e) {
+    return { success: false, message: '承認解除エラー: ' + e.message };
+  }
 }
 
 // ============================================================
