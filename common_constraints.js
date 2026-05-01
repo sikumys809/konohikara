@@ -172,3 +172,188 @@ function testTimeJudgement() {
   
   Logger.log('=== 完了 ===');
 }
+
+// ============================================================
+// Step 2.2: 勤務制約チェック関数
+// ============================================================
+
+// 内部: 日付加算 (nightshift_engine_v3.js の addDays とプレフィックス分けて衝突回避)
+function _cc_addDays(dateKey, delta) {
+  const d = new Date(dateKey + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+// 内部: 月曜日取得 (週の起点)
+// 例: '2026-05-15'(金) → '2026-05-11'(月)
+//     '2026-05-11'(月) → '2026-05-11'
+//     '2026-05-17'(日) → '2026-05-11'
+function _cc_getWeekStart(dateKey) {
+  const d = new Date(dateKey + 'T00:00:00');
+  const day = d.getDay(); // 0=日, 1=月, ..., 6=土
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+// ============================================================
+// 連続勤務日数チェック
+// targetDate を含む前後の連続勤務日数をカウント
+// 戻り値: { exceeded: bool, count: number }
+//   exceeded = count > 6 (= 7日以上)
+// ============================================================
+function checkConsecutiveDays(staffId, targetDate, ctx) {
+  const dates = (ctx.staffAssignedDates && ctx.staffAssignedDates[staffId]) || {};
+  let count = 1; // targetDate 自体
+  
+  // 前日方向に遡る
+  let prev = _cc_addDays(targetDate, -1);
+  while (true) {
+    const assigns = dates[prev] || [];
+    if (assigns.length === 0) break;
+    count++;
+    prev = _cc_addDays(prev, -1);
+  }
+  
+  // 翌日方向に進む (既存配置検証用)
+  let next = _cc_addDays(targetDate, 1);
+  while (true) {
+    const assigns = dates[next] || [];
+    if (assigns.length === 0) break;
+    count++;
+    next = _cc_addDays(next, 1);
+  }
+  
+  return { exceeded: count > 6, count: count };
+}
+
+// ============================================================
+// 週40時間チェック (月曜起算)
+// targetDate を含む週の合計勤務h + addedHours が40hを超えるか
+// 戻り値: { exceeded, currentH, willBeH, weekStart }
+//   currentH = ctx 既存配置の合計h
+//   willBeH = currentH + addedHours
+//   exceeded = willBeH > 40
+// ============================================================
+function checkWeeklyHours(staffId, targetDate, addedHours, ctx) {
+  const weekStart = _cc_getWeekStart(targetDate);
+  const dates = (ctx.staffAssignedDates && ctx.staffAssignedDates[staffId]) || {};
+  let currentH = 0;
+  
+  for (let i = 0; i < 7; i++) {
+    const day = _cc_addDays(weekStart, i);
+    const assigns = dates[day] || [];
+    assigns.forEach(function(a) {
+      currentH += (a.workHours || 0);
+    });
+  }
+  
+  const willBeH = currentH + (addedHours || 0);
+  return {
+    exceeded: willBeH > 40,
+    currentH: currentH,
+    willBeH: willBeH,
+    weekStart: weekStart
+  };
+}
+
+// ============================================================
+// 同日他事業所配置チェック (H1)
+// 戻り値: { exists: bool, conflicts: [...] }
+//   exists = true なら自動配置から除外 (ハード除外)
+// ============================================================
+function hasOtherFacilityAssignment(staffId, date, currentJigyosho, ctx) {
+  const dates = (ctx.staffAssignedDates && ctx.staffAssignedDates[staffId]) || {};
+  const assigns = dates[date] || [];
+  const conflicts = assigns.filter(function(a) {
+    return a.jigyosho && a.jigyosho !== currentJigyosho;
+  });
+  return {
+    exists: conflicts.length > 0,
+    conflicts: conflicts
+  };
+}
+
+// ============================================================
+// テスト関数 (Step 2.2)
+// ============================================================
+function testWorkConstraints() {
+  Logger.log('=== 勤務制約テスト (Step 2.2) ===');
+  
+  // 1. _cc_getWeekStart
+  Logger.log('\n--- _cc_getWeekStart (月曜日取得) ---');
+  const weekTests = [
+    ['2026-05-11', '2026-05-11', '月曜日 → 自身'],
+    ['2026-05-15', '2026-05-11', '金曜日 → その週の月曜'],
+    ['2026-05-17', '2026-05-11', '日曜日 → その週の月曜'],
+    ['2026-05-18', '2026-05-18', '次の月曜日']
+  ];
+  weekTests.forEach(function(t) {
+    const actual = _cc_getWeekStart(t[0]);
+    const ok = actual === t[1] ? 'OK' : 'NG';
+    Logger.log(ok + ' ' + t[0] + ' → ' + actual + ' (期待:' + t[1] + ') [' + t[2] + ']');
+  });
+  
+  // 2. mock ctx 構築
+  // 5/11(月) 早出8h, 5/12(火) 早出8h, 5/13(水) 早出8h, 5/14(木) 早出8h, 5/15(金) 早出4h
+  // = 月〜金 5日連続、合計 8+8+8+8+4 = 36h
+  const mockCtx = {
+    staffAssignedDates: {
+      '13': {
+        '2026-05-11': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }],
+        '2026-05-12': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }],
+        '2026-05-13': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }],
+        '2026-05-14': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }],
+        '2026-05-15': [{ shift: '早出4h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 4 }]
+      },
+      '99': {
+        // 同日他事業所テスト用: 5/15 にA事業所配置済み
+        '2026-05-15': [{ shift: '早出8h', jigyosho: 'GHコノヒカラ', facility: 'リフレ要町', workHours: 8 }]
+      }
+    }
+  };
+  
+  // 3. checkConsecutiveDays
+  Logger.log('\n--- checkConsecutiveDays ---');
+  // staff_id=13 で 5/15 を起点 → 月〜金 5日連続
+  let r = checkConsecutiveDays('13', '2026-05-15', mockCtx);
+  Logger.log('staff=13 / 5/15起点 → count=' + r.count + ', exceeded=' + r.exceeded + ' (期待:5, false)');
+  // 5/16 を新規追加した時の連続数を仮想計算
+  r = checkConsecutiveDays('13', '2026-05-16', mockCtx);
+  Logger.log('staff=13 / 5/16起点 → count=' + r.count + ', exceeded=' + r.exceeded + ' (期待:6, false 5/11-5/16の6日)');
+  // 5/17 を新規追加 → 7日連続でexceed
+  r = checkConsecutiveDays('13', '2026-05-17', mockCtx);
+  Logger.log('staff=13 / 5/17起点 → count=' + r.count + ', exceeded=' + r.exceeded + ' (期待:1, false 5/16空欄なので 5/17単独)');
+  // 配置がないスタッフ
+  r = checkConsecutiveDays('999', '2026-05-15', mockCtx);
+  Logger.log('staff=999 / 配置なし → count=' + r.count + ', exceeded=' + r.exceeded + ' (期待:1, false)');
+  
+  // 4. checkWeeklyHours
+  Logger.log('\n--- checkWeeklyHours ---');
+  // 5/15 の週 (月-日 = 5/11-5/17) の合計 36h、追加 0h → 36h
+  r = checkWeeklyHours('13', '2026-05-15', 0, mockCtx);
+  Logger.log('staff=13 / 5/15 / +0h → currentH=' + r.currentH + ', willBeH=' + r.willBeH + ', exceeded=' + r.exceeded + ', weekStart=' + r.weekStart + ' (期待:36, 36, false, 2026-05-11)');
+  // 追加 4h → 40h ちょうど (40 > 40 はfalse)
+  r = checkWeeklyHours('13', '2026-05-16', 4, mockCtx);
+  Logger.log('staff=13 / 5/16 / +4h → currentH=' + r.currentH + ', willBeH=' + r.willBeH + ', exceeded=' + r.exceeded + ' (期待:36, 40, false ちょうど40h)');
+  // 追加 5h → 41h オーバー
+  r = checkWeeklyHours('13', '2026-05-16', 5, mockCtx);
+  Logger.log('staff=13 / 5/16 / +5h → currentH=' + r.currentH + ', willBeH=' + r.willBeH + ', exceeded=' + r.exceeded + ' (期待:36, 41, true)');
+  // 翌週 5/18 (月) は別週
+  r = checkWeeklyHours('13', '2026-05-18', 8, mockCtx);
+  Logger.log('staff=13 / 5/18 / +8h → currentH=' + r.currentH + ', willBeH=' + r.willBeH + ', weekStart=' + r.weekStart + ' (期待:0, 8, 2026-05-18)');
+  
+  // 5. hasOtherFacilityAssignment
+  Logger.log('\n--- hasOtherFacilityAssignment ---');
+  // staff=99 / 5/15 / 同じGHコノヒカラ → 重複なし
+  let h = hasOtherFacilityAssignment('99', '2026-05-15', 'GHコノヒカラ', mockCtx);
+  Logger.log('staff=99 / 5/15 / GHコノヒカラ → exists=' + h.exists + ' (期待:false)');
+  // staff=99 / 5/15 / GHコノヒカラ品川 → 既存(GHコノヒカラ)と他事業所重複
+  h = hasOtherFacilityAssignment('99', '2026-05-15', 'GHコノヒカラ品川', mockCtx);
+  Logger.log('staff=99 / 5/15 / GHコノヒカラ品川 → exists=' + h.exists + ', conflicts=' + h.conflicts.length + '件 (期待:true, 1)');
+  // 配置なし
+  h = hasOtherFacilityAssignment('999', '2026-05-15', 'GHコノヒカラ', mockCtx);
+  Logger.log('staff=999 / 配置なし → exists=' + h.exists + ' (期待:false)');
+  
+  Logger.log('\n=== 完了 ===');
+}
