@@ -560,6 +560,213 @@ function testSlotsAndCandidatesV4() {
 }
 
 // ============================================================
+// generateSlotsV4: 月の各日×各ユニット = 空き枠生成
+// ============================================================
+function generateSlotsV4(ctx) {
+  for (let day = 1; day <= ctx.daysInMonth; day++) {
+    const dateKey = ctx.year + '-' + String(ctx.month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    const date = new Date(dateKey + 'T00:00:00');
+    
+    for (const unit of ctx.units) {
+      const slot = {
+        date: date,
+        dateKey: dateKey,
+        unit: unit,
+        jigyosho: unit.jigyosho,
+        facility: unit.facility,
+        unit_name: unit.unit_name,
+        assignment: null  // 後で {staff_id, shift, score, warnings: []} を設定
+      };
+      ctx.slots.push(slot);
+      const slotKey = dateKey + '_' + unit.unit_id;
+      ctx.slotsByKey[slotKey] = slot;
+    }
+  }
+  return ctx.slots.length;
+}
+
+// ============================================================
+// findCandidatesV4: スロット + シフトタイプに対する候補スタッフを抽出
+// 物理ハード除外のみここで判定:
+//   - 同日他事業所配置NG (H1)
+//   - 連続勤務7日以上NG (H6)
+//   - 週40時間超NG (H7)
+//   - 既配置で当該スロット埋まってる場合NG
+//   - 同日同スタッフ複数希望は1回のみ配置
+// R1/R2/R3 警告は次ステップで判定 (候補から除外せず警告マーク)
+// ============================================================
+function findCandidatesV4(ctx, slot, shiftType) {
+  // wishesByDayShift から候補抽出
+  const dsKey = slot.dateKey + '_' + shiftType;
+  const wishes = ctx.wishesByDayShift[dsKey] || [];
+  if (wishes.length === 0) return [];
+  
+  const candidates = [];
+  
+  for (const wish of wishes) {
+    const staff = ctx.staffMap[wish.staff_id];
+    if (!staff) continue;
+    
+    // 許可シフトチェック (H8)
+    if (staff.allowedShifts.indexOf(shiftType) === -1) continue;
+    
+    // 既配置チェック: 同日同スタッフ複数希望は1回のみ
+    const sameDayAssigns = ctx.staffAssignedDates[staff.staff_id][slot.dateKey] || [];
+    if (sameDayAssigns.length > 0) continue;
+    
+    // H1: 同日他事業所配置NG
+    const otherFac = hasOtherFacilityAssignment(staff.staff_id, slot.dateKey, slot.jigyosho, ctx);
+    if (otherFac.exists) continue;
+    
+    // H6: 連続勤務7日以上NG
+    // この日に新規配置した場合の連続日数を仮想的に計算
+    const tmpCtx = _v4_makeTempCtx(ctx, staff.staff_id, slot.dateKey, shiftType, slot);
+    const consec = checkConsecutiveDays(staff.staff_id, slot.dateKey, tmpCtx);
+    if (consec.exceeded) continue;
+    
+    // H7: 週40時間超NG
+    const addedH = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[shiftType])
+      ? (SHIFT_PATTERNS[shiftType].dayHours + SHIFT_PATTERNS[shiftType].nightHours)
+      : 8;
+    const weekly = checkWeeklyHours(staff.staff_id, slot.dateKey, addedH, ctx);
+    if (weekly.exceeded) continue;
+    
+    candidates.push({ staff: staff, wish: wish });
+  }
+  
+  return candidates;
+}
+
+// 内部: 仮想ctx (連続勤務判定で「この日に配置した場合」を再現)
+function _v4_makeTempCtx(ctx, staffId, dateKey, shiftType, slot) {
+  // 浅いコピー + staffAssignedDates の対象日のみ仮想配置
+  const orig = ctx.staffAssignedDates[staffId] || {};
+  const tmpDates = {};
+  for (const k of Object.keys(orig)) tmpDates[k] = orig[k];
+  
+  const workHours = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[shiftType])
+    ? (SHIFT_PATTERNS[shiftType].dayHours + SHIFT_PATTERNS[shiftType].nightHours)
+    : 8;
+  tmpDates[dateKey] = (tmpDates[dateKey] || []).concat([{
+    shift: shiftType,
+    jigyosho: slot.jigyosho,
+    facility: slot.facility,
+    unit: slot.unit_name,
+    workHours: workHours
+  }]);
+  
+  const tmpStaffDates = {};
+  for (const sid of Object.keys(ctx.staffAssignedDates)) tmpStaffDates[sid] = ctx.staffAssignedDates[sid];
+  tmpStaffDates[staffId] = tmpDates;
+  
+  return { staffAssignedDates: tmpStaffDates };
+}
+
+// ============================================================
+// calcScoreV4: 配置スコア計算
+// 旧 calcScore と同じ仕様、NSE_V4.SCORE 参照
+// ============================================================
+function calcScoreV4(ctx, staff, wish, slot) {
+  let score = 0;
+  const fac = slot.facility;
+  
+  // 施設マッチング
+  if (staff.mainFac === fac) score += NSE_V4.SCORE.MAIN_FAC;
+  else if (staff.secondFac === fac) score += NSE_V4.SCORE.SECOND_FAC;
+  else if (staff.subFacs.indexOf(fac) >= 0) score += NSE_V4.SCORE.SUB_FAC;
+  
+  // 国家資格
+  if (staff.qualification) score += NSE_V4.SCORE.QUALIFIED;
+  
+  // 正社員
+  if (staff.employment === '正社員') score += NSE_V4.SCORE.FULL_TIME;
+  
+  // 勤務歴月数
+  score += (staff.hireMonths || 0) * NSE_V4.SCORE.MONTH_X;
+  
+  // 施設熟練度
+  const skillCount = (ctx.history3m[staff.staff_id] || {})[fac] || 0;
+  score += skillCount * NSE_V4.SCORE.SKILL_X;
+  
+  // 保護フラグ
+  if (staff.isProtected) {
+    if ((ctx.monthlyAssign[staff.staff_id] || 0) === 0) {
+      score += NSE_V4.SCORE.PROTECTED_ZERO;
+    } else {
+      score += NSE_V4.SCORE.PROTECTED_OTHER;
+    }
+  }
+  
+  // 新人
+  if (staff.isNewbie1) score += NSE_V4.SCORE.NEWBIE1;
+  else if (staff.isNewbie2) score += NSE_V4.SCORE.NEWBIE2;
+  
+  // 当月集中度
+  const concentration = ctx.monthlyAssign[staff.staff_id] || 0;
+  score += concentration * NSE_V4.SCORE.CONCENTRATION_X;
+  
+  // VIP
+  if (staff.isVIP) score += NSE_V4.SCORE.VIP;
+  
+  return score;
+}
+
+// ============================================================
+// テスト関数: スロット生成 + 候補検索の動作確認
+// ============================================================
+function testSlotsAndCandidatesV4() {
+  Logger.log('=== Step 3.2.3 動作確認 ===');
+  const ym = '2026-05';
+  const ctx = loadEngineContextV4(ym);
+  
+  Logger.log('--- generateSlotsV4 ---');
+  const slotCount = generateSlotsV4(ctx);
+  Logger.log('生成スロット数: ' + slotCount + ' (期待: 22ユニット × 31日 = 682)');
+  
+  // サンプルスロット表示
+  if (ctx.slots.length > 0) {
+    const s = ctx.slots[0];
+    Logger.log('サンプル[0]: ' + s.dateKey + ' / ' + s.jigyosho + ' / ' + s.facility + ' / ' + s.unit_name);
+    const last = ctx.slots[ctx.slots.length - 1];
+    Logger.log('サンプル[末]: ' + last.dateKey + ' / ' + last.jigyosho + ' / ' + last.facility + ' / ' + last.unit_name);
+  }
+  
+  Logger.log('\n--- findCandidatesV4 (希望が0なので候補も0が期待値) ---');
+  if (ctx.slots.length > 0) {
+    const slot = ctx.slots[0];
+    ['夜勤A', '夜勤B', '夜勤C'].forEach(function(shift) {
+      const cands = findCandidatesV4(ctx, slot, shift);
+      Logger.log(slot.dateKey + ' / ' + slot.unit_name + ' / ' + shift + ' → 候補: ' + cands.length + '件');
+    });
+  }
+  
+  Logger.log('\n--- calcScoreV4 (mockスタッフでスコア計算) ---');
+  const mockStaff = {
+    staff_id: 'TEST',
+    mainFac: 'リフレ要町',
+    secondFac: '',
+    subFacs: [],
+    qualification: '看護師',
+    employment: '正社員',
+    hireMonths: 36,
+    isProtected: false,
+    isVIP: false,
+    isNewbie1: false,
+    isNewbie2: false
+  };
+  const mockSlot = { facility: 'リフレ要町' };
+  const mockWish = {};
+  // history3m と monthlyAssign を空で
+  ctx.history3m['TEST'] = {};
+  ctx.monthlyAssign['TEST'] = 0;
+  const score = calcScoreV4(ctx, mockStaff, mockWish, mockSlot);
+  // 期待: 30(メイン) + 10(資格) + 5(正社員) + 36×2(月数) = 117
+  Logger.log('スコア計算結果: ' + score + ' (期待: 117)');
+  
+  Logger.log('\n=== 完了 ===');
+}
+
+// ============================================================
 // Step 3.2.4: R1/R2/R3 警告チェック関数
 // ============================================================
 
