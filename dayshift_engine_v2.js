@@ -150,7 +150,7 @@ function loadEngineContextV2(targetYM) {
     hoursPerPerson: hoursPerPerson,
     units: [],
     unitsByFacility: {},
-    facilityToJigyosho: {},
+    facilityToJigyoshos: {},  // 1施設→複数事業所対応 (E-st特殊ケース)
     staffMap: {},
     facilityBasis: {},  // {jigyosho: {capacity, sewa, seikatsu, tokutei, sabikan, nurse, kanrisha, needSewaH, needSeikatsuH, needTokuteiH, needSabikanH, needKanrishaH, nurseRequired}}
     wishes: [],
@@ -182,7 +182,10 @@ function loadEngineContextV2(targetYM) {
     ctx.units.push(unit);
     if (!ctx.unitsByFacility[unit.facility]) ctx.unitsByFacility[unit.facility] = [];
     ctx.unitsByFacility[unit.facility].push(unit);
-    ctx.facilityToJigyosho[unit.facility] = unit.jigyosho;
+    if (!ctx.facilityToJigyoshos[unit.facility]) ctx.facilityToJigyoshos[unit.facility] = [];
+    if (ctx.facilityToJigyoshos[unit.facility].indexOf(unit.jigyosho) === -1) {
+      ctx.facilityToJigyoshos[unit.facility].push(unit.jigyosho);
+    }
   }
   
   // 2. M_スタッフ
@@ -532,7 +535,12 @@ function findCandidatesV2(ctx, slot) {
     if (staff.allowedShifts.indexOf(slot.shift) === -1) continue;
     
     // 当該事業所と希望事業所の一致確認 (柔軟: メイン/セカンド/サブのいずれか)
-    if (wish.mainFac !== slot.jigyosho && wish.secondFac !== slot.jigyosho && wish.subFacs.indexOf(slot.jigyosho) === -1) continue;
+    // wish の希望施設 (main/second/sub) のいずれかが slot.jigyosho 配下にあるか判定
+    const _wishFacs = [wish.mainFac, wish.secondFac].concat(wish.subFacs).filter(Boolean);
+    const _matched = _wishFacs.some(function(f) {
+      return (ctx.facilityToJigyoshos[f] || []).indexOf(slot.jigyosho) !== -1;
+    });
+    if (!_matched) continue;
     
     // 同日同スタッフ既配置 (1日1配置のみ)
     const sameDayAssigns = ctx.staffAssignedDates[staff.staff_id][slot.dateKey] || [];
@@ -586,9 +594,10 @@ function findCandidatesV2(ctx, slot) {
       if (weekly.exceeded) continue;
     }
     
-    // H2/H3/H4/H5: 兼務NG (同日に異なる役割で既配置がある場合)
-    // 1人内の兼務NG: 候補スタッフが複数役割を持つ場合
-    if (typeof hasInternalRoleConflict === 'function' && hasInternalRoleConflict(staff.mainRoles)) continue;
+    // H2/H3/H4/H5: 兼務NG = 同時刻に異なる役割で配置されるのを防ぐ仕様。
+    // 仕様書: 「1人のスタッフが同時刻に世話人と生活支援員の両方の役割は不可。時間帯が違えばOK」
+    // 主職種を複数持つこと自体は問題ないため、ここでは候補から弾かない。
+    // 配置時に1役割を選ぶ実装（Step C）で仕様準拠を担保する。
     
     candidates.push({ staff: staff, wish: wish });
   }
@@ -632,10 +641,15 @@ function calcScoreV2(ctx, staff, wish, slot, shortage) {
   let score = 0;
   const fac = slot.jigyosho;
   
-  // 施設マッチング (※日勤は事業所単位)
-  if (staff.mainFac === fac) score += DSE_V2.SCORE.MAIN_FAC;
-  else if (staff.secondFac === fac) score += DSE_V2.SCORE.SECOND_FAC;
-  else if (staff.subFacs.indexOf(fac) >= 0) score += DSE_V2.SCORE.SUB_FAC;
+  // 施設マッチング (日勤は事業所単位slot, 施設→事業所マップ経由で判定)
+  const _mainJigs = ctx.facilityToJigyoshos[staff.mainFac] || [];
+  const _secondJigs = ctx.facilityToJigyoshos[staff.secondFac] || [];
+  const _subJigs = staff.subFacs.reduce(function(acc, f) {
+    return acc.concat(ctx.facilityToJigyoshos[f] || []);
+  }, []);
+  if (_mainJigs.indexOf(fac) !== -1) score += DSE_V2.SCORE.MAIN_FAC;
+  else if (_secondJigs.indexOf(fac) !== -1) score += DSE_V2.SCORE.SECOND_FAC;
+  else if (_subJigs.indexOf(fac) !== -1) score += DSE_V2.SCORE.SUB_FAC;
   
   // 国家資格
   if (staff.qualification) score += DSE_V2.SCORE.QUALIFIED;
