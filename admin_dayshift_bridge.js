@@ -43,14 +43,17 @@ function executeDayShiftEngineFromAdmin(adminStaffId, yearMonth) {
 
     const elapsed = ((Date.now() - startTs) / 1000).toFixed(1);
 
+    const placedCount = engineResult.placedCount || 0;
+    const skippedCount = (engineResult.warningBlockCount || 0) + (engineResult.unassignedCount || 0);
+
     return {
       success: true,
       yearMonth: yearMonth,
-      placed: engineResult.placed,
-      skipped: engineResult.skipped,
+      placed: placedCount,
+      skipped: skippedCount,
       elapsed: elapsed,
       fulfillment: fulfillmentSummary,
-      message: `${yearMonth} の日勤自動割当が完了しました（${engineResult.placed}件配置 / ${engineResult.skipped}件スキップ）`
+      message: `${yearMonth} の日勤自動割当が完了しました（${placedCount}件配置 / ${skippedCount}件スキップ）`
     };
   } catch (e) {
     Logger.log('❌ 日勤エンジン実行エラー: ' + e.message);

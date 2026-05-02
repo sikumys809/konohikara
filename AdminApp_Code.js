@@ -933,16 +933,12 @@ function executeNightShiftEngine(adminStaffId, targetYM) {
   
   try {
     const result = runNightShiftEngineV4(targetYM);
-    if (!result.success) {
-      return { success: false, message: result.error || 'エンジン実行エラー' };
-    }
     
-    const ctx = result.ctx;
     const elapsed = ((new Date().getTime() - startTime) / 1000).toFixed(1);
-    
-    const assigned = ctx.slots.filter(s => s.staff_id).length;
-    const total = ctx.slots.length;
-    const rate = Math.round(assigned / total * 100);
+    const assigned = result.placedCount || 0;
+    const unassigned = result.unassignedCount || 0;
+    const total = assigned + unassigned;
+    const rate = total > 0 ? Math.round(assigned / total * 100) : 0;
     
     writeAdminLog(
       admin.staff_id, admin.name, admin.role,
@@ -957,8 +953,8 @@ function executeNightShiftEngine(adminStaffId, targetYM) {
       assigned: assigned,
       total: total,
       rate: rate,
-      duplicates: (ctx.conflicts || []).length,
-      warnings: ctx.warnings.length,
+      duplicates: 0,
+      warnings: result.warningCount || 0,
       elapsed: elapsed,
     };
     
