@@ -1200,6 +1200,10 @@ function navigateTo(id) {
   } else if (id === 'submitOverride') {
     showView('submitOverride');
     loadSubmitOverridesView();
+  } else if (id === 'warnings') {
+    showView('warnings');
+  } else if (id === 'submitSettings') {
+    showView('submitSettings');
   } else {
     alert(id + ' 機能は次のステップで実装予定');
   }
