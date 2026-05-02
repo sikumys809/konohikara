@@ -932,7 +932,7 @@ function executeNightShiftEngine(adminStaffId, targetYM) {
   const startTime = new Date().getTime();
   
   try {
-    const result = runNightShiftEngine(targetYM);
+    const result = runNightShiftEngineV4(targetYM);
     if (!result.success) {
       return { success: false, message: result.error || 'エンジン実行エラー' };
     }

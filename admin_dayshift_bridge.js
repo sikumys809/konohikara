@@ -30,7 +30,7 @@ function executeDayShiftEngineFromAdmin(adminStaffId, yearMonth) {
     Logger.log(`対象年月: ${yearMonth}`);
 
     // ③ エンジン実行
-    const engineResult = runDayShiftEngine(yearMonth);
+    const engineResult = runDayShiftEngineV2(yearMonth);
 
     // ④ 充足率レポート生成
     generateDayShiftFulfillmentReport(yearMonth);
