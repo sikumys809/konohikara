@@ -286,9 +286,11 @@ function authenticateStaff(email) {
 
     const shiftKubun = String(row[COL_STAFF.SHIFT_KUBUN] || '両方').trim() || '両方';
     const rawAllowed = String(row[COL_STAFF.ALLOWED_SHIFTS] || '').trim();
+    // ★ シフト種別が未設定なら空配列 (UI側で「未設定」表示)
+    // 旧: getDefaultAllowedShifts(shiftKubun) でレガシー名を返してた
     const allowedShifts = rawAllowed
       ? rawAllowed.split(',').map(s => s.trim()).filter(Boolean)
-      : getDefaultAllowedShifts(shiftKubun);
+      : [];
 
     const mainFac = String(row[COL_STAFF.MAIN_FAC] || '').trim();
     const secondFac = String(row[COL_STAFF.SECOND_FAC] || '').trim();

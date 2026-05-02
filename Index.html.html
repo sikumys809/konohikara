@@ -577,6 +577,10 @@ function toggleFacilityPicker(name, type) {
 
 function renderBulkShifts() {
   const box = document.getElementById('bulkShiftChips');
+  if (!currentUser.allowedShifts || currentUser.allowedShifts.length === 0) {
+    box.innerHTML = '<div style="padding: 12px; color: #6b7280; font-size: 13px;">⚠️ シフト種別が未設定です。管理者にご連絡ください。</div>';
+    return;
+  }
   box.innerHTML = currentUser.allowedShifts.map(s => {
     const isChecked = bulkShiftSelection.includes(s);
     const time = (currentUser.shiftTimes[s] && currentUser.shiftTimes[s].label) || '';
