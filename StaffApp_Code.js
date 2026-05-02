@@ -127,8 +127,8 @@ function normalizeYM(val) {
 
 function getDefaultAllowedShifts(kubun) {
   if (kubun === '夜勤のみ') return ['夜勤A','夜勤B','夜勤C'];
-  if (kubun === '日勤のみ') return ['日勤早出','日勤遅出'];
-  return ['夜勤A','夜勤B','夜勤C','日勤早出','日勤遅出'];
+  if (kubun === '日勤のみ') return ['早出8h','遅出8h'];
+  return ['夜勤A','夜勤B','夜勤C','早出8h','遅出8h'];
 }
 
 function calcMonthsSinceHire(hireDate) {
