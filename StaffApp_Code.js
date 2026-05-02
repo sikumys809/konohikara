@@ -26,8 +26,19 @@ const COL_SHIFT = {
   START:9, END:10, COUNT:11, STATUS:12, UPDATED:13,
 };
 
-const SUBMIT_START_DAY = 10;
-const SUBMIT_END_DAY = 22;
+// ★ Phase: 提出期間は M_設定 シートから動的取得 (submission_settings.js の getSubmissionPeriod)
+// 互換性のため定数も残すが、実際の判定では _getSubmitDays() を使う
+const SUBMIT_START_DAY = 10;  // デフォルト値
+const SUBMIT_END_DAY = 22;    // デフォルト値
+
+function _getSubmitDays() {
+  try {
+    if (typeof getSubmissionPeriod === 'function') {
+      return getSubmissionPeriod();
+    }
+  } catch (e) {}
+  return { startDay: _sp1.startDay, endDay: _sp1.endDay };
+}
 
 // シフト時間定義
 const SHIFT_TIMES = {
@@ -147,22 +158,23 @@ function getSubmitPeriodInfo(staffId) {
       targetYear: targetYear,
       targetMonth: targetMonth,
       message: targetYear + '年' + targetMonth + '月分の希望を提出できます (特例開放: ' + override.reason + ')',
-      startDay: SUBMIT_START_DAY,
-      endDay: SUBMIT_END_DAY,
+      startDay: _sp1.startDay,
+      endDay: _sp1.endDay,
       isOverride: true,
       overrideType: override.type,
     };
   }
   
-  const isOpen = day >= SUBMIT_START_DAY && day <= SUBMIT_END_DAY;
+  const _sp1 = _getSubmitDays();
+  const isOpen = day >= _sp1.startDay && day <= _sp1.endDay;
   
   let openMsg = '';
   if (isOpen) {
-    openMsg = targetYear + '年' + targetMonth + '月分の希望を提出できます(〜' + SUBMIT_END_DAY + '日まで)';
-  } else if (day < SUBMIT_START_DAY) {
-    openMsg = targetYear + '年' + targetMonth + '月分の提出期間: ' + SUBMIT_START_DAY + '日〜' + SUBMIT_END_DAY + '日';
+    openMsg = targetYear + '年' + targetMonth + '月分の希望を提出できます(〜' + _sp1.endDay + '日まで)';
+  } else if (day < _sp1.startDay) {
+    openMsg = targetYear + '年' + targetMonth + '月分の提出期間: ' + _sp1.startDay + '日〜' + _sp1.endDay + '日';
   } else {
-    openMsg = '提出期間外です。次回: 来月' + SUBMIT_START_DAY + '日から';
+    openMsg = '提出期間外です。次回: 来月' + _sp1.startDay + '日から';
   }
   
   return {
@@ -171,8 +183,8 @@ function getSubmitPeriodInfo(staffId) {
     targetYear: targetYear,
     targetMonth: targetMonth,
     message: openMsg,
-    startDay: SUBMIT_START_DAY,
-    endDay: SUBMIT_END_DAY,
+    startDay: _sp1.startDay,
+    endDay: _sp1.endDay,
     isOverride: false,
   };
 }
@@ -469,7 +481,8 @@ function submitRequests(staffId, name, yearMonth, facilities, requests, freqType
   
   const period = getSubmitPeriodInfo(staffId);
   if (!period.isOpen) {
-    return { success: false, message: '現在は提出期間外です(毎月' + SUBMIT_START_DAY + '日〜' + SUBMIT_END_DAY + '日)' };
+    const _sp2 = _getSubmitDays();
+    return { success: false, message: '現在は提出期間外です(毎月' + _sp2.startDay + '日〜' + _sp2.endDay + '日)' };
   }
   if (yearMonth !== period.targetYM) {
     return { success: false, message: '提出できるのは ' + period.targetYear + '年' + period.targetMonth + '月分のみです' };

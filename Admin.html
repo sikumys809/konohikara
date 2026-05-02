@@ -681,6 +681,51 @@
 </div>
 
 <!-- ========== シフト確定(承認)ビュー ========== -->
+<!-- ========== 📅 提出期間設定ビュー ========== -->
+<div id="view-submitSettings" class="hidden" style="padding: 0;">
+  <div style="padding: 24px;">
+    <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
+    
+    <h2 style="margin-top: 16px;">📅 提出期間設定 (全社共通)</h2>
+    <p style="color: #6b7280; margin: 8px 0 16px 0;">スタッフからの希望シフト提出受付期間を設定します。<br>翌月希望は前月のN日〜N日に提出できる仕様です。</p>
+    
+    <div style="background: white; padding: 24px; border-radius: 8px; border: 1px solid #e5e7eb; max-width: 600px;">
+      <div style="margin-bottom: 16px;">
+        <strong style="font-size: 14px;">現在の設定:</strong>
+        <span id="currentSubmitPeriod" style="font-size: 14px; color: #4a148c; font-weight: 700; margin-left: 8px;">読み込み中...</span>
+      </div>
+      
+      <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px;">
+        <span style="font-size: 14px; color: #6b7280;">前月の</span>
+        <input id="submitStartDay" type="number" min="1" max="31" 
+               style="width: 70px; padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 16px; text-align: center;">
+        <span style="font-size: 14px;">日 〜</span>
+        <input id="submitEndDay" type="number" min="1" max="31" 
+               style="width: 70px; padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 16px; text-align: center;">
+        <span style="font-size: 14px;">日まで</span>
+      </div>
+      
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button onclick="saveSubmitSettings()" 
+                style="padding: 10px 24px; background: #059669; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+          💾 保存
+        </button>
+        <button onclick="loadSubmitSettingsView()" 
+                style="padding: 10px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
+          🔄 リセット
+        </button>
+      </div>
+      
+      <div id="submitSettingsStatus" style="margin-top: 16px;"></div>
+      
+      <div style="margin-top: 24px; padding: 12px; background: #f3f4f6; border-radius: 6px; font-size: 13px; color: #4b5563;">
+        💡 <strong>例:</strong> 開始日10、終了日22の場合、6月分の希望は5月10日〜22日に提出可能。<br>
+        個人別の特例開放は「📅 提出期間管理」から設定できます。
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ========== ⚠️ 警告承認ビュー (Phase 5.5) ========== -->
 <div id="view-warnings" class="hidden" style="padding: 0;">
   <div style="padding: 24px;">
@@ -1111,6 +1156,7 @@ function renderNavButtons() {
     { id: 'dayshift', icon: '☀️', title: '日勤自動割当', desc: '日勤希望を一括配置 + 充足率', requires: 'canCreateShift' },
     { id: 'approve', icon: '✅', title: 'シフト確定', desc: '仮→確定の承認', requires: 'canApprove' },
     { id: 'warnings', icon: '⚠️', title: '警告承認', desc: '配置警告の承認・取消', requires: 'canApprove' },
+    { id: 'submitSettings', icon: '📅', title: '提出期間設定', desc: '受付期間の変更', requires: 'canApprove' },
     { id: 'submitOverride', icon: '📅', title: '提出期間管理', desc: '希望提出の特例開放', requires: 'canEditMaster' },
     { id: 'logs', icon: '📋', title: '操作ログ', desc: '変更履歴の確認', requires: null },
   ];
@@ -1159,13 +1205,17 @@ function navigateTo(id) {
   }
 }
 function showView(name) {
-  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve', 'dayshift', 'submitOverride', 'warnings'].forEach(v => {
+  ['dashboard', 'staff', 'facility', 'requests', 'logs', 'shift', 'approve', 'dayshift', 'submitOverride', 'warnings', 'submitSettings'].forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.classList.toggle('hidden', v !== name);
   });
   // ★ Phase 5.5: 警告承認画面なら自動でデータ取得
   if (name === 'warnings') {
     initWarningsView();
+  }
+  // ★ 提出期間設定画面なら自動初期化
+  if (name === 'submitSettings') {
+    loadSubmitSettingsView();
   }
 }
 
@@ -2918,6 +2968,60 @@ function loadApprovalCalendar() {
   loadAndRenderWarningSummary(ym);
 }
 
+
+// ============================================================
+// 提出期間設定 画面
+// ============================================================
+function loadSubmitSettingsView() {
+  document.getElementById('submitSettingsStatus').innerHTML = 
+    '<div style="padding: 8px; color: #6b7280;">⏳ 読み込み中...</div>';
+  google.script.run.withSuccessHandler(function(p) {
+    document.getElementById('submitStartDay').value = p.startDay;
+    document.getElementById('submitEndDay').value = p.endDay;
+    document.getElementById('currentSubmitPeriod').textContent = '前月' + p.startDay + '日 〜 ' + p.endDay + '日';
+    document.getElementById('submitSettingsStatus').innerHTML = '';
+  }).withFailureHandler(function(err) {
+    document.getElementById('submitSettingsStatus').innerHTML = 
+      '<div style="padding: 8px; color: #991b1b;">取得エラー: ' + err + '</div>';
+  }).getSubmissionPeriod();
+}
+
+function saveSubmitSettings() {
+  const startDay = parseInt(document.getElementById('submitStartDay').value);
+  const endDay = parseInt(document.getElementById('submitEndDay').value);
+  
+  if (isNaN(startDay) || isNaN(endDay)) {
+    alert('数値で入力してください');
+    return;
+  }
+  if (startDay < 1 || startDay > 31 || endDay < 1 || endDay > 31) {
+    alert('1〜31の範囲で入力してください');
+    return;
+  }
+  if (startDay > endDay) {
+    alert('開始日は終了日以前にしてください');
+    return;
+  }
+  
+  if (!confirm('提出期間を「前月' + startDay + '日 〜 ' + endDay + '日」に変更します。よろしいですか?')) return;
+  
+  document.getElementById('submitSettingsStatus').innerHTML = 
+    '<div style="padding: 8px; color: #6b7280;">⏳ 保存中...</div>';
+  
+  google.script.run.withSuccessHandler(function(res) {
+    if (res.success) {
+      document.getElementById('submitSettingsStatus').innerHTML = 
+        '<div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">' + res.message + '</div>';
+      document.getElementById('currentSubmitPeriod').textContent = '前月' + res.startDay + '日 〜 ' + res.endDay + '日';
+    } else {
+      document.getElementById('submitSettingsStatus').innerHTML = 
+        '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">エラー: ' + res.message + '</div>';
+    }
+  }).withFailureHandler(function(err) {
+    document.getElementById('submitSettingsStatus').innerHTML = 
+      '<div style="padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b;">通信エラー: ' + err + '</div>';
+  }).updateSubmissionPeriod(currentAdmin.staff_id, startDay, endDay);
+}
 
 // ★ Phase 5.6: 警告サマリー取得 + 確定ボタン制御
 function loadAndRenderWarningSummary(ym) {

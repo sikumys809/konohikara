@@ -160,7 +160,7 @@
 
     <div class="advice-box">
       💡 希望日はなるべく多く提出してください。希望頻度を元に調整してシフトを決定します。希望日が多いほど要望に合致しやすいです。<br>
-      📅 提出できるのは<strong>来月分のみ・毎月10日〜22日</strong>です。期限内なら何度でも修正可能です。
+      📅 提出できるのは<strong>来月分のみ・毎月<span id="submitPeriodDisplay">10日〜22日</span></strong>です。期限内なら何度でも修正可能です。
     </div>
 
     <!-- 🔁 繰り返しテンプレート起動ボタン -->
@@ -1244,6 +1244,23 @@ function applyTemplateToMonth(templateId) {
     alert('エラー: ' + err);
   }).applyTemplate(templateId, window.currentYM, false);
 }
+
+  // ★ Phase: 提出期間を動的取得して表示
+  function _updateSubmitPeriodDisplay() {
+    if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+    google.script.run.withSuccessHandler(function(period) {
+      if (period && period.startDay && period.endDay) {
+        const el = document.getElementById('submitPeriodDisplay');
+        if (el) el.textContent = period.startDay + '日〜' + period.endDay + '日';
+      }
+    }).getSubmissionPeriod();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _updateSubmitPeriodDisplay);
+  } else {
+    _updateSubmitPeriodDisplay();
+  }
+
 </script>
 </body>
 </html>
