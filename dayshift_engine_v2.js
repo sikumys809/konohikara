@@ -1147,7 +1147,20 @@ function testRoleHoursV2() {
 }
 
 // ============================================================
-// Step 4.5: assignByScoreV2 配置メインロジック
+// pickFacilityForSlot: 配置時にスタッフの希望施設から1つ選ぶ
+//   優先順位: メイン > セカンド > サブ
+//   slot.jigyosho 配下の施設のみ対象
+function pickFacilityForSlot(staff, slot, ctx) {
+  const candidates = [staff.mainFac, staff.secondFac].concat(staff.subFacs || []).filter(Boolean);
+  for (let i = 0; i < candidates.length; i++) {
+    const f = candidates[i];
+    const jigs = ctx.facilityToJigyoshos[f] || [];
+    if (jigs.indexOf(slot.jigyosho) !== -1) return f;
+  }
+  return '';
+}
+
+// // Step 4.5: assignByScoreV2 配置メインロジック
 // ============================================================
 function assignByScoreV2(ctx) {
   Logger.log('assignByScoreV2: 配置開始 (' + ctx.slots.length + 'スロット)');
@@ -1204,10 +1217,13 @@ function assignByScoreV2(ctx) {
     const hasBlock = top.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; });
     const reason = hasBlock ? '警告あり配置(承認待ち)' : '通常配置';
     
+    const pickedFac = pickFacilityForSlot(top.staff, slot, ctx);
+    
     slot.assignment = {
       staff_id: top.staff.staff_id,
       staff_name: top.staff.name,
       shift: slot.shift,
+      facility: pickedFac,
       score: top.score,
       warnings: top.warnings,
       reason: reason
@@ -1220,7 +1236,7 @@ function assignByScoreV2(ctx) {
     ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey].push({
       shift: slot.shift,
       jigyosho: slot.jigyosho,
-      facility: '',  // 日勤は事業所単位
+      facility: pickedFac,
       unit: '',
       workHours: wh,
       isNight: false,
@@ -1428,7 +1444,7 @@ function writeShiftResultsV2(ctx) {
       slot.date,                  // B
       ctx.targetYM,               // C
       slot.jigyosho,              // D
-      '',                         // E: facility (日勤は事業所単位なので空)
+      a.facility || '',           // E: facility (assignByScoreV2でpickFacilityForSlot済)
       '',                         // F: unit (日勤は空)
       a.staff_id,                 // G
       a.staff_name,               // H
@@ -1766,4 +1782,191 @@ function debug_call_run_full() {
   Logger.log('');
   Logger.log('=== 結果 ===');
   Logger.log(JSON.stringify(result, null, 2));
+}
+
+
+function debug_check_t_shift_2026_06() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  if (!sheet) { Logger.log('T_シフト確定なし'); return; }
+  
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+  Logger.log('=== T_シフト確定 ヘッダー ===');
+  header.forEach(function(h, i) {
+    Logger.log('  col[' + i + '] (' + String.fromCharCode(65+i) + '): ' + h);
+  });
+  
+  Logger.log('');
+  Logger.log('=== 2026-06 のレコード集計 ===');
+  let dayCount = 0;
+  let nightCount = 0;
+  const byStaff = {};
+  const byShift = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const ym = String(data[i][2] || '');
+    if (ym !== '2026-06') continue;
+    
+    const staffId = String(data[i][7] || '');
+    const shift = String(data[i][6] || '');
+    const date = data[i][5];
+    
+    if (shift.indexOf('夜勤') !== -1) nightCount++;
+    else dayCount++;
+    
+    byStaff[staffId] = (byStaff[staffId] || 0) + 1;
+    byShift[shift] = (byShift[shift] || 0) + 1;
+  }
+  
+  Logger.log('日勤: ' + dayCount + '件');
+  Logger.log('夜勤: ' + nightCount + '件');
+  Logger.log('合計: ' + (dayCount + nightCount) + '件');
+  
+  Logger.log('');
+  Logger.log('=== シフト別 ===');
+  Object.keys(byShift).sort().forEach(function(s) {
+    Logger.log('  ' + s + ': ' + byShift[s] + '件');
+  });
+  
+  Logger.log('');
+  Logger.log('=== スタッフ別 (10件以上) ===');
+  Object.keys(byStaff).sort().forEach(function(sid) {
+    if (byStaff[sid] >= 1) {
+      Logger.log('  staff_id=' + sid + ': ' + byStaff[sid] + '件');
+    }
+  });
+  
+  Logger.log('');
+  Logger.log('=== 901の配置サンプル (最大10件) ===');
+  let cnt = 0;
+  for (let i = 1; i < data.length && cnt < 10; i++) {
+    if (String(data[i][2]) === '2026-06' && String(data[i][7]) === '901') {
+      Logger.log('  ' + data[i][5] + ' / ' + data[i][3] + ' / ' + data[i][6]);
+      cnt++;
+    }
+  }
+}
+
+
+function debug_check_t_shift_2026_06_v2() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  let dayCount = 0;
+  let nightCount = 0;
+  const byStaff = {};
+  const byShift = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    
+    const staffId = String(data[i][6] || '');
+    const shift = String(data[i][8] || '');
+    
+    if (shift.indexOf('夜勤') !== -1) nightCount++;
+    else dayCount++;
+    
+    byStaff[staffId] = (byStaff[staffId] || 0) + 1;
+    byShift[shift] = (byShift[shift] || 0) + 1;
+  }
+  
+  Logger.log('=== 2026-06 集計 ===');
+  Logger.log('日勤: ' + dayCount + '件 / 夜勤: ' + nightCount + '件 / 合計: ' + (dayCount + nightCount));
+  
+  Logger.log('');
+  Logger.log('=== シフト別 ===');
+  Object.keys(byShift).sort().forEach(function(s) {
+    Logger.log('  ' + s + ': ' + byShift[s] + '件');
+  });
+  
+  Logger.log('');
+  Logger.log('=== スタッフ別 ===');
+  Object.keys(byStaff).sort(function(a, b) { return byStaff[b] - byStaff[a]; }).forEach(function(sid) {
+    Logger.log('  staff_id=' + sid + ': ' + byStaff[sid] + '件');
+  });
+  
+  Logger.log('');
+  Logger.log('=== 901の配置詳細 ===');
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    if (String(data[i][6]) !== '901') continue;
+    const dateStr = Utilities.formatDate(date, 'Asia/Tokyo', 'MM/dd');
+    Logger.log('  ' + dateStr + ' ' + data[i][8] + ' @' + data[i][3] + '/' + data[i][4]);
+  }
+}
+
+
+function debug_check_facility_e_col() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  let dayCount = 0;
+  let withFac = 0;
+  let withoutFac = 0;
+  const facCount = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') !== -1) continue;
+    
+    dayCount++;
+    const fac = String(data[i][4] || '').trim();
+    if (fac) {
+      withFac++;
+      facCount[fac] = (facCount[fac] || 0) + 1;
+    } else {
+      withoutFac++;
+    }
+  }
+  
+  Logger.log('=== 2026-06 日勤レコードの E列(施設) ===');
+  Logger.log('合計: ' + dayCount);
+  Logger.log('施設名あり: ' + withFac);
+  Logger.log('施設名なし: ' + withoutFac);
+  Logger.log('');
+  Logger.log('=== 施設別 ===');
+  Object.keys(facCount).sort().forEach(function(f) {
+    Logger.log('  ' + f + ': ' + facCount[f] + '件');
+  });
+}
+
+
+function debug_call_calendar_api() {
+  const result = getDayShiftCalendarData('13', '2026-06');
+  Logger.log('=== getDayShiftCalendarData 結果 ===');
+  Logger.log('success: ' + result.success);
+  if (!result.success) {
+    Logger.log('エラー: ' + result.message);
+    return;
+  }
+  
+  Logger.log('yearMonth: ' + result.yearMonth);
+  Logger.log('days: ' + result.days.length);
+  Logger.log('calendar 事業所数: ' + result.calendar.length);
+  Logger.log('warnings: ' + result.warnings.length);
+  
+  Logger.log('');
+  result.calendar.forEach(function(jig) {
+    Logger.log('--- ' + jig.jigyosho + ' (定員' + jig.capacity + ') ---');
+    Logger.log('  施設数: ' + jig.buildings.length);
+    jig.buildings.forEach(function(b) {
+      let total = 0;
+      b.cells.forEach(function(c) { total += c.count; });
+      Logger.log('    ' + b.facility + ': 配置総数=' + total);
+    });
+  });
 }

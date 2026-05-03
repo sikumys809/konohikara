@@ -142,6 +142,20 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       Logger.log('警告取得エラー (続行): ' + e.message);
     }
 
+    // 警告レコードのDate型を文字列化 (google.script.run シリアライズ対策)
+    const safeWarnings = warnings.map(function(w) {
+      const sw = {};
+      Object.keys(w).forEach(function(k) {
+        const v = w[k];
+        if (v instanceof Date) {
+          sw[k] = Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+        } else {
+          sw[k] = v;
+        }
+      });
+      return sw;
+    });
+    
     return {
       success: true,
       yearMonth: ym,
@@ -150,7 +164,7 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       days: days,
       calendar: calendar,
       canEdit: true,
-      warnings: warnings  // ★ Step 5.1.1: 警告リスト追加
+      warnings: safeWarnings
     };
   } catch (e) {
     Logger.log('getDayShiftCalendarData エラー: ' + e.message);
