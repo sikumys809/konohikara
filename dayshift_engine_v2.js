@@ -1233,15 +1233,15 @@ function assignByScoreV2(ctx) {
     // 警告レコードをバッファ
     top.warnings.forEach(function(w) {
       ctx.pendingWarnings.push({
-        shift_kind: 'day',
-        target_ym: ctx.targetYM,
+        shiftKind: 'day',
+        targetYm: ctx.targetYM,
         date: slot.dateKey,
         jigyosho: slot.jigyosho,
         facility: '',
         unit: '',
-        staff_id: top.staff.staff_id,
-        staff_name: top.staff.name,
-        rule_id: w.ruleId,
+        staffId: top.staff.staff_id,
+        staffName: top.staff.name,
+        ruleId: w.ruleId,
         level: w.level,
         message: w.message
       });
@@ -1538,4 +1538,232 @@ function testRunDayShiftEngineV2() {
   const result = runDayShiftEngineV2('2026-05');
   Logger.log('');
   Logger.log('結果: ' + JSON.stringify(result, null, 2));
+}
+
+function debug_inspect_staff_template() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== M_スタッフ ヘッダー (1行目) ===');
+  Logger.log(JSON.stringify(data[0]));
+  
+  Logger.log('');
+  Logger.log('=== 列番号と内容 ===');
+  data[0].forEach(function(h, i) {
+    Logger.log('  col[' + i + '] (' + String.fromCharCode(65+i) + '列): ' + h);
+  });
+  
+  Logger.log('');
+  Logger.log('=== staff_id=312 のレコード (テンプレ) ===');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === '312') {
+      data[i].forEach(function(v, idx) {
+        Logger.log('  ' + String.fromCharCode(65+idx) + '列: ' + JSON.stringify(v));
+      });
+      break;
+    }
+  }
+  
+  Logger.log('');
+  Logger.log('=== 最終行番号 ===');
+  Logger.log('  最終行: ' + sheet.getLastRow());
+  Logger.log('  列数: ' + data[0].length);
+}
+
+
+function debug_check_901_in_ctx() {
+  const ctx = loadEngineContextV2('2026-06');
+  Logger.log('=== ctx.staffMap に 901/902/903 ===');
+  ['901', '902', '903'].forEach(function(id) {
+    const s = ctx.staffMap[id];
+    if (s) {
+      Logger.log(id + ': name=' + s.name + ' / mainFac="' + s.mainFac + '" / allowed=[' + s.allowedShifts.join(',') + '] / mainRoles=[' + s.mainRoles.join(',') + ']');
+    } else {
+      Logger.log(id + ': ctx.staffMapにない');
+    }
+  });
+  Logger.log('');
+  Logger.log('=== 901の希望 ===');
+  const w901 = (ctx.wishesByStaff['901'] || []);
+  Logger.log('件数: ' + w901.length);
+  w901.slice(0, 5).forEach(function(w) {
+    Logger.log('  ' + w.dateKey + ' ' + w.shift + ' / mainFac="' + w.mainFac + '"');
+  });
+  Logger.log('');
+  Logger.log('=== ctx.facilityToJigyoshos[リフレ要町] ===');
+  Logger.log(JSON.stringify(ctx.facilityToJigyoshos['リフレ要町']));
+}
+
+
+function debug_dayshift_assign_trace() {
+  const ctx = loadEngineContextV2('2026-06');
+  generateSlotsV2(ctx);
+  
+  const slotKey = '2026-06-01_GHコノヒカラ_早出8h';
+  const slot = ctx.slotsByKey[slotKey];
+  
+  Logger.log('=== ' + slotKey + ' ===');
+  
+  const dsKey = '2026-06-01_早出8h';
+  const wishes = ctx.wishesByDayShift[dsKey] || [];
+  Logger.log('希望: ' + wishes.length + '件');
+  wishes.forEach(function(w) {
+    Logger.log('  staff_id=' + w.staff_id + ' / mainFac=' + w.mainFac);
+  });
+  
+  Logger.log('');
+  const cands = findCandidatesV2(ctx, slot);
+  Logger.log('候補: ' + cands.length + '件');
+  cands.forEach(function(c) {
+    Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ')');
+  });
+  
+  Logger.log('');
+  Logger.log('=== 901 の T_シフト確定既存 (同日) ===');
+  const assigns901 = ctx.staffAssignedDates['901'] || {};
+  const dates901 = Object.keys(assigns901).sort().slice(0, 10);
+  if (dates901.length === 0) {
+    Logger.log('  既存配置なし');
+  } else {
+    dates901.forEach(function(d) {
+      assigns901[d].forEach(function(a) {
+        Logger.log('  ' + d + ' ' + a.shift + ' @' + a.jigyosho);
+      });
+    });
+  }
+}
+
+
+function debug_dayshift_assign_loop() {
+  const ctx = loadEngineContextV2('2026-06');
+  generateSlotsV2(ctx);
+  
+  let totalCands = 0;
+  let zeroCount = 0;
+  let firstNonZero = null;
+  
+  for (let si = 0; si < ctx.slots.length; si++) {
+    const slot = ctx.slots[si];
+    const cands = findCandidatesV2(ctx, slot);
+    totalCands += cands.length;
+    if (cands.length === 0) {
+      zeroCount++;
+    } else {
+      if (!firstNonZero) {
+        firstNonZero = {
+          slot: slot.dateKey + '_' + slot.jigyosho + '_' + slot.shift,
+          count: cands.length,
+          ids: cands.map(function(c) { return c.staff.staff_id; })
+        };
+      }
+    }
+  }
+  
+  Logger.log('=== assignByScoreV2 ループ模擬 (配置はしない) ===');
+  Logger.log('総スロット: ' + ctx.slots.length);
+  Logger.log('候補ありスロット: ' + (ctx.slots.length - zeroCount));
+  Logger.log('候補ゼロスロット: ' + zeroCount);
+  Logger.log('総候補数: ' + totalCands);
+  Logger.log('');
+  Logger.log('=== 最初の候補ありスロット ===');
+  if (firstNonZero) {
+    Logger.log(firstNonZero.slot + ' → ' + firstNonZero.count + '件');
+    Logger.log('  staff_ids: [' + firstNonZero.ids.join(',') + ']');
+  } else {
+    Logger.log('候補ありスロットなし');
+  }
+}
+
+
+function debug_real_assign_with_log() {
+  const ctx = loadEngineContextV2('2026-06');
+  generateSlotsV2(ctx);
+  
+  let traceCount = 0;
+  let errCount = 0;
+  
+  for (let si = 0; si < ctx.slots.length; si++) {
+    const slot = ctx.slots[si];
+    if (slot.assignment) continue;
+    
+    let shortage, candidates;
+    try {
+      shortage = calcRoleShortage(ctx);
+    } catch (e) {
+      Logger.log('!!! calcRoleShortage error si=' + si + ': ' + e);
+      errCount++;
+      if (errCount > 3) break;
+      continue;
+    }
+    
+    try {
+      candidates = findCandidatesV2(ctx, slot);
+    } catch (e) {
+      Logger.log('!!! findCandidatesV2 error si=' + si + ': ' + e);
+      errCount++;
+      if (errCount > 3) break;
+      continue;
+    }
+    
+    if (candidates.length === 0) continue;
+    
+    if (traceCount < 3) {
+      Logger.log('si=' + si + ' ' + slot.dateKey + '/' + slot.jigyosho + '/' + slot.shift + ' 候補=' + candidates.length);
+    }
+    
+    try {
+      candidates.forEach(function(c) {
+        c.score = calcScoreV2(ctx, c.staff, c.wish, slot, shortage);
+      });
+      if (traceCount < 3) Logger.log('  calcScoreV2 OK');
+    } catch (e) {
+      Logger.log('!!! calcScoreV2 error si=' + si + ': ' + e);
+      errCount++;
+      if (errCount > 3) break;
+      continue;
+    }
+    
+    try {
+      candidates.forEach(function(c) {
+        c.warnings = checkAllWarningsV2(c.staff, slot, ctx);
+      });
+      if (traceCount < 3) Logger.log('  checkAllWarningsV2 OK');
+    } catch (e) {
+      Logger.log('!!! checkAllWarningsV2 error si=' + si + ': ' + e);
+      errCount++;
+      if (errCount > 3) break;
+      continue;
+    }
+    
+    traceCount++;
+    if (traceCount > 5) break;
+  }
+  
+  Logger.log('=== 結果 ===');
+  Logger.log('処理スロット: ' + traceCount);
+  Logger.log('エラー回数: ' + errCount);
+}
+
+
+function debug_call_real_assign() {
+  const ctx = loadEngineContextV2('2026-06');
+  generateSlotsV2(ctx);
+  
+  Logger.log('呼び出し前: スタッフ=' + Object.keys(ctx.staffMap).length + ' / 希望=' + ctx.wishes.length + ' / スロット=' + ctx.slots.length);
+  
+  const result = assignByScoreV2(ctx);
+  
+  Logger.log('');
+  Logger.log('=== assignByScoreV2 結果 ===');
+  Logger.log(JSON.stringify(result, null, 2));
+}
+
+
+function debug_call_run_full() {
+  Logger.log('=== runDayShiftEngineV2 直接呼び出し ===');
+  const result = runDayShiftEngineV2('2026-06');
+  Logger.log('');
+  Logger.log('=== 結果 ===');
+  Logger.log(JSON.stringify(result, null, 2));
 }
