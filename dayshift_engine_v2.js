@@ -920,16 +920,17 @@ function testWarningsV2() {
 
 // ============================================================
 // _v2d_pickPrimaryRole: スタッフの主役割を1つ選ぶ (ヒエラルキー優先)
-// 兼任時は配置文脈で1つに絞る (※管理者は別計上のため除外)
-// 優先順: サビ管 > 看護師 > 生活支援員 > 世話人
+// 兼任時は配置文脈で1つに絞る (※管理者は別計上、看護師は人数判定のため除外)
+// 優先順: サビ管 > 世話人 > 生活支援員
+// 注意: 看護師は単独配置不可 (マスタ登録時バリデーション必須)
+//       看護師の人数判定は calcRoleHoursV2 で staff.isNurse から別途集計
 // ============================================================
 function _v2d_pickPrimaryRole(staff) {
   if (!staff || !Array.isArray(staff.mainRoles)) return '';
   const roles = staff.mainRoles;
   if (roles.indexOf('サビ管') !== -1) return 'サビ管';
-  if (roles.indexOf('看護師') !== -1) return '看護師';
-  if (roles.indexOf('生活支援員') !== -1) return '生活支援員';
   if (roles.indexOf('世話人') !== -1) return '世話人';
+  if (roles.indexOf('生活支援員') !== -1) return '生活支援員';
   return '';
 }
 
@@ -1586,112 +1587,6 @@ function debug_inspect_staff_template() {
   Logger.log('  最終行: ' + sheet.getLastRow());
   Logger.log('  列数: ' + data[0].length);
 }
-
-
-function debug_check_901_in_ctx() {
-  const ctx = loadEngineContextV2('2026-06');
-  Logger.log('=== ctx.staffMap に 901/902/903 ===');
-  ['901', '902', '903'].forEach(function(id) {
-    const s = ctx.staffMap[id];
-    if (s) {
-      Logger.log(id + ': name=' + s.name + ' / mainFac="' + s.mainFac + '" / allowed=[' + s.allowedShifts.join(',') + '] / mainRoles=[' + s.mainRoles.join(',') + ']');
-    } else {
-      Logger.log(id + ': ctx.staffMapにない');
-    }
-  });
-  Logger.log('');
-  Logger.log('=== 901の希望 ===');
-  const w901 = (ctx.wishesByStaff['901'] || []);
-  Logger.log('件数: ' + w901.length);
-  w901.slice(0, 5).forEach(function(w) {
-    Logger.log('  ' + w.dateKey + ' ' + w.shift + ' / mainFac="' + w.mainFac + '"');
-  });
-  Logger.log('');
-  Logger.log('=== ctx.facilityToJigyoshos[リフレ要町] ===');
-  Logger.log(JSON.stringify(ctx.facilityToJigyoshos['リフレ要町']));
-}
-
-
-function debug_dayshift_assign_trace() {
-  const ctx = loadEngineContextV2('2026-06');
-  generateSlotsV2(ctx);
-  
-  const slotKey = '2026-06-01_GHコノヒカラ_早出8h';
-  const slot = ctx.slotsByKey[slotKey];
-  
-  Logger.log('=== ' + slotKey + ' ===');
-  
-  const dsKey = '2026-06-01_早出8h';
-  const wishes = ctx.wishesByDayShift[dsKey] || [];
-  Logger.log('希望: ' + wishes.length + '件');
-  wishes.forEach(function(w) {
-    Logger.log('  staff_id=' + w.staff_id + ' / mainFac=' + w.mainFac);
-  });
-  
-  Logger.log('');
-  const cands = findCandidatesV2(ctx, slot);
-  Logger.log('候補: ' + cands.length + '件');
-  cands.forEach(function(c) {
-    Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ')');
-  });
-  
-  Logger.log('');
-  Logger.log('=== 901 の T_シフト確定既存 (同日) ===');
-  const assigns901 = ctx.staffAssignedDates['901'] || {};
-  const dates901 = Object.keys(assigns901).sort().slice(0, 10);
-  if (dates901.length === 0) {
-    Logger.log('  既存配置なし');
-  } else {
-    dates901.forEach(function(d) {
-      assigns901[d].forEach(function(a) {
-        Logger.log('  ' + d + ' ' + a.shift + ' @' + a.jigyosho);
-      });
-    });
-  }
-}
-
-
-function debug_dayshift_assign_loop() {
-  const ctx = loadEngineContextV2('2026-06');
-  generateSlotsV2(ctx);
-  
-  let totalCands = 0;
-  let zeroCount = 0;
-  let firstNonZero = null;
-  
-  for (let si = 0; si < ctx.slots.length; si++) {
-    const slot = ctx.slots[si];
-    const cands = findCandidatesV2(ctx, slot);
-    totalCands += cands.length;
-    if (cands.length === 0) {
-      zeroCount++;
-    } else {
-      if (!firstNonZero) {
-        firstNonZero = {
-          slot: slot.dateKey + '_' + slot.jigyosho + '_' + slot.shift,
-          count: cands.length,
-          ids: cands.map(function(c) { return c.staff.staff_id; })
-        };
-      }
-    }
-  }
-  
-  Logger.log('=== assignByScoreV2 ループ模擬 (配置はしない) ===');
-  Logger.log('総スロット: ' + ctx.slots.length);
-  Logger.log('候補ありスロット: ' + (ctx.slots.length - zeroCount));
-  Logger.log('候補ゼロスロット: ' + zeroCount);
-  Logger.log('総候補数: ' + totalCands);
-  Logger.log('');
-  Logger.log('=== 最初の候補ありスロット ===');
-  if (firstNonZero) {
-    Logger.log(firstNonZero.slot + ' → ' + firstNonZero.count + '件');
-    Logger.log('  staff_ids: [' + firstNonZero.ids.join(',') + ']');
-  } else {
-    Logger.log('候補ありスロットなし');
-  }
-}
-
-
 function debug_real_assign_with_log() {
   const ctx = loadEngineContextV2('2026-06');
   generateSlotsV2(ctx);
@@ -1760,22 +1655,6 @@ function debug_real_assign_with_log() {
   Logger.log('処理スロット: ' + traceCount);
   Logger.log('エラー回数: ' + errCount);
 }
-
-
-function debug_call_real_assign() {
-  const ctx = loadEngineContextV2('2026-06');
-  generateSlotsV2(ctx);
-  
-  Logger.log('呼び出し前: スタッフ=' + Object.keys(ctx.staffMap).length + ' / 希望=' + ctx.wishes.length + ' / スロット=' + ctx.slots.length);
-  
-  const result = assignByScoreV2(ctx);
-  
-  Logger.log('');
-  Logger.log('=== assignByScoreV2 結果 ===');
-  Logger.log(JSON.stringify(result, null, 2));
-}
-
-
 function debug_call_run_full() {
   Logger.log('=== runDayShiftEngineV2 直接呼び出し ===');
   const result = runDayShiftEngineV2('2026-06');
@@ -1783,72 +1662,6 @@ function debug_call_run_full() {
   Logger.log('=== 結果 ===');
   Logger.log(JSON.stringify(result, null, 2));
 }
-
-
-function debug_check_t_shift_2026_06() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('T_シフト確定');
-  if (!sheet) { Logger.log('T_シフト確定なし'); return; }
-  
-  const data = sheet.getDataRange().getValues();
-  const header = data[0];
-  Logger.log('=== T_シフト確定 ヘッダー ===');
-  header.forEach(function(h, i) {
-    Logger.log('  col[' + i + '] (' + String.fromCharCode(65+i) + '): ' + h);
-  });
-  
-  Logger.log('');
-  Logger.log('=== 2026-06 のレコード集計 ===');
-  let dayCount = 0;
-  let nightCount = 0;
-  const byStaff = {};
-  const byShift = {};
-  
-  for (let i = 1; i < data.length; i++) {
-    const ym = String(data[i][2] || '');
-    if (ym !== '2026-06') continue;
-    
-    const staffId = String(data[i][7] || '');
-    const shift = String(data[i][6] || '');
-    const date = data[i][5];
-    
-    if (shift.indexOf('夜勤') !== -1) nightCount++;
-    else dayCount++;
-    
-    byStaff[staffId] = (byStaff[staffId] || 0) + 1;
-    byShift[shift] = (byShift[shift] || 0) + 1;
-  }
-  
-  Logger.log('日勤: ' + dayCount + '件');
-  Logger.log('夜勤: ' + nightCount + '件');
-  Logger.log('合計: ' + (dayCount + nightCount) + '件');
-  
-  Logger.log('');
-  Logger.log('=== シフト別 ===');
-  Object.keys(byShift).sort().forEach(function(s) {
-    Logger.log('  ' + s + ': ' + byShift[s] + '件');
-  });
-  
-  Logger.log('');
-  Logger.log('=== スタッフ別 (10件以上) ===');
-  Object.keys(byStaff).sort().forEach(function(sid) {
-    if (byStaff[sid] >= 1) {
-      Logger.log('  staff_id=' + sid + ': ' + byStaff[sid] + '件');
-    }
-  });
-  
-  Logger.log('');
-  Logger.log('=== 901の配置サンプル (最大10件) ===');
-  let cnt = 0;
-  for (let i = 1; i < data.length && cnt < 10; i++) {
-    if (String(data[i][2]) === '2026-06' && String(data[i][7]) === '901') {
-      Logger.log('  ' + data[i][5] + ' / ' + data[i][3] + ' / ' + data[i][6]);
-      cnt++;
-    }
-  }
-}
-
-
 function debug_check_t_shift_2026_06_v2() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('T_シフト確定');
@@ -1902,49 +1715,6 @@ function debug_check_t_shift_2026_06_v2() {
     Logger.log('  ' + dateStr + ' ' + data[i][8] + ' @' + data[i][3] + '/' + data[i][4]);
   }
 }
-
-
-function debug_check_facility_e_col() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('T_シフト確定');
-  const data = sheet.getDataRange().getValues();
-  
-  let dayCount = 0;
-  let withFac = 0;
-  let withoutFac = 0;
-  const facCount = {};
-  
-  for (let i = 1; i < data.length; i++) {
-    const date = data[i][1];
-    if (!(date instanceof Date)) continue;
-    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
-    if (ym !== '2026-06') continue;
-    
-    const shift = String(data[i][8] || '');
-    if (shift.indexOf('夜勤') !== -1) continue;
-    
-    dayCount++;
-    const fac = String(data[i][4] || '').trim();
-    if (fac) {
-      withFac++;
-      facCount[fac] = (facCount[fac] || 0) + 1;
-    } else {
-      withoutFac++;
-    }
-  }
-  
-  Logger.log('=== 2026-06 日勤レコードの E列(施設) ===');
-  Logger.log('合計: ' + dayCount);
-  Logger.log('施設名あり: ' + withFac);
-  Logger.log('施設名なし: ' + withoutFac);
-  Logger.log('');
-  Logger.log('=== 施設別 ===');
-  Object.keys(facCount).sort().forEach(function(f) {
-    Logger.log('  ' + f + ': ' + facCount[f] + '件');
-  });
-}
-
-
 function debug_call_calendar_api() {
   const result = getDayShiftCalendarData('13', '2026-06');
   Logger.log('=== getDayShiftCalendarData 結果 ===');
@@ -1969,4 +1739,57 @@ function debug_call_calendar_api() {
       Logger.log('    ' + b.facility + ': 配置総数=' + total);
     });
   });
+}
+function debug_score_step_by_step() {
+  const ctx = loadEngineContextV2('2026-06');
+  generateSlotsV2(ctx);
+  const shortage = calcRoleShortage(ctx);
+  
+  const slot = ctx.slotsByKey['2026-06-08_GHコノヒカラ_早出8h'];
+  const dsKey = '2026-06-08_早出8h';
+  const wish = ctx.wishesByDayShift[dsKey].filter(function(w) { return w.staff_id === '901'; })[0];
+  const staff = ctx.staffMap['901'];
+  
+  let score = 0;
+  const fac = slot.jigyosho;
+  Logger.log('slot.jigyosho=' + fac);
+  Logger.log('staff.mainFac=' + staff.mainFac);
+  
+  const _mainJigs = ctx.facilityToJigyoshos[staff.mainFac] || [];
+  Logger.log('_mainJigs=' + JSON.stringify(_mainJigs));
+  Logger.log('_mainJigs.indexOf(fac)=' + _mainJigs.indexOf(fac));
+  
+  if (_mainJigs.indexOf(fac) !== -1) {
+    score += DSE_V2.SCORE.MAIN_FAC;
+    Logger.log('+MAIN_FAC=' + DSE_V2.SCORE.MAIN_FAC + ' → score=' + score);
+  } else {
+    Logger.log('MAIN_FAC 加点なし');
+  }
+  
+  if (staff.qualification) {
+    score += DSE_V2.SCORE.QUALIFIED;
+    Logger.log('+QUALIFIED → score=' + score);
+  }
+  
+  if (staff.employment === '正社員') {
+    score += DSE_V2.SCORE.FULL_TIME;
+    Logger.log('+FULL_TIME=' + DSE_V2.SCORE.FULL_TIME + ' → score=' + score);
+  }
+  
+  const monthScore = (staff.hireMonths || 0) * DSE_V2.SCORE.MONTH_X;
+  score += monthScore;
+  Logger.log('+MONTH (' + staff.hireMonths + '×' + DSE_V2.SCORE.MONTH_X + '=' + monthScore + ') → score=' + score);
+  
+  Logger.log('shortage[fac]=' + JSON.stringify(shortage[fac]));
+  if (shortage && shortage[fac]) {
+    const sh = shortage[fac];
+    if (sh.sewa && staff.isSewa) {
+      score += DSE_V2.SCORE.ROLE_SHORT_SEWA;
+      Logger.log('+ROLE_SHORT_SEWA=' + DSE_V2.SCORE.ROLE_SHORT_SEWA + ' → score=' + score);
+    }
+  }
+  
+  Logger.log('');
+  Logger.log('最終: ' + score);
+  Logger.log('calcScoreV2()=' + calcScoreV2(ctx, staff, wish, slot, shortage));
 }
