@@ -1045,3 +1045,207 @@ function debugGetMyShifts() {
     Logger.log('最初の1件: ' + JSON.stringify(result13[0]));
   }
 }
+function debug_check_wishes_subfacs_13() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== staff_id=13 (水野永吉) の希望レコード SUB_FACS確認 ===');
+  
+  let count = 0;
+  const samples = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][COL_REQ.STAFF_ID]).trim() !== '13') continue;
+    count++;
+    const ym = data[i][COL_REQ.YM];
+    const main = String(data[i][COL_REQ.MAIN_FAC] || '');
+    const second = String(data[i][COL_REQ.SECOND_FAC] || '');
+    const subs = String(data[i][COL_REQ.SUB_FACS] || '');
+    
+    const key = ym + '|' + main + '|' + second + '|' + subs;
+    if (!samples[key]) samples[key] = 0;
+    samples[key]++;
+  }
+  
+  Logger.log('総レコード: ' + count);
+  Logger.log('');
+  Logger.log('=== ユニークパターン ===');
+  Object.keys(samples).forEach(function(k) {
+    const parts = k.split('|');
+    Logger.log('YM=' + parts[0] + ' / MAIN=' + parts[1] + ' / SECOND=' + parts[2] + ' / 件数=' + samples[k]);
+    Logger.log('  SUB: ' + parts[3]);
+    Logger.log('');
+  });
+}
+
+function reset_wishes_13_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  
+  const toDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    const staffId = String(data[i][COL_REQ.STAFF_ID]).trim();
+    const ym = String(data[i][COL_REQ.YM]).trim();
+    if (staffId === '13' && ym === '2026-06') {
+      toDelete.push(i + 1);
+    }
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  
+  Logger.log('=== reset_wishes_13_2026_06 ===');
+  Logger.log('削除件数: ' + toDelete.length);
+}
+
+function debug_scan_all_wishes_violations() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  
+  const wishData = wishSheet.getDataRange().getValues();
+  const staffData = staffSheet.getDataRange().getValues();
+  
+  // M_スタッフから施設情報を取得
+  const staffMap = {};
+  for (let i = 1; i < staffData.length; i++) {
+    const sid = String(staffData[i][0]).trim();
+    if (!sid) continue;
+    const subFacsRaw = String(staffData[i][11] || '');  // L列(0-indexed=11)
+    staffMap[sid] = {
+      name: staffData[i][1],
+      mainFac: String(staffData[i][9] || '').trim(),     // J列
+      secondFac: String(staffData[i][10] || '').trim(),  // K列
+      subFacs: subFacsRaw ? subFacsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : []
+    };
+  }
+  
+  // T_希望提出をスタッフごと月ごとに集計
+  const violations = {};
+  
+  for (let i = 1; i < wishData.length; i++) {
+    const sid = String(wishData[i][COL_REQ.STAFF_ID]).trim();
+    const ym = String(wishData[i][COL_REQ.YM]).trim();
+    if (!sid || !ym) continue;
+    
+    const main = String(wishData[i][COL_REQ.MAIN_FAC] || '').trim();
+    const second = String(wishData[i][COL_REQ.SECOND_FAC] || '').trim();
+    const subsRaw = String(wishData[i][COL_REQ.SUB_FACS] || '');
+    const subs = subsRaw ? subsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    
+    const staff = staffMap[sid];
+    if (!staff) continue;
+    
+    const issues = [];
+    if (main !== staff.mainFac) issues.push('MAIN不一致 (希望=' + main + ' / マスタ=' + staff.mainFac + ')');
+    if (second !== staff.secondFac) issues.push('SECOND不一致 (希望=' + second + ' / マスタ=' + staff.secondFac + ')');
+    
+    for (const s of subs) {
+      if (staff.subFacs.indexOf(s) === -1) issues.push('SUB未登録: ' + s);
+    }
+    
+    if (issues.length > 0) {
+      const key = sid + '|' + ym;
+      if (!violations[key]) violations[key] = { staff: staff.name, sid: sid, ym: ym, issues: {}, count: 0 };
+      violations[key].count++;
+      issues.forEach(function(iss) {
+        violations[key].issues[iss] = (violations[key].issues[iss] || 0) + 1;
+      });
+    }
+  }
+  
+  Logger.log('=== 違反データスキャン (T_希望提出 vs M_スタッフ) ===');
+  const keys = Object.keys(violations);
+  Logger.log('違反のあるスタッフ×月: ' + keys.length);
+  Logger.log('');
+  
+  keys.forEach(function(k) {
+    const v = violations[k];
+    Logger.log(v.sid + '(' + v.staff + ') / ' + v.ym + ' / 影響レコード: ' + v.count);
+    Object.keys(v.issues).forEach(function(iss) {
+      Logger.log('  - ' + iss + ' (' + v.issues[iss] + '件)');
+    });
+    Logger.log('');
+  });
+}
+
+function reset_all_test_wishes_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  
+  // テストデータの staff_id を全列挙 (13, 312-314, 901-903)
+  const testIds = ['13', '312', '313', '314', '901', '902', '903'];
+  const toDelete = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const sid = String(data[i][COL_REQ.STAFF_ID]).trim();
+    const ym = String(data[i][COL_REQ.YM]).trim();
+    if (testIds.indexOf(sid) !== -1 && ym === '2026-06') {
+      toDelete.push(i + 1);
+    }
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  
+  Logger.log('=== reset_all_test_wishes_2026_06 ===');
+  Logger.log('削除件数: ' + toDelete.length);
+  Logger.log('対象ID: ' + testIds.join(','));
+}
+
+function debug_count_all_wishes() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== T_希望提出 全レコード集計 ===');
+  Logger.log('総行数(ヘッダー含む): ' + data.length);
+  Logger.log('実データ件数: ' + (data.length - 1));
+  
+  if (data.length > 1) {
+    const byStaff = {};
+    for (let i = 1; i < data.length; i++) {
+      const sid = String(data[i][COL_REQ.STAFF_ID]).trim();
+      byStaff[sid] = (byStaff[sid] || 0) + 1;
+    }
+    Logger.log('');
+    Logger.log('=== スタッフ別件数 ===');
+    Object.keys(byStaff).forEach(function(k) {
+      Logger.log('  staff_id=' + k + ': ' + byStaff[k] + '件');
+    });
+  }
+}
+
+function reset_all_test_wishes_v2() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  
+  const testIds = ['8', '13', '312', '313', '314', '901', '902', '903'];
+  const toDelete = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const sid = String(data[i][COL_REQ.STAFF_ID]).trim();
+    if (testIds.indexOf(sid) === -1) continue;
+    
+    // YM列がDate型と文字列型の両方に対応
+    const ymRaw = data[i][COL_REQ.YM];
+    let ym = '';
+    if (ymRaw instanceof Date) {
+      ym = Utilities.formatDate(ymRaw, 'Asia/Tokyo', 'yyyy-MM');
+    } else {
+      ym = String(ymRaw).trim();
+    }
+    
+    if (ym === '2026-06') {
+      toDelete.push(i + 1);
+    }
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  
+  Logger.log('=== reset_all_test_wishes_v2 ===');
+  Logger.log('削除件数: ' + toDelete.length);
+  Logger.log('対象ID: ' + testIds.join(','));
+}
