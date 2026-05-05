@@ -542,6 +542,24 @@ function submitRequests(staffId, name, yearMonth, facilities, requests, freqType
     }
   }
 
+  // ★ 提出時バリデーション5ルール (validateWishSubmission)
+  // 仕様: https://www.notion.so/357ec81ceecf81b4bcc7cca0cd4c082a
+  const flatWishes = [];
+  for (const req of requests) {
+    for (const shift of req.shifts) {
+      flatWishes.push({ dateKey: req.date, shift: shift });
+    }
+  }
+  const valid = validateWishSubmission(flatWishes);
+  if (!valid.valid) {
+    const messages = valid.violations.map(function(v) { return v.message; });
+    return {
+      success: false,
+      message: '希望提出のチェックでエラーが見つかりました:\n\n' + messages.join('\n'),
+      violations: valid.violations
+    };
+  }
+
   // 既存データ削除
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const sheet = ss.getSheetByName('T_希望提出');

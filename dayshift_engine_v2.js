@@ -1843,3 +1843,46 @@ function debug_check_night_e_col() {
     Logger.log('  ' + s.date + ' ' + s.shift + ' @' + s.jig + ' / 施設="' + s.fac + '" / ユニット="' + s.unit + '" / ' + s.staff);
   });
 }
+
+function debug_scan_nurse_in_t_column() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('M_スタッフ');
+  if (!sheet) { Logger.log('M_スタッフ シートが見つからない'); return; }
+  
+  const data = sheet.getDataRange().getValues();
+  const violators = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const staffId = data[i][0];
+    const name = data[i][1];
+    const qualification = String(data[i][5] || '');  // F列(0-indexed=5)
+    const mainRolesRaw = String(data[i][19] || '');  // T列(0-indexed=19)
+    const mainRoles = mainRolesRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    
+    if (mainRoles.indexOf('看護師') !== -1) {
+      violators.push({
+        row: i + 1,
+        staffId: staffId,
+        name: name,
+        qualification: qualification,
+        mainRolesRaw: mainRolesRaw,
+        otherRoles: mainRoles.filter(function(r) { return r !== '看護師'; })
+      });
+    }
+  }
+  
+  Logger.log('=== T列に「看護師」が入ってるスタッフ ===');
+  Logger.log('該当: ' + violators.length + '件');
+  Logger.log('');
+  violators.forEach(function(v) {
+    Logger.log('行' + v.row + ': ' + v.staffId + '(' + v.name + ')');
+    Logger.log('  T列現状: ' + v.mainRolesRaw);
+    Logger.log('  F列(資格): ' + v.qualification);
+    if (v.otherRoles.length === 0) {
+      Logger.log('  → ⚠️ 看護師のみ。世話人 or 生活支援員 に変更必要');
+    } else {
+      Logger.log('  → 「看護師」削除すれば: ' + v.otherRoles.join(','));
+    }
+    Logger.log('');
+  });
+}

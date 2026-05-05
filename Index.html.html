@@ -723,6 +723,101 @@ function formatDateJP(dateStr) {
   return `${d.getMonth()+1}月${d.getDate()}日(${dow})`;
 }
 
+// ============================================================
+// 提出時バリデーション (フロントエンド版)
+// 仕様: https://www.notion.so/357ec81ceecf81b4bcc7cca0cd4c082a
+// バックエンドの validateWishSubmission と同じロジック
+// ============================================================
+function validateWishesFront(requests) {
+  const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const EARLY_SHIFTS = ['早出8h', '早出4h'];
+  
+  // requests を flat な wishes 配列に展開
+  const wishes = [];
+  for (const r of requests) {
+    for (const shift of r.shifts) {
+      wishes.push({ dateKey: r.date, shift: shift });
+    }
+  }
+  
+  // 日付別にインデックス化
+  const byDate = {};
+  for (const w of wishes) {
+    if (!byDate[w.dateKey]) byDate[w.dateKey] = [];
+    byDate[w.dateKey].push(w);
+  }
+  
+  function _addDays(dateKey, delta) {
+    const d = new Date(dateKey + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  
+  const violations = [];
+  
+  for (let i = 0; i < wishes.length; i++) {
+    const wish = wishes[i];
+    const sameDayWishes = (byDate[wish.dateKey] || []).filter(function(w) {
+      return wishes.indexOf(w) !== i;
+    });
+    
+    // ルール1: 同日に日勤シフトは1つだけ
+    if (DAY_SHIFTS.indexOf(wish.shift) !== -1) {
+      const conflict = sameDayWishes.find(function(w) { return DAY_SHIFTS.indexOf(w.shift) !== -1; });
+      if (conflict) {
+        violations.push({ rule: 'RULE1', dateKey: wish.dateKey, shift: wish.shift,
+          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。日勤シフトは1日1つまでです。'
+        });
+      }
+    }
+    
+    // ルール2: 同日 遅出8h → 夜勤A/B/C NG
+    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
+      const conflict = sameDayWishes.find(function(w) { return w.shift === '遅出8h'; });
+      if (conflict) {
+        violations.push({ rule: 'RULE2', dateKey: wish.dateKey, shift: wish.shift,
+          message: wish.dateKey + 'は既に遅出8hが提出されています。遅出8h(〜22時)と夜勤の組み合わせは不可です。'
+        });
+      }
+    }
+    
+    // ルール3: 同日 夜勤A/B/C → 遅出8h NG (遅出4hはOK)
+    if (wish.shift === '遅出8h') {
+      const conflict = sameDayWishes.find(function(w) { return NIGHT_SHIFTS.indexOf(w.shift) !== -1; });
+      if (conflict) {
+        violations.push({ rule: 'RULE3', dateKey: wish.dateKey, shift: wish.shift,
+          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。同日の遅出8h(〜22時)は不可です。'
+        });
+      }
+    }
+    
+    // ルール4: 前日夜勤A/B/C → 翌日早出 NG
+    if (EARLY_SHIFTS.indexOf(wish.shift) !== -1) {
+      const prevDay = _addDays(wish.dateKey, -1);
+      const conflict = (byDate[prevDay] || []).find(function(w) { return NIGHT_SHIFTS.indexOf(w.shift) !== -1; });
+      if (conflict) {
+        violations.push({ rule: 'RULE4', dateKey: wish.dateKey, shift: wish.shift,
+          message: '前日(' + prevDay + ')に' + conflict.shift + 'が提出されています。夜勤翌日の早出は提出できません。'
+        });
+      }
+    }
+    
+    // ルール5: 翌日早出済み → 前日夜勤 NG
+    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
+      const nextDay = _addDays(wish.dateKey, 1);
+      const conflict = (byDate[nextDay] || []).find(function(w) { return EARLY_SHIFTS.indexOf(w.shift) !== -1; });
+      if (conflict) {
+        violations.push({ rule: 'RULE5', dateKey: wish.dateKey, shift: wish.shift,
+          message: '翌日(' + nextDay + ')に' + conflict.shift + 'が提出されています。前日の夜勤は提出できません。'
+        });
+      }
+    }
+  }
+  
+  return { valid: violations.length === 0, violations: violations };
+}
+
 function doSubmit() {
   if (!selectedFacilities.main) return alert('メイン施設にチェックを入れてください');
   if (currentUser.secondFacility && !selectedFacilities.second) return alert('セカンド施設にチェックを入れてください');
@@ -731,6 +826,15 @@ function doSubmit() {
   for (const r of requests) {
     if (!r.date) return alert('日付が未入力の希望があります');
     if (!r.shifts || r.shifts.length === 0) return alert(formatDateJP(r.date) + ' のシフト種別が未選択です');
+  }
+
+  // ★ 提出時バリデーション5ルール (フロントエンド事前チェック)
+  // 仕様: https://www.notion.so/357ec81ceecf81b4bcc7cca0cd4c082a
+  const validationResult = validateWishesFront(requests);
+  if (!validationResult.valid) {
+    const messages = validationResult.violations.map(function(v) { return '・' + v.message; }).join('\n');
+    alert('希望の組み合わせにエラーがあります:\n\n' + messages);
+    return;
   }
 
   const freqType = document.getElementById('freqType').value;

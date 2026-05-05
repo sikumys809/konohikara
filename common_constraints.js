@@ -462,3 +462,220 @@ function testRoleCombinations() {
   
   Logger.log('\n=== 完了 ===');
 }
+
+
+// ============================================================
+// 希望提出時バリデーション (5ルール)
+// ============================================================
+// 仕様: https://www.notion.so/357ec81ceecf81b4bcc7cca0cd4c082a
+//
+// 1日1シフト原則:
+//   - 同日に複数の日勤シフトNG (ルール1)
+//   - 同日 遅出8h → 夜勤A/B/C NG (ルール2)
+//   - 同日 夜勤 → 日勤NG (ルール3)
+//   - 前日夜勤 → 翌日早出NG (ルール4)
+//   - 翌日早出済み → 前日夜勤NG (ルール5)
+//
+// 引数:
+//   wishes: 検証対象の希望配列 [{dateKey, shift}, ...]
+// 戻り値:
+//   { valid: bool, violations: [{rule, dateKey, shift, conflictWith, message}, ...] }
+// ============================================================
+function validateWishSubmission(wishes) {
+  const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const EARLY_SHIFTS = ['早出8h', '早出4h'];
+  
+  // 日付別にインデックス化
+  const byDate = {};
+  for (const w of wishes) {
+    if (!byDate[w.dateKey]) byDate[w.dateKey] = [];
+    byDate[w.dateKey].push(w);
+  }
+  
+  const violations = [];
+  
+  // 各希望をチェック
+  for (let i = 0; i < wishes.length; i++) {
+    const wish = wishes[i];
+    const sameDayWishes = (byDate[wish.dateKey] || []).filter(function(w, j) {
+      // 自分以外
+      return wishes.indexOf(w) !== i;
+    });
+    
+    // ルール1: 同日に日勤シフトは1つだけ
+    if (DAY_SHIFTS.indexOf(wish.shift) !== -1) {
+      const conflict = sameDayWishes.find(function(w) {
+        return DAY_SHIFTS.indexOf(w.shift) !== -1;
+      });
+      if (conflict) {
+        violations.push({
+          rule: 'RULE1_DUPLICATE_DAYSHIFT',
+          dateKey: wish.dateKey,
+          shift: wish.shift,
+          conflictWith: conflict.shift,
+          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。日勤シフトは1日1つまでです。'
+        });
+      }
+    }
+    
+    // ルール2: 同日 遅出8h → 夜勤A/B/C NG (遅出4hはOK)
+    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
+      const conflict = sameDayWishes.find(function(w) {
+        return w.shift === '遅出8h';
+      });
+      if (conflict) {
+        violations.push({
+          rule: 'RULE2_LATE8_TO_NIGHT',
+          dateKey: wish.dateKey,
+          shift: wish.shift,
+          conflictWith: conflict.shift,
+          message: wish.dateKey + 'は既に遅出8hが提出されています。遅出8h(〜22時)と夜勤の組み合わせは不可です。'
+        });
+      }
+    }
+    
+    // ルール3: 同日 夜勤A/B/C → 遅出8h NG (遅出4h+夜勤はOK)
+    // 早出は別途ルール4(前日夜勤→翌日早出)で扱う
+    if (wish.shift === '遅出8h') {
+      const conflict = sameDayWishes.find(function(w) {
+        return NIGHT_SHIFTS.indexOf(w.shift) !== -1;
+      });
+      if (conflict) {
+        violations.push({
+          rule: 'RULE3_NIGHT_TO_LATE8',
+          dateKey: wish.dateKey,
+          shift: wish.shift,
+          conflictWith: conflict.shift,
+          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。同日の遅出8h(〜22時)は不可です。'
+        });
+      }
+    }
+    
+    // ルール4: 前日夜勤A/B/C → 翌日早出8h/4h NG
+    if (EARLY_SHIFTS.indexOf(wish.shift) !== -1) {
+      const prevDay = _cc_addDays(wish.dateKey, -1);
+      const prevDayWishes = byDate[prevDay] || [];
+      const conflict = prevDayWishes.find(function(w) {
+        return NIGHT_SHIFTS.indexOf(w.shift) !== -1;
+      });
+      if (conflict) {
+        violations.push({
+          rule: 'RULE4_PREV_NIGHT_TO_EARLY',
+          dateKey: wish.dateKey,
+          shift: wish.shift,
+          conflictWith: prevDay + ' ' + conflict.shift,
+          message: '前日(' + prevDay + ')に' + conflict.shift + 'が提出されています。夜勤翌日の早出は提出できません。'
+        });
+      }
+    }
+    
+    // ルール5: (逆) 翌日早出8h/4h済み → 前日夜勤A/B/C NG
+    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
+      const nextDay = _cc_addDays(wish.dateKey, 1);
+      const nextDayWishes = byDate[nextDay] || [];
+      const conflict = nextDayWishes.find(function(w) {
+        return EARLY_SHIFTS.indexOf(w.shift) !== -1;
+      });
+      if (conflict) {
+        violations.push({
+          rule: 'RULE5_NEXT_EARLY_TO_NIGHT',
+          dateKey: wish.dateKey,
+          shift: wish.shift,
+          conflictWith: nextDay + ' ' + conflict.shift,
+          message: '翌日(' + nextDay + ')に' + conflict.shift + 'が提出されています。前日の夜勤は提出できません。'
+        });
+      }
+    }
+  }
+  
+  return {
+    valid: violations.length === 0,
+    violations: violations
+  };
+}
+
+function debug_test_validate_wish_submission() {
+  Logger.log('=== バリデーションテスト ===');
+  Logger.log('');
+  
+  // テストケース1: 正常パターン
+  const ok = [
+    { dateKey: '2026-06-01', shift: '早出8h' },
+    { dateKey: '2026-06-02', shift: '夜勤A' },
+    { dateKey: '2026-06-04', shift: '遅出4h' },
+    { dateKey: '2026-06-04', shift: '夜勤A' }  // 遅出4h+夜勤A はOK
+  ];
+  Logger.log('--- TC1: 正常パターン (期待: valid=true) ---');
+  const r1 = validateWishSubmission(ok);
+  Logger.log('valid: ' + r1.valid + ' / 違反数: ' + r1.violations.length);
+  
+  // テストケース2: ルール1違反 (同日2日勤)
+  const ng1 = [
+    { dateKey: '2026-06-01', shift: '早出8h' },
+    { dateKey: '2026-06-01', shift: '遅出8h' }
+  ];
+  Logger.log('');
+  Logger.log('--- TC2: ルール1違反 (早出+遅出) ---');
+  const r2 = validateWishSubmission(ng1);
+  Logger.log('valid: ' + r2.valid);
+  r2.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
+  
+  // テストケース3: ルール2違反 (遅出8h+夜勤)
+  const ng2 = [
+    { dateKey: '2026-06-01', shift: '遅出8h' },
+    { dateKey: '2026-06-01', shift: '夜勤A' }
+  ];
+  Logger.log('');
+  Logger.log('--- TC3: ルール2違反 (遅出8h+夜勤) ---');
+  const r3 = validateWishSubmission(ng2);
+  Logger.log('valid: ' + r3.valid);
+  r3.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
+  
+  // テストケース4: ルール4違反 (前日夜勤+翌日早出)
+  const ng3 = [
+    { dateKey: '2026-06-01', shift: '夜勤C' },
+    { dateKey: '2026-06-02', shift: '早出8h' }
+  ];
+  Logger.log('');
+  Logger.log('--- TC4: ルール4違反 (前日夜勤+翌日早出) ---');
+  const r4 = validateWishSubmission(ng3);
+  Logger.log('valid: ' + r4.valid);
+  r4.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
+  
+  // テストケース5: 遅出4h+夜勤A はOK
+  const ok2 = [
+    { dateKey: '2026-06-01', shift: '遅出4h' },
+    { dateKey: '2026-06-01', shift: '夜勤A' }
+  ];
+  Logger.log('');
+  Logger.log('--- TC5: 遅出4h+夜勤A (期待: valid=true) ---');
+  const r5 = validateWishSubmission(ok2);
+  Logger.log('valid: ' + r5.valid);
+  
+  Logger.log('');
+  Logger.log('=== テスト完了 ===');
+}
+
+function debug_test_validate_detail() {
+  Logger.log('=== TC1詳細 ===');
+  const ok = [
+    { dateKey: '2026-06-01', shift: '早出8h' },
+    { dateKey: '2026-06-02', shift: '夜勤A' },
+    { dateKey: '2026-06-04', shift: '遅出4h' },
+    { dateKey: '2026-06-04', shift: '夜勤A' }
+  ];
+  const r1 = validateWishSubmission(ok);
+  Logger.log('valid: ' + r1.valid);
+  r1.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
+  
+  Logger.log('');
+  Logger.log('=== TC5詳細 ===');
+  const ok2 = [
+    { dateKey: '2026-06-01', shift: '遅出4h' },
+    { dateKey: '2026-06-01', shift: '夜勤A' }
+  ];
+  const r5 = validateWishSubmission(ok2);
+  Logger.log('valid: ' + r5.valid);
+  r5.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
+}
