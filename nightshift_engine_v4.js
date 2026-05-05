@@ -849,15 +849,15 @@ function assignByScoreV4(ctx) {
     if (top.warnings.length > 0) {
       top.warnings.forEach(function(w) {
         ctx.pendingWarnings.push({
-          shift_kind: 'night',
-          target_ym: ctx.targetYM,
+          shiftKind: 'night',
+          targetYm: ctx.targetYM,
           date: slot.dateKey,
           jigyosho: slot.jigyosho,
           facility: slot.facility,
           unit: slot.unit_name,
-          staff_id: top.staff.staff_id,
-          staff_name: top.staff.name,
-          rule_id: w.ruleId,
+          staffId: top.staff.staff_id,
+          staffName: top.staff.name,
+          ruleId: w.ruleId,
           level: w.level,
           message: w.message
         });
@@ -1133,4 +1133,157 @@ function testRunNightShiftEngineV4() {
   const result = runNightShiftEngineV4('2026-05');
   Logger.log('');
   Logger.log('結果: ' + JSON.stringify(result, null, 2));
+}
+
+function debug_check_night_wishes_903() {
+  const ctx = loadEngineContextV4('2026-06');
+  
+  Logger.log('=== 903 の希望 (ctx.wishesByStaff) ===');
+  const w903 = (ctx.wishesByStaff && ctx.wishesByStaff['903']) || [];
+  Logger.log('件数: ' + w903.length);
+  w903.forEach(function(w) {
+    Logger.log('  ' + w.dateKey + ' / ' + w.shift + ' / mainFac=' + w.mainFac);
+  });
+  
+  Logger.log('');
+  Logger.log('=== wishesByDayShift で夜勤Cキー ===');
+  const keys = Object.keys(ctx.wishesByDayShift || {}).filter(function(k) { return k.indexOf('夜勤C') !== -1; });
+  Logger.log('夜勤Cキー数: ' + keys.length);
+  keys.slice(0, 5).forEach(function(k) {
+    Logger.log('  ' + k + ' -> ' + (ctx.wishesByDayShift[k].length) + '件');
+  });
+}
+
+function debug_check_night_61() {
+  const ctx = loadEngineContextV4('2026-06');
+  const wishes = ctx.wishesByDayShift['2026-06-01_夜勤C'] || [];
+  Logger.log('=== 2026-06-01 夜勤C 希望 ===');
+  Logger.log('件数: ' + wishes.length);
+  wishes.forEach(function(w) {
+    const staff = ctx.staffMap[w.staff_id];
+    Logger.log('  staff_id=' + w.staff_id + ' / mainFac=' + w.mainFac + ' / allowed=' + (staff ? staff.allowedShifts.join(',') : '?'));
+  });
+  
+  Logger.log('');
+  Logger.log('=== 903 のスロット候補チェック ===');
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.unit && s.unit.facility === 'リフレ要町';
+  });
+  if (!slot) {
+    Logger.log('リフレ要町の6/1 slotが見つからない');
+    return;
+  }
+  Logger.log('slot: ' + slot.dateKey + ' / unit=' + slot.unit_name + ' / fac=' + slot.facility + ' / jig=' + slot.jigyosho);
+  
+  const cands = findCandidatesV4(ctx, slot, '夜勤C');
+  Logger.log('候補: ' + cands.length + '件');
+  cands.forEach(function(c) {
+    Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ')');
+  });
+}
+
+function debug_night_61_step_by_step() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'リフレ要町';
+  });
+  if (!slot) { Logger.log('リフレ要町slot 6/1 なし'); return; }
+  Logger.log('slot: ' + slot.dateKey + ' / unit=' + slot.unit_name + ' / fac=' + slot.facility + ' / jig=' + slot.jigyosho);
+  
+  const dsKey = '2026-06-01_夜勤C';
+  const wishes = ctx.wishesByDayShift[dsKey] || [];
+  Logger.log('');
+  Logger.log('=== 6/1 夜勤C 希望と各候補のチェック ===');
+  
+  wishes.forEach(function(w) {
+    const staff = ctx.staffMap[w.staff_id];
+    if (!staff) { Logger.log(w.staff_id + ': ctx.staffMapにない'); return; }
+    
+    const reasons = [];
+    if (staff.allowedShifts.indexOf('夜勤C') === -1) reasons.push('allowedShifts拒否');
+    
+    const sameDay = ctx.staffAssignedDates[staff.staff_id][slot.dateKey] || [];
+    if (sameDay.length > 0) reasons.push('既配置(' + sameDay.length + ')');
+    
+    const otherFac = hasOtherFacilityAssignment(staff.staff_id, slot.dateKey, slot.jigyosho, ctx);
+    if (otherFac.exists) reasons.push('他事業所配置あり');
+    
+    Logger.log('  ' + w.staff_id + '(' + staff.name + '): ' + (reasons.length ? reasons.join(',') : 'OK'));
+  });
+}
+
+function debug_night_assign_trace() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  let traceCount = 0;
+  let totalCands = 0;
+  
+  for (let si = 0; si < ctx.slots.length && traceCount < 20; si++) {
+    const slot = ctx.slots[si];
+    if (slot.assignment) continue;
+    
+    let allCands = [];
+    for (const shift of NSE_V4.NIGHT_SHIFTS) {
+      const cands = findCandidatesV4(ctx, slot, shift);
+      cands.forEach(function(c) { c.shift = shift; });
+      allCands = allCands.concat(cands);
+    }
+    
+    if (allCands.length > 0) {
+      totalCands += allCands.length;
+      if (traceCount < 5) {
+        Logger.log('si=' + si + ' ' + slot.dateKey + '/' + slot.unit_name + ' 候補=' + allCands.length);
+        allCands.forEach(function(c) {
+          Logger.log('  ' + c.staff.staff_id + '(' + c.shift + ')');
+        });
+      }
+      traceCount++;
+    }
+  }
+  
+  Logger.log('');
+  Logger.log('=== 集計 ===');
+  Logger.log('候補ありスロット: ' + traceCount);
+  Logger.log('総候補数: ' + totalCands);
+  Logger.log('全スロット: ' + ctx.slots.length);
+}
+
+function debug_night_full_filter_903() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'リフレ要町';
+  });
+  if (!slot) { Logger.log('slot なし'); return; }
+  
+  Logger.log('slot: ' + slot.dateKey + ' / ' + slot.unit_name + ' / ' + slot.facility);
+  
+  const staff = ctx.staffMap['903'];
+  const shiftType = '夜勤C';
+  
+  Logger.log('');
+  Logger.log('=== 903 の filter step-by-step ===');
+  
+  Logger.log('1. allowedShifts: ' + staff.allowedShifts.join(','));
+  Logger.log('   夜勤C含む?: ' + (staff.allowedShifts.indexOf('夜勤C') !== -1));
+  
+  const sameDay = ctx.staffAssignedDates['903'][slot.dateKey] || [];
+  Logger.log('2. sameDayAssigns: ' + sameDay.length + '件');
+  
+  const otherFac = hasOtherFacilityAssignment('903', slot.dateKey, slot.jigyosho, ctx);
+  Logger.log('3. hasOtherFacilityAssignment: ' + otherFac.exists);
+  
+  const tmpCtx = _v4_makeTempCtx(ctx, '903', slot.dateKey, shiftType, slot);
+  const consec = checkConsecutiveDays('903', slot.dateKey, tmpCtx);
+  Logger.log('4. checkConsecutiveDays: exceeded=' + consec.exceeded + ' / consec=' + consec.consec);
+  
+  const addedH = (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[shiftType])
+    ? (SHIFT_PATTERNS[shiftType].dayHours + SHIFT_PATTERNS[shiftType].nightHours)
+    : 8;
+  const weekly = checkWeeklyHours('903', slot.dateKey, addedH, ctx);
+  Logger.log('5. checkWeeklyHours: exceeded=' + weekly.exceeded + ' / weeklyH=' + weekly.weeklyH + ' / addedH=' + addedH);
 }

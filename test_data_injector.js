@@ -502,3 +502,69 @@ function debug_check_901_903_final() {
     }
   });
 }
+
+
+// ============================================================
+// 夜勤テスト: 903 が 6/1〜6/10 夜勤C を希望
+// 10件投入 (1スタッフ × 10日 × 1シフト)
+// ============================================================
+function inject_nightshift_test_2026_06() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_希望提出');
+  if (!sheet) { Logger.log('T_希望提出 シートが見つかりません'); return; }
+
+  const targetYM = '2026-06';
+  const subFacs = 'EST東長崎,ルーデンス中野富士見町,ルーデンス新板橋Ⅱ,ルーデンス東十条アネックス,ルーデンス東十条マキシブ,ルーデンス本蓮沼,ルーデンス板橋区役所前,ルーデンス大泉学園前,ルーデンス立会川Ⅱ,ルーデンス梅屋敷';
+  
+  const days = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const shift = '夜勤C';
+  const now = new Date();
+  
+  const rows = days.map(function(d) {
+    const dateStr = targetYM + '-' + String(d).padStart(2, '0');
+    const reqId = 'TEST-NIGHT-' + targetYM + '-903-' + d + '-' + shift;
+    return [
+      reqId,
+      now,
+      '903',
+      '日勤テスト3（テスト用）',
+      targetYM,
+      dateStr,
+      shift,
+      'リフレ要町',
+      'EST東長崎',
+      subFacs,
+      '夜勤テスト',
+      '月次合計',
+      10,
+    ];
+  });
+  
+  const startRow = sheet.getLastRow() + 1;
+  sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+  
+  Logger.log('夜勤希望投入: ' + rows.length + '件');
+  Logger.log('対象月: ' + targetYM);
+  Logger.log('スタッフ: 903');
+  Logger.log('日: 6/1〜6/10');
+  Logger.log('シフト: 夜勤C');
+}
+
+function delete_nightshift_test_2026_06() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_希望提出');
+  if (!sheet) return;
+  
+  const data = sheet.getDataRange().getValues();
+  const rowsToDelete = [];
+  
+  for (let i = data.length - 1; i >= 1; i--) {
+    const reqId = String(data[i][0] || '');
+    if (reqId.indexOf('TEST-NIGHT-2026-06-903') === 0) {
+      rowsToDelete.push(i + 1);
+    }
+  }
+  
+  rowsToDelete.forEach(function(r) { sheet.deleteRow(r); });
+  Logger.log('夜勤テスト希望削除: ' + rowsToDelete.length + '件');
+}

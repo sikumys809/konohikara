@@ -1793,3 +1793,53 @@ function debug_score_step_by_step() {
   Logger.log('最終: ' + score);
   Logger.log('calcScoreV2()=' + calcScoreV2(ctx, staff, wish, slot, shortage));
 }
+
+function debug_check_night_e_col() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  let nightCount = 0;
+  let withFac = 0;
+  let withoutFac = 0;
+  let withUnit = 0;
+  let withoutUnit = 0;
+  const samples = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') === -1) continue;
+    
+    nightCount++;
+    const fac = String(data[i][4] || '').trim();
+    const unit = String(data[i][5] || '').trim();
+    if (fac) withFac++; else withoutFac++;
+    if (unit) withUnit++; else withoutUnit++;
+    
+    if (samples.length < 5) {
+      samples.push({
+        date: Utilities.formatDate(date, 'Asia/Tokyo', 'MM/dd'),
+        jig: data[i][3],
+        fac: fac,
+        unit: unit,
+        shift: shift,
+        staff: data[i][7]
+      });
+    }
+  }
+  
+  Logger.log('=== 2026-06 夜勤レコードの E/F列 ===');
+  Logger.log('合計: ' + nightCount);
+  Logger.log('施設名(E列)あり: ' + withFac + ' / なし: ' + withoutFac);
+  Logger.log('ユニット名(F列)あり: ' + withUnit + ' / なし: ' + withoutUnit);
+  Logger.log('');
+  Logger.log('=== サンプル ===');
+  samples.forEach(function(s) {
+    Logger.log('  ' + s.date + ' ' + s.shift + ' @' + s.jig + ' / 施設="' + s.fac + '" / ユニット="' + s.unit + '" / ' + s.staff);
+  });
+}
