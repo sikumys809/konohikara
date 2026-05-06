@@ -1545,3 +1545,18 @@ function reset_t_shift_kakutei_2026_06_v3() {
   for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
   Logger.log('削除件数: ' + toDelete.length);
 }
+
+function reset_t_shift_2026_06_v4() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  const toDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym === '2026-06') toDelete.push(i + 1);
+  }
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  Logger.log('削除: ' + toDelete.length);
+}

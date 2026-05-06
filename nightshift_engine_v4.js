@@ -810,7 +810,18 @@ function assignByScoreV4(ctx) {
       continue;
     }
     
-    // ソート: VIP > 警告なし > スコア降順
+    // ソート: VIP > 警告なし > シフト種別 (夜勤C>B>A) > スコア降順
+    // シフト種別優先度の根拠:
+    //   夜勤C: 朝8時まで → 朝の忙しい時間をカバー (最優先)
+    //   夜勤B: 朝7時まで → 最低限
+    //   夜勤A: 朝5時帰宅 → 朝サポートなし (最後の手段)
+    //   例外: 看護師の夜勤A希望はVIPフラグで運用カバー (上位の1.VIP優先で担保)
+    const _v4_shiftRank = function(s) {
+      if (s === '夜勤C') return 3;
+      if (s === '夜勤B') return 2;
+      if (s === '夜勤A') return 1;
+      return 0;
+    };
     allCands.sort(function(a, b) {
       // 1. VIP優先
       const aVIP = a.staff.isVIP ? 1 : 0;
@@ -820,7 +831,11 @@ function assignByScoreV4(ctx) {
       const aNoWarn = (a.warnings.length === 0) ? 1 : 0;
       const bNoWarn = (b.warnings.length === 0) ? 1 : 0;
       if (aNoWarn !== bNoWarn) return bNoWarn - aNoWarn;
-      // 3. スコア降順
+      // 3. シフト種別優先 (夜勤C > 夜勤B > 夜勤A)
+      const aRank = _v4_shiftRank(a.shift);
+      const bRank = _v4_shiftRank(b.shift);
+      if (aRank !== bRank) return bRank - aRank;
+      // 4. スコア降順
       return b.score - a.score;
     });
     
