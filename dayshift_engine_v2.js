@@ -84,7 +84,7 @@ const DSE_V2 = {
   // スコア係数 (夜勤と共通 + 主職種マッチ用係数)
   SCORE: {
     MAIN_FAC: 30, SECOND_FAC: 20, SUB_FAC: 10,
-    QUALIFIED: 10, FULL_TIME: 5,
+    QUALIFIED: 1000, FULL_TIME: 5,  // 看護師優先のため大幅加点 (2026-05-06更新)
     MONTH_X: 2, SKILL_X: 3,
     PROTECTED_ZERO: 50, PROTECTED_OTHER: 15,
     NEWBIE1: -30, NEWBIE2: -10,

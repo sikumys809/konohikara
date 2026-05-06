@@ -75,7 +75,7 @@ const NSE_V4 = {
   // スコア係数
   SCORE: {
     MAIN_FAC: 30, SECOND_FAC: 20, SUB_FAC: 10,
-    QUALIFIED: 10, FULL_TIME: 5,
+    QUALIFIED: 1000, FULL_TIME: 5,  // 看護師優先のため大幅加点 (2026-05-06更新)
     MONTH_X: 2, SKILL_X: 3,
     PROTECTED_ZERO: 50, PROTECTED_OTHER: 15,
     NEWBIE1: -30, NEWBIE2: -10,
@@ -400,14 +400,23 @@ function findCandidatesV4(ctx, slot, shiftType) {
     const staff = ctx.staffMap[wish.staff_id];
     if (!staff) continue;
     
-    // 許可シフトチェック (H8)
+    // 許可シフトチェック (H9)
     if (staff.allowedShifts.indexOf(shiftType) === -1) continue;
     
-    // 既配置チェック: 同日同スタッフ複数希望は1回のみ
+    // ★ H10: 希望施設マッチ必須NG (メイン/セカンド/サブ以外への配置不可)
+    const slotFac = slot.facility;
+    const isFacilityMatch = (
+      staff.mainFac === slotFac ||
+      staff.secondFac === slotFac ||
+      (staff.subFacs && staff.subFacs.indexOf(slotFac) !== -1)
+    );
+    if (!isFacilityMatch) continue;
+    
+    // 既配置チェック: 同日同スタッフ複数希望は1回のみ (夜勤は1日1配置)
     const sameDayAssigns = ctx.staffAssignedDates[staff.staff_id][slot.dateKey] || [];
     if (sameDayAssigns.length > 0) continue;
     
-    // H1: 同日他事業所配置NG
+    // H11 (旧H1): 同日他事業所配置NG (既存関数 hasOtherFacilityAssignment が同日全体で判定)
     const otherFac = hasOtherFacilityAssignment(staff.staff_id, slot.dateKey, slot.jigyosho, ctx);
     if (otherFac.exists) continue;
     
@@ -1028,26 +1037,29 @@ function writeShiftResultsV4(ctx) {
     const requestId = 'NSE-V4-' + ctx.targetYM + '-' + slot.unit.unit_id + '-' + slot.dateKey + '-' + a.shift;
     const status = a.warnings.length > 0 ? '警告承認待ち' : '仮';
     
-    // T_シフト確定 18列構造
+    // T_シフト確定 18列構造 (シート実体に合わせる)
+    // ヘッダー: shift_id / 日付 / unit_id / 事業所名 / 施設名 / ユニット名 / staff_id / 氏名
+    //          / シフト種別 / 開始時刻 / 終了時刻 / 配置カウント / ステータス / 更新日時
+    //          / 実開始時刻 / 実終了時刻 / 夜勤換算時間 / 日勤換算時間
     const row = [
-      requestId,                  // A: request_id
-      slot.date,                  // B: date
-      ctx.targetYM,               // C: year_month
-      slot.jigyosho,              // D: jigyosho
-      slot.facility,              // E: facility
-      slot.unit_name,             // F: unit
-      a.staff_id,                 // G: staff_id
-      a.staff_name,               // H: staff_name
-      a.shift,                    // I: shift_type
-      shiftPat.start,             // J: start
-      shiftPat.end,               // K: end
-      a.reason,                   // L: reason
-      status,                     // M: status
-      now,                        // N: updated_at
-      shiftPat.start,             // O: actual_start (初期は予定と同じ)
-      shiftPat.end,               // P: actual_end
-      shiftPat.nightHours,        // Q: night_hours
-      shiftPat.dayHours,          // R: day_hours
+      requestId,                  // [0] shift_id
+      slot.date,                  // [1] 日付
+      slot.unit.unit_id,          // [2] unit_id  (★ year_month から修正)
+      slot.jigyosho,              // [3] 事業所名
+      slot.facility,              // [4] 施設名
+      slot.unit_name,             // [5] ユニット名
+      a.staff_id,                 // [6] staff_id
+      a.staff_name,               // [7] 氏名
+      a.shift,                    // [8] シフト種別
+      shiftPat.start,             // [9] 開始時刻
+      shiftPat.end,               // [10] 終了時刻
+      a.reason,                   // [11] 配置カウント
+      status,                     // [12] ステータス
+      now,                        // [13] 更新日時
+      shiftPat.start,             // [14] 実開始時刻
+      shiftPat.end,               // [15] 実終了時刻
+      shiftPat.nightHours,        // [16] 夜勤換算時間
+      shiftPat.dayHours,          // [17] 日勤換算時間
     ];
     newRows.push(row);
     placedCount++;
@@ -1286,4 +1298,359 @@ function debug_night_full_filter_903() {
     : 8;
   const weekly = checkWeeklyHours('903', slot.dateKey, addedH, ctx);
   Logger.log('5. checkWeeklyHours: exceeded=' + weekly.exceeded + ' / weeklyH=' + weekly.weeklyH + ' / addedH=' + addedH);
+}
+
+function debug_compare_score_18_vs_903_61() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'ルーデンス新板橋Ⅱ' && s.unit_name === 'コノヒカラ板橋北区Ⅰ';
+  });
+  if (!slot) { Logger.log('slotなし'); return; }
+  
+  Logger.log('slot: ' + slot.dateKey + ' / ' + slot.unit_name + ' / ' + slot.facility + ' / ' + slot.jigyosho);
+  Logger.log('');
+  
+  ['18', '903'].forEach(function(sid) {
+    const staff = ctx.staffMap[sid];
+    if (!staff) { Logger.log(sid + ': staffMapなし'); return; }
+    
+    Logger.log('=== staff_id=' + sid + ' (' + staff.name + ') ===');
+    Logger.log('  mainFac: ' + staff.mainFac);
+    Logger.log('  secondFac: ' + staff.secondFac);
+    Logger.log('  subFacs: ' + JSON.stringify(staff.subFacs));
+    Logger.log('  qualification: ' + staff.qualification);
+    Logger.log('  employment: ' + staff.employment);
+    Logger.log('  hireMonths: ' + staff.hireMonths);
+    Logger.log('  isProtected: ' + staff.isProtected);
+    
+    const wish = (ctx.wishesByDayShift['2026-06-01_夜勤C'] || []).find(function(w) { return w.staff_id === sid; });
+    if (!wish) { Logger.log('  wish なし'); return; }
+    
+    const score = calcScoreV4(ctx, staff, wish, slot);
+    Logger.log('  >>> SCORE: ' + score);
+    Logger.log('');
+  });
+}
+
+function debug_check_staff_fac_format() {
+  const ctx = loadEngineContextV4('2026-06');
+  
+  ['13', '18', '59', '903'].forEach(function(sid) {
+    const staff = ctx.staffMap[sid];
+    if (!staff) { Logger.log(sid + ': staffMapなし'); return; }
+    
+    Logger.log('=== staff_id=' + sid + ' (' + staff.name + ') ===');
+    Logger.log('  mainFac: "' + staff.mainFac + '" (type=' + typeof staff.mainFac + ', length=' + (staff.mainFac || '').length + ')');
+    Logger.log('  secondFac: "' + staff.secondFac + '" (type=' + typeof staff.secondFac + ')');
+    Logger.log('  subFacs: ' + JSON.stringify(staff.subFacs));
+    Logger.log('');
+  });
+  
+  // 6/1 リフレ要町 slot を探してmainFac比較
+  generateSlotsV4(ctx);
+  const refleSlot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'リフレ要町';
+  });
+  if (refleSlot) {
+    Logger.log('=== リフレ要町 slot ===');
+    Logger.log('  facility: "' + refleSlot.facility + '" (length=' + refleSlot.facility.length + ')');
+    Logger.log('');
+    
+    const s18 = ctx.staffMap['18'];
+    Logger.log('=== 18 vs リフレ要町 比較 ===');
+    Logger.log('  staff.mainFac === slot.facility ? ' + (s18.mainFac === refleSlot.facility));
+    Logger.log('  staff.mainFac="' + s18.mainFac + '"');
+    Logger.log('  slot.facility="' + refleSlot.facility + '"');
+  }
+}
+
+function debug_check_18_candidate() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'リフレ要町' && s.unit_name === 'コノヒカラⅠ';
+  });
+  if (!slot) { Logger.log('slotなし'); return; }
+  
+  Logger.log('slot: ' + slot.dateKey + ' / ' + slot.unit_name + ' / ' + slot.facility);
+  
+  const cands = findCandidatesV4(ctx, slot, '夜勤C');
+  Logger.log('夜勤C候補: ' + cands.length + '件');
+  cands.forEach(function(c) {
+    Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ')');
+  });
+  
+  Logger.log('');
+  const candsB = findCandidatesV4(ctx, slot, '夜勤B');
+  Logger.log('夜勤B候補: ' + candsB.length + '件');
+  candsB.forEach(function(c) {
+    Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ')');
+  });
+}
+
+function debug_full_assign_trace_61() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'リフレ要町' && s.unit_name === 'コノヒカラⅠ';
+  });
+  if (!slot) { Logger.log('slotなし'); return; }
+  
+  Logger.log('slot: ' + slot.dateKey + ' / ' + slot.unit_name);
+  
+  // 各夜勤シフトで候補検索 (assignByScoreV4と同じロジック)
+  let allCands = [];
+  for (const shift of NSE_V4.NIGHT_SHIFTS) {
+    const cands = findCandidatesV4(ctx, slot, shift);
+    cands.forEach(function(c) {
+      c.score = calcScoreV4(ctx, c.staff, c.wish, slot);
+      c.warnings = checkAllRWarningsV4(c.staff, slot, shift, ctx);
+      c.shift = shift;
+    });
+    Logger.log(shift + ': ' + cands.length + '件');
+    cands.forEach(function(c) {
+      Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ') / score=' + c.score + ' / warnings=' + c.warnings.length);
+    });
+    allCands = allCands.concat(cands);
+  }
+  
+  Logger.log('');
+  Logger.log('全候補: ' + allCands.length);
+  
+  if (allCands.length === 0) {
+    Logger.log('候補ゼロのため未配置');
+    return;
+  }
+  
+  allCands.sort(function(a, b) {
+    const aVIP = a.staff.isVIP ? 1 : 0;
+    const bVIP = b.staff.isVIP ? 1 : 0;
+    if (aVIP !== bVIP) return bVIP - aVIP;
+    const aNoWarn = (a.warnings.length === 0) ? 1 : 0;
+    const bNoWarn = (b.warnings.length === 0) ? 1 : 0;
+    if (aNoWarn !== bNoWarn) return bNoWarn - aNoWarn;
+    return b.score - a.score;
+  });
+  
+  const top = allCands[0];
+  Logger.log('最優先: ' + top.staff.staff_id + ' / shift=' + top.shift + ' / score=' + top.score);
+}
+
+function debug_check_18_assigned_dates() {
+  const ctx = loadEngineContextV4('2026-06');
+  const dates = ctx.staffAssignedDates['18'] || {};
+  Logger.log('=== 18 staffAssignedDates ===');
+  Object.keys(dates).forEach(function(k) {
+    Logger.log('  ' + k + ': ' + JSON.stringify(dates[k]));
+  });
+  Logger.log('total: ' + Object.keys(dates).length);
+}
+
+function debug_check_18_assigned_dates() {
+  const ctx = loadEngineContextV4('2026-06');
+  const dates = ctx.staffAssignedDates['18'] || {};
+  Logger.log('=== 18 staffAssignedDates ===');
+  Object.keys(dates).forEach(function(k) {
+    Logger.log('  ' + k + ': ' + JSON.stringify(dates[k]));
+  });
+  Logger.log('total: ' + Object.keys(dates).length);
+}
+
+function debug_count_t_shift_2026_06() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  let count = 0;
+  let nightCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    count++;
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') !== -1) nightCount++;
+  }
+  Logger.log('T_シフト確定 2026-06: ' + count + '件 (うち夜勤: ' + nightCount + '件)');
+}
+
+function debug_check_all_assigned_dates() {
+  const ctx = loadEngineContextV4('2026-06');
+  
+  ['13', '18', '59', '903'].forEach(function(sid) {
+    const dates = ctx.staffAssignedDates[sid] || {};
+    Logger.log('=== staff_id=' + sid + ' staffAssignedDates ===');
+    Object.keys(dates).forEach(function(k) {
+      Logger.log('  ' + k + ': ' + JSON.stringify(dates[k]));
+    });
+    Logger.log('total: ' + Object.keys(dates).length + '日');
+    Logger.log('');
+  });
+}
+
+function debug_check_night_e_col() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  let count = 0;
+  const byStaff = {};
+  const byFacility = {};
+  const byUnit = {};
+  const samples = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') === -1) continue;
+    
+    count++;
+    const sid = String(data[i][6] || '');
+    const fac = String(data[i][4] || '');
+    const unit = String(data[i][5] || '');
+    const dateStr = Utilities.formatDate(date, 'Asia/Tokyo', 'MM/dd');
+    
+    byStaff[sid] = (byStaff[sid] || 0) + 1;
+    byFacility[fac] = (byFacility[fac] || 0) + 1;
+    byUnit[unit] = (byUnit[unit] || 0) + 1;
+    
+    if (samples.length < 35) {
+      samples.push(dateStr + ' ' + shift + ' / ' + sid + ' / ' + fac + ' / ' + unit);
+    }
+  }
+  
+  Logger.log('=== 2026-06 夜勤配置確認 ===');
+  Logger.log('総夜勤配置: ' + count);
+  Logger.log('');
+  Logger.log('=== スタッフ別 ===');
+  Object.keys(byStaff).forEach(function(k) { Logger.log('  staff_id=' + k + ': ' + byStaff[k] + '件'); });
+  Logger.log('');
+  Logger.log('=== 施設別 ===');
+  Object.keys(byFacility).forEach(function(k) { Logger.log('  ' + k + ': ' + byFacility[k] + '件'); });
+  Logger.log('');
+  Logger.log('=== ユニット別 ===');
+  Object.keys(byUnit).forEach(function(k) { Logger.log('  ' + k + ': ' + byUnit[k] + '件'); });
+  Logger.log('');
+  Logger.log('=== 配置詳細 ===');
+  samples.forEach(function(s) { Logger.log('  ' + s); });
+}
+
+function debug_check_18_at_itabashi() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const slot = (ctx.slots || []).find(function(s) {
+    return s.dateKey === '2026-06-01' && s.facility === 'ルーデンス新板橋Ⅱ' && s.unit_name === 'コノヒカラ板橋北区Ⅰ';
+  });
+  if (!slot) { Logger.log('slotなし'); return; }
+  
+  Logger.log('slot: ' + slot.dateKey + ' / ' + slot.unit_name + ' / ' + slot.facility);
+  
+  const cands = findCandidatesV4(ctx, slot, '夜勤C');
+  Logger.log('夜勤C候補: ' + cands.length + '件');
+  cands.forEach(function(c) {
+    Logger.log('  ' + c.staff.staff_id + '(' + c.staff.name + ') / mainFac=' + c.staff.mainFac + ' / subFacs=' + JSON.stringify(c.staff.subFacs));
+  });
+  
+  // 18のmainFacとslot.facilityの直接比較
+  const s18 = ctx.staffMap['18'];
+  Logger.log('');
+  Logger.log('=== 18 vs ルーデンス新板橋Ⅱ ===');
+  Logger.log('  staff.mainFac="' + s18.mainFac + '"');
+  Logger.log('  slot.facility="' + slot.facility + '"');
+  Logger.log('  match: ' + (s18.mainFac === slot.facility));
+  Logger.log('  subFacs: ' + JSON.stringify(s18.subFacs));
+}
+
+function debug_check_full_engine_run() {
+  const ctx = loadEngineContextV4('2026-06');
+  generateSlotsV4(ctx);
+  
+  const result = assignByScoreV4(ctx);
+  Logger.log('=== assignByScoreV4 結果 ===');
+  Logger.log('  assignedCount: ' + result.assignedCount);
+  Logger.log('');
+  
+  // 採用されたslotを抽出 (先頭10件)
+  let placed = 0;
+  Logger.log('=== 採用slot (assignment付き) ===');
+  ctx.slots.forEach(function(s) {
+    if (s.assignment) {
+      placed++;
+      if (placed <= 10) {
+        Logger.log('  ' + s.dateKey + ' / unit=' + s.unit_name + ' / slot.facility=' + s.facility + ' / staff=' + s.assignment.staff_id + ' / shift=' + s.assignment.shift);
+      }
+    }
+  });
+  Logger.log('placed total: ' + placed);
+}
+
+function debug_check_t_shift_e_col() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== T_シフト確定 ヘッダー ===');
+  for (let i = 0; i < data[0].length; i++) {
+    Logger.log('  [' + i + '] ' + data[0][i]);
+  }
+  
+  Logger.log('');
+  Logger.log('=== 2026-06 夜勤レコード 先頭3件の全列 ===');
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') === -1) continue;
+    
+    count++;
+    if (count > 3) break;
+    
+    Logger.log('--- レコード ' + count + ' ---');
+    for (let j = 0; j < data[0].length; j++) {
+      Logger.log('  [' + j + ']' + data[0][j] + ': ' + data[i][j]);
+    }
+  }
+}
+
+function debug_check_t_shift_e_col() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== T_シフト確定 ヘッダー ===');
+  for (let i = 0; i < data[0].length; i++) {
+    Logger.log('  [' + i + '] ' + data[0][i]);
+  }
+  
+  Logger.log('');
+  Logger.log('=== 2026-06 夜勤レコード 先頭3件 ===');
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') === -1) continue;
+    
+    count++;
+    if (count > 3) break;
+    
+    Logger.log('--- レコード ' + count + ' ---');
+    for (let j = 0; j < data[0].length; j++) {
+      Logger.log('  [' + j + '] ' + data[0][j] + ': ' + data[i][j]);
+    }
+  }
 }

@@ -1249,3 +1249,299 @@ function reset_all_test_wishes_v2() {
   Logger.log('削除件数: ' + toDelete.length);
   Logger.log('対象ID: ' + testIds.join(','));
 }
+
+function debug_find_night_eligible_staff() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  // 列番号(0-indexed)
+  const COL_ID = 0;
+  const COL_NAME = 1;
+  const COL_MAIN = 9;        // J列
+  const COL_SECOND = 10;     // K列
+  const COL_SUB = 11;        // L列
+  const COL_ALLOWED = 13;    // N列(許可シフト)
+  const COL_RETIRED = 16;    // 退職フラグ(あれば)
+  
+  const eligible = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const sid = String(data[i][COL_ID]).trim();
+    if (!sid) continue;
+    
+    const main = String(data[i][COL_MAIN] || '').trim();
+    const allowed = String(data[i][COL_ALLOWED] || '').trim();
+    
+    // 条件: メイン施設あり + 許可シフトに夜勤含む
+    const hasMain = main !== '';
+    const hasNight = allowed.indexOf('夜勤') !== -1;
+    
+    if (hasMain && hasNight) {
+      eligible.push({
+        sid: sid,
+        name: data[i][COL_NAME],
+        main: main,
+        second: String(data[i][COL_SECOND] || '').trim(),
+        sub: String(data[i][COL_SUB] || '').trim(),
+        allowed: allowed
+      });
+    }
+  }
+  
+  Logger.log('=== 夜勤対象スタッフ (メイン施設あり + 夜勤シフト許可あり) ===');
+  Logger.log('該当: ' + eligible.length + '名');
+  Logger.log('');
+  
+  eligible.forEach(function(s) {
+    Logger.log('staff_id=' + s.sid + ' / ' + s.name);
+    Logger.log('  メイン: ' + s.main);
+    Logger.log('  セカンド: ' + s.second);
+    Logger.log('  許可シフト: ' + s.allowed);
+    Logger.log('');
+  });
+}
+
+// ============================================================
+// 夜勤エンジンテスト用希望投入 (4名で2026-06)
+// 13: 夜勤B (許可: 夜勤B,早出8h,遅出8h)
+// 18: 夜勤C (許可: 夜勤Cのみ)
+// 59: 夜勤B (許可: 夜勤B,早出8h)
+// 903: 夜勤C (許可: 全日勤+夜勤C)
+// ============================================================
+function inject_night_test_4staff_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  
+  // M_スタッフから4名の施設情報を取得
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  const staffInfo = {};
+  for (let i = 1; i < staffData.length; i++) {
+    const sid = String(staffData[i][0]).trim();
+    if (['13', '18', '59', '903'].indexOf(sid) === -1) continue;
+    staffInfo[sid] = {
+      name: staffData[i][1],
+      main: String(staffData[i][9] || '').trim(),
+      second: String(staffData[i][10] || '').trim(),
+      sub: String(staffData[i][11] || '').trim()
+    };
+  }
+  
+  // 各スタッフの投入計画
+  const plans = [
+    { sid: '13',  shift: '夜勤B', days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    { sid: '18',  shift: '夜勤C', days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    { sid: '59',  shift: '夜勤B', days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    { sid: '903', shift: '夜勤C', days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }
+  ];
+  
+  const targetYM = '2026-06';
+  const now = new Date();
+  const rows = [];
+  let seq = 1;
+  
+  for (const plan of plans) {
+    const info = staffInfo[plan.sid];
+    if (!info) {
+      Logger.log('スタッフ情報なし: ' + plan.sid);
+      continue;
+    }
+    
+    for (const d of plan.days) {
+      const dateStr = targetYM + '-' + String(d).padStart(2, '0');
+      rows.push([
+        'NIGHT-TEST-' + plan.sid + '-' + targetYM + '-' + String(seq).padStart(3, '0'),
+        now,
+        plan.sid,
+        info.name,
+        targetYM,
+        dateStr,
+        plan.shift,
+        info.main,
+        info.second,
+        info.sub,
+        '夜勤エンジンテスト',
+        '月次合計',
+        plan.days.length
+      ]);
+      seq++;
+    }
+  }
+  
+  if (rows.length > 0) {
+    const sr = sheet.getLastRow() + 1;
+    sheet.getRange(sr, 1, rows.length, 13).setValues(rows);
+    sheet.getRange(sr, 5, rows.length, 1).setNumberFormat('@');
+  }
+  
+  Logger.log('=== inject_night_test_4staff_2026_06 ===');
+  Logger.log('投入件数: ' + rows.length);
+  plans.forEach(function(p) {
+    Logger.log('  staff_id=' + p.sid + ' (' + (staffInfo[p.sid] ? staffInfo[p.sid].name : '?') + '): ' + p.shift + ' × ' + p.days.length + '日');
+  });
+}
+
+function debug_check_night_placement_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== 2026-06 夜勤配置確認 ===');
+  
+  let count = 0;
+  const byStaff = {};
+  const byFacility = {};
+  const samples = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    
+    const shift = String(data[i][8] || '');
+    if (shift.indexOf('夜勤') === -1) continue;
+    
+    count++;
+    const sid = String(data[i][6] || '');
+    const fac = String(data[i][4] || '');
+    const unit = String(data[i][5] || '');
+    const dateStr = Utilities.formatDate(date, 'Asia/Tokyo', 'MM/dd');
+    
+    byStaff[sid] = (byStaff[sid] || 0) + 1;
+    byFacility[fac] = (byFacility[fac] || 0) + 1;
+    
+    if (samples.length < 25) {
+      samples.push(dateStr + ' ' + shift + ' / ' + sid + ' / ' + fac + ' / ' + unit);
+    }
+  }
+  
+  Logger.log('総夜勤配置: ' + count);
+  Logger.log('');
+  Logger.log('=== スタッフ別 ===');
+  Object.keys(byStaff).forEach(function(k) { Logger.log('  staff_id=' + k + ': ' + byStaff[k] + '件'); });
+  Logger.log('');
+  Logger.log('=== 施設別 ===');
+  Object.keys(byFacility).forEach(function(k) { Logger.log('  ' + k + ': ' + byFacility[k] + '件'); });
+  Logger.log('');
+  Logger.log('=== 配置詳細 (先頭25件) ===');
+  samples.forEach(function(s) { Logger.log('  ' + s); });
+}
+
+function debug_check_18_59_master() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== 18, 59 のマスタ確認 ===');
+  
+  for (let i = 1; i < data.length; i++) {
+    const sid = String(data[i][0]).trim();
+    if (sid !== '18' && sid !== '59') continue;
+    
+    Logger.log('staff_id=' + sid + ' / ' + data[i][1]);
+    Logger.log('  J列(メイン): ' + data[i][9]);
+    Logger.log('  K列(セカンド): ' + data[i][10]);
+    Logger.log('  L列(サブ): ' + data[i][11]);
+    Logger.log('');
+  }
+}
+
+function debug_check_903_assignment_attempts() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== '903') continue;
+    Logger.log('=== 903 マスタ ===');
+    Logger.log('  J(メイン): ' + data[i][9]);
+    Logger.log('  K(セカンド): ' + data[i][10]);
+    Logger.log('  L(サブ): ' + data[i][11]);
+    Logger.log('  N(許可シフト): ' + data[i][13]);
+    return;
+  }
+}
+
+function debug_check_18_vip_flag() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  // 列名を確認するため最初の行(ヘッダー)を取得
+  Logger.log('=== ヘッダー行 ===');
+  const headers = data[0];
+  for (let i = 0; i < headers.length; i++) {
+    Logger.log('  [' + i + '] ' + headers[i]);
+  }
+  
+  Logger.log('');
+  Logger.log('=== 18 (吉野光) 全列 ===');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== '18') continue;
+    for (let j = 0; j < headers.length; j++) {
+      Logger.log('  [' + j + '] ' + headers[j] + ': ' + data[i][j]);
+    }
+    return;
+  }
+}
+
+function reset_t_shift_kakutei_2026_06() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const toDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym === '2026-06') {
+      toDelete.push(i + 1);
+    }
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  
+  Logger.log('=== reset_t_shift_kakutei_2026_06 ===');
+  Logger.log('削除件数: ' + toDelete.length);
+}
+
+function reset_t_shift_kakutei_2026_06_v2() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const toDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym === '2026-06') {
+      toDelete.push(i + 1);
+    }
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  
+  Logger.log('=== reset_t_shift_kakutei_2026_06_v2 ===');
+  Logger.log('削除件数: ' + toDelete.length);
+}
+
+function reset_t_shift_kakutei_2026_06_v3() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const toDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym === '2026-06') toDelete.push(i + 1);
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  Logger.log('削除件数: ' + toDelete.length);
+}
