@@ -1646,3 +1646,144 @@ function reset_t_shift_kakutei_2026_06_full() {
   Logger.log('=== reset_t_shift_kakutei_2026_06_full ===');
   Logger.log('削除件数: ' + toDelete.length);
 }
+
+// ============================================================
+// 日勤テスト用希望投入 (Day10 Phase 3)
+// 4名 × 5日 (2026-06-15〜19) で日勤希望を投入
+// ============================================================
+function inject_day_test_4staff_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  
+  // M_スタッフから4名の施設情報を取得
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  const staffInfo = {};
+  for (let i = 1; i < staffData.length; i++) {
+    const sid = String(staffData[i][0]).trim();
+    if (['13', '18', '59', '903'].indexOf(sid) === -1) continue;
+    staffInfo[sid] = {
+      name: staffData[i][1],
+      main: String(staffData[i][9] || '').trim(),
+      second: String(staffData[i][10] || '').trim(),
+      sub: String(staffData[i][11] || '').trim()
+    };
+  }
+  
+  // 各スタッフの日勤投入計画 (15-19日に5日間、夜勤テスト1-10日と被らないよう)
+  const plans = [
+    { sid: '13',  shift: '早出8h', days: [15, 16, 17, 18, 19] },
+    { sid: '18',  shift: '遅出8h', days: [15, 16, 17, 18, 19] },
+    { sid: '59',  shift: '早出4h', days: [15, 16, 17, 18, 19] },
+    { sid: '903', shift: '遅出4h', days: [15, 16, 17, 18, 19] }
+  ];
+  
+  const targetYM = '2026-06';
+  const now = new Date();
+  const rows = [];
+  let seq = 1;
+  
+  for (const plan of plans) {
+    const info = staffInfo[plan.sid];
+    if (!info) {
+      Logger.log('スタッフ情報なし: ' + plan.sid);
+      continue;
+    }
+    
+    for (const d of plan.days) {
+      const dateStr = targetYM + '-' + String(d).padStart(2, '0');
+      rows.push([
+        'DAY-TEST-' + plan.sid + '-' + targetYM + '-' + String(seq).padStart(3, '0'),
+        now,
+        plan.sid,
+        info.name,
+        targetYM,
+        dateStr,
+        plan.shift,
+        info.main,
+        info.second,
+        info.sub,
+        '日勤エンジンテスト',
+        '月次合計',
+        plan.days.length
+      ]);
+      seq++;
+    }
+  }
+  
+  if (rows.length > 0) {
+    const sr = sheet.getLastRow() + 1;
+    sheet.getRange(sr, 1, rows.length, 13).setValues(rows);
+    sheet.getRange(sr, 5, rows.length, 1).setNumberFormat('@');
+  }
+  
+  Logger.log('=== inject_day_test_4staff_2026_06 ===');
+  Logger.log('投入件数: ' + rows.length);
+  plans.forEach(function(p) {
+    Logger.log('  staff_id=' + p.sid + ' (' + (staffInfo[p.sid] ? staffInfo[p.sid].name : '?') + '): ' + p.shift + ' × ' + p.days.length + '日');
+  });
+}
+
+// ============================================================
+// 日勤配置確認 (Day10 Phase 3)
+// ============================================================
+function debug_check_day_placement_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  
+  Logger.log('=== 2026-06 日勤配置確認 ===');
+  
+  let totalCount = 0;
+  const byStaff = {};
+  const byJigyosho = {};
+  const byRole = {};
+  const records = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym !== '2026-06') continue;
+    const shift = String(data[i][8] || '').trim();
+    if (DAY_SHIFTS.indexOf(shift) === -1) continue;
+    
+    totalCount++;
+    const sid = String(data[i][6]).trim();
+    const name = data[i][7];
+    const jig = data[i][3];
+    const fac = data[i][4];
+    const role = String(data[i][18] || '').trim();
+    const dateStr = Utilities.formatDate(date, 'Asia/Tokyo', 'MM/dd');
+    
+    byStaff[sid] = (byStaff[sid] || 0) + 1;
+    byJigyosho[jig] = (byJigyosho[jig] || 0) + 1;
+    byRole[role || '(未設定)'] = (byRole[role || '(未設定)'] || 0) + 1;
+    
+    records.push({ date: dateStr, shift: shift, sid: sid, name: name, jig: jig, fac: fac, role: role });
+  }
+  
+  Logger.log('総日勤配置: ' + totalCount);
+  Logger.log('');
+  Logger.log('=== スタッフ別 ===');
+  Object.keys(byStaff).forEach(function(s) {
+    Logger.log('  staff_id=' + s + ': ' + byStaff[s] + '件');
+  });
+  Logger.log('');
+  Logger.log('=== 事業所別 ===');
+  Object.keys(byJigyosho).forEach(function(j) {
+    Logger.log('  ' + j + ': ' + byJigyosho[j] + '件');
+  });
+  Logger.log('');
+  Logger.log('=== 割当役割別 ===');
+  Object.keys(byRole).forEach(function(r) {
+    Logger.log('  ' + r + ': ' + byRole[r] + '件');
+  });
+  Logger.log('');
+  Logger.log('=== 配置詳細 ===');
+  records.forEach(function(r) {
+    Logger.log('  ' + r.date + ' ' + r.shift + ' / ' + r.sid + ' / ' + r.fac + ' / 役割=' + (r.role || '未設定'));
+  });
+}

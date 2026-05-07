@@ -227,6 +227,43 @@ function checkDailyHours(staffId, targetDate, addedHours, ctx) {
 }
 
 // ============================================================
+// 配置時の役割自動選択 (Step C 簡易版、Day10新規)
+// 引数:
+//   staff - スタッフオブジェクト (isSabikan/isSewa/isSeikatsu/isNurse などのフラグ)
+//   jigyoshoShortage - その事業所の不足判定 (例: {sewa: true, seikatsu: false, sabikan: false, nurse: true})
+// 戻り値: '世話人' | '生活支援員' | 'サビ管' | '看護師' | '管理者' | '' (該当なし)
+//
+// 優先順位:
+//   1. サビ管持ちなら無条件でサビ管 (サビ管最優先)
+//   2. 世話人不足 && 世話人持ち → 世話人
+//   3. 生活支援員不足 && 生活支援員持ち → 生活支援員
+//   4. 世話人持ち → 世話人 (両方足りてても世話人優先)
+//   5. 生活支援員持ち → 生活支援員
+//   6. 主職種T列の先頭値 (フォールバック)
+// ============================================================
+function pickAssignedRole(staff, jigyoshoShortage) {
+  if (!staff) return '';
+  const shortage = jigyoshoShortage || {};
+  
+  // 1. サビ管持ちならサビ管最優先
+  if (staff.isSabikan) return 'サビ管';
+  
+  // 2-3. 不足職種優先 (世話人 → 生活支援員)
+  if (shortage.sewa && staff.isSewa) return '世話人';
+  if (shortage.seikatsu && staff.isSeikatsu) return '生活支援員';
+  
+  // 4-5. 両方足りてれば世話人優先
+  if (staff.isSewa) return '世話人';
+  if (staff.isSeikatsu) return '生活支援員';
+  
+  // 6. 主職種フォールバック
+  if (staff.mainRoles && staff.mainRoles.length > 0) {
+    return staff.mainRoles[0];
+  }
+  return '';
+}
+
+// ============================================================
 // 連続勤務日数チェック
 // targetDate を含む前後の連続勤務日数をカウント
 // 戻り値: { exceeded: bool, count: number }

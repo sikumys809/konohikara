@@ -1009,8 +1009,11 @@ function calcRoleHoursV2(ctx) {
           r.kanrishaH += dayH;
         }
         
-        // 役割別カウント (管理者と他職種は同時加算可)
-        const role = _v2d_pickPrimaryRole(staff);
+        // ★ Day10改修: 役割別カウントは assignedRole ベース
+        // 配置時に pickAssignedRole で決定された役割を使う
+        // (旧: _v2d_pickPrimaryRole で主職種優先順位から自動選択)
+        // フォールバック: assignedRole が無い場合 (古い配置レコード) は旧ロジック
+        const role = a.assignedRole || _v2d_pickPrimaryRole(staff);
         if (role === 'サビ管') r.sabikanH += dayH;
         else if (role === '生活支援員') r.seikatsuH += dayH;
         else if (role === '世話人') r.sewaH += dayH;
@@ -1227,6 +1230,12 @@ function assignByScoreV2(ctx) {
     
     const pickedFac = pickFacilityForSlot(top.staff, slot, ctx);
     
+    // ★ Day10新規: 配置時に役割を自動選択 (Step C簡易版)
+    // shortage[slot.jigyosho] でその事業所の不足職種を見て、世話人/生活支援員/サビ管 を選ぶ
+    const assignedRole = (typeof pickAssignedRole === 'function')
+      ? pickAssignedRole(top.staff, shortage[slot.jigyosho])
+      : '';
+    
     slot.assignment = {
       staff_id: top.staff.staff_id,
       staff_name: top.staff.name,
@@ -1234,7 +1243,8 @@ function assignByScoreV2(ctx) {
       facility: pickedFac,
       score: top.score,
       warnings: top.warnings,
-      reason: reason
+      reason: reason,
+      assignedRole: assignedRole  // ★ Day10新規: T_シフト確定の19列目に書き込まれる
     };
     
     // ctx.staffAssignedDates に反映
@@ -1248,7 +1258,8 @@ function assignByScoreV2(ctx) {
       unit: '',
       workHours: wh,
       isNight: false,
-      isDay: true
+      isDay: true,
+      assignedRole: assignedRole  // ★ Day10新規: calcRoleHoursV2 で集計に使う
     });
     ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
     
