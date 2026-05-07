@@ -1222,7 +1222,7 @@ function reset_all_test_wishes_v2() {
   const sheet = ss.getSheetByName('T_希望提出');
   const data = sheet.getDataRange().getValues();
   
-  const testIds = ['8', '13', '312', '313', '314', '901', '902', '903'];
+  const testIds = ['8', '13', '18', '59', '312', '313', '314', '901', '902', '903'];  // ★Day10: 18/59 追加
   const toDelete = [];
   
   for (let i = 1; i < data.length; i++) {
@@ -1670,12 +1670,15 @@ function inject_day_test_4staff_2026_06() {
     };
   }
   
-  // 各スタッフの日勤投入計画 (15-19日に5日間、夜勤テスト1-10日と被らないよう)
+  // 各スタッフの日勤投入計画 (許可シフトとメイン施設に基づく最適化版)
+  // staff_id=13:  許可=[夜勤B,早出8h,遅出8h]   メイン=ルーデンス新板橋Ⅱ → 早出8h
+  // staff_id=18:  許可=[夜勤C]                 → 日勤テスト不可なので除外
+  // staff_id=59:  許可=[夜勤B,早出8h]          メイン=リフレ要町 → 早出8h
+  // staff_id=903: 許可=[早出8h,早出4h,遅出8h,遅出4h,夜勤C]  メイン=リフレ要町 → 遅出4h
   const plans = [
-    { sid: '13',  shift: '早出8h', days: [15, 16, 17, 18, 19] },
-    { sid: '18',  shift: '遅出8h', days: [15, 16, 17, 18, 19] },
-    { sid: '59',  shift: '早出4h', days: [15, 16, 17, 18, 19] },
-    { sid: '903', shift: '遅出4h', days: [15, 16, 17, 18, 19] }
+    { sid: '13',  shift: '早出8h', days: [15, 16, 17, 18, 19] },  // ルーデンス新板橋Ⅱ
+    { sid: '59',  shift: '早出8h', days: [15, 16, 17, 18, 19] },  // リフレ要町
+    { sid: '903', shift: '遅出4h', days: [15, 16, 17, 18, 19] }   // リフレ要町
   ];
   
   const targetYM = '2026-06';
@@ -1786,4 +1789,104 @@ function debug_check_day_placement_2026_06() {
   records.forEach(function(r) {
     Logger.log('  ' + r.date + ' ' + r.shift + ' / ' + r.sid + ' / ' + r.fac + ' / 役割=' + (r.role || '未設定'));
   });
+}
+
+// ============================================================
+// 4スタッフのマスタ情報確認 (Day10 Phase 3 デバッグ)
+// ============================================================
+function debug_check_4staff_master() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  Logger.log('=== 4スタッフのマスタ情報 ===');
+  Logger.log('');
+  
+  for (let i = 1; i < data.length; i++) {
+    const sid = String(data[i][0]).trim();
+    if (['13', '18', '59', '903'].indexOf(sid) === -1) continue;
+    
+    Logger.log('--- staff_id=' + sid + ' ---');
+    Logger.log('  氏名: ' + data[i][1]);
+    Logger.log('  J列(メイン): ' + data[i][9]);
+    Logger.log('  K列(セカンド): ' + data[i][10]);
+    Logger.log('  L列(サブ): ' + data[i][11]);
+    Logger.log('  N列(許可シフト): ' + data[i][13]);
+    Logger.log('  T列(主職種): ' + data[i][19]);
+    Logger.log('');
+  }
+}
+
+// ============================================================
+// findCandidatesV2 トレース (Day10 Phase 3 デバッグ)
+// 6/15 早出4h GHコノヒカラ slot に対して、staff_id=59 が候補に上がるか確認
+// ============================================================
+function debug_trace_candidate_59() {
+  if (typeof loadEngineContextV2 !== 'function') {
+    Logger.log('loadEngineContextV2 が見つからない');
+    return;
+  }
+  if (typeof generateSlotsV2 !== 'function') {
+    Logger.log('generateSlotsV2 が見つからない');
+    return;
+  }
+  
+  const ctx = loadEngineContextV2('2026-06');
+  generateSlotsV2(ctx);
+  
+  Logger.log('=== ctx確認 ===');
+  Logger.log('スタッフ: ' + Object.keys(ctx.staffMap).length);
+  Logger.log('希望: ' + ctx.wishes.length);
+  Logger.log('');
+  
+  const targetSid = '59';
+  const staff = ctx.staffMap[targetSid];
+  if (!staff) {
+    Logger.log('staff_id=59 が staffMap に無い');
+    return;
+  }
+  
+  Logger.log('=== staff_id=59 の情報 ===');
+  Logger.log('氏名: ' + staff.name);
+  Logger.log('mainFac: ' + staff.mainFac);
+  Logger.log('secondFac: ' + staff.secondFac);
+  Logger.log('subFacs: ' + JSON.stringify(staff.subFacs));
+  Logger.log('allowedShifts: ' + JSON.stringify(staff.allowedShifts));
+  Logger.log('isSewa: ' + staff.isSewa);
+  Logger.log('isSeikatsu: ' + staff.isSeikatsu);
+  Logger.log('');
+  
+  // 6/15 GHコノヒカラ 早出4h の希望があるか確認
+  const dsKey = '2026-06-15_早出4h';
+  const wishes = ctx.wishesByDayShift[dsKey] || [];
+  Logger.log('=== 2026-06-15 早出4h の希望 ===');
+  Logger.log('希望件数: ' + wishes.length);
+  wishes.forEach(function(w) {
+    Logger.log('  staff_id=' + w.staff_id + ' / mainFac=' + w.mainFac);
+  });
+  Logger.log('');
+  
+  // 6/15 GHコノヒカラ 早出4h slot 取得
+  const slotKey = '2026-06-15_GHコノヒカラ_早出4h';
+  const slot = ctx.slotsByKey[slotKey];
+  if (!slot) {
+    Logger.log('slot ' + slotKey + ' が無い');
+    return;
+  }
+  
+  Logger.log('=== slot 情報 ===');
+  Logger.log('jigyosho: ' + slot.jigyosho);
+  Logger.log('shift: ' + slot.shift);
+  Logger.log('date: ' + slot.dateKey);
+  Logger.log('');
+  
+  // findCandidatesV2 を実行
+  if (typeof findCandidatesV2 === 'function') {
+    const candidates = findCandidatesV2(ctx, slot);
+    Logger.log('=== findCandidatesV2 結果 ===');
+    Logger.log('候補数: ' + candidates.length);
+    candidates.forEach(function(c) {
+      Logger.log('  staff_id=' + c.staff.staff_id + ' / ' + c.staff.name);
+    });
+  }
 }
