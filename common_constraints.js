@@ -197,6 +197,36 @@ function _cc_getWeekStart(dateKey) {
 }
 
 // ============================================================
+// ============================================================
+// H14: 1日8時間上限チェック (労基法準拠)
+// targetDate を含む1日の合計勤務h + addedHours が8hを超えるか
+// 始業日帰属ルール:
+//   - 早出/遅出/夜勤A/B/C すべて targetDate に集約 (始業日)
+//   - ctx.staffAssignedDates[staffId][targetDate] の workHours 合計 + addedH
+// 戻り値: { exceeded, currentH, willBeH }
+//   currentH = 既存配置の合計h
+//   willBeH = currentH + addedHours
+//   exceeded = willBeH > 8
+// 根拠: 障害福祉法では配置基準時間カウントは労基法上の1日8h内のみ有効
+// ============================================================
+function checkDailyHours(staffId, targetDate, addedHours, ctx) {
+  const dates = (ctx.staffAssignedDates && ctx.staffAssignedDates[staffId]) || {};
+  const assigns = dates[targetDate] || [];
+  let currentH = 0;
+  
+  assigns.forEach(function(a) {
+    currentH += (a.workHours || 0);
+  });
+  
+  const willBeH = currentH + (addedHours || 0);
+  return {
+    exceeded: willBeH > 8,
+    currentH: currentH,
+    willBeH: willBeH
+  };
+}
+
+// ============================================================
 // 連続勤務日数チェック
 // targetDate を含む前後の連続勤務日数をカウント
 // 戻り値: { exceeded: bool, count: number }

@@ -433,6 +433,13 @@ function findCandidatesV4(ctx, slot, shiftType) {
     const weekly = checkWeeklyHours(staff.staff_id, slot.dateKey, addedH, ctx);
     if (weekly.exceeded) continue;
     
+    // ★ H14: 1日8時間上限超NG (労基法準拠、Day10新規)
+    // 障害福祉法では配置基準時間カウントは労基法上の1日8h内のみ有効
+    if (typeof checkDailyHours === 'function') {
+      const daily = checkDailyHours(staff.staff_id, slot.dateKey, addedH, ctx);
+      if (daily.exceeded) continue;
+    }
+    
     candidates.push({ staff: staff, wish: wish });
   }
   

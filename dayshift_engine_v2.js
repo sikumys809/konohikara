@@ -594,6 +594,13 @@ function findCandidatesV2(ctx, slot) {
       if (weekly.exceeded) continue;
     }
     
+    // ★ H14: 1日8時間上限超NG (労基法準拠、Day10新規)
+    // 障害福祉法では配置基準時間カウントは労基法上の1日8h内のみ有効
+    if (typeof checkDailyHours === 'function') {
+      const daily = checkDailyHours(staff.staff_id, slot.dateKey, addedH, ctx);
+      if (daily.exceeded) continue;
+    }
+    
     // H2/H3/H4/H5: 兼務NG = 同時刻に異なる役割で配置されるのを防ぐ仕様。
     // 仕様書: 「1人のスタッフが同時刻に世話人と生活支援員の両方の役割は不可。時間帯が違えばOK」
     // 主職種を複数持つこと自体は問題ないため、ここでは候補から弾かない。
