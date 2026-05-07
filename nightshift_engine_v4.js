@@ -1020,7 +1020,7 @@ function writeShiftResultsV4(ctx) {
   // 1. 対象月の既存夜勤レコードを削除 (日勤データは残す)
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
-    const allData = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+    const allData = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
     const rowsToDelete = [];
     for (let i = 0; i < allData.length; i++) {
       const ym = _v4_normYm(allData[i][NSE_V4.COL_CONF_YM]);
@@ -1052,14 +1052,14 @@ function writeShiftResultsV4(ctx) {
     const requestId = 'NSE-V4-' + ctx.targetYM + '-' + slot.unit.unit_id + '-' + slot.dateKey + '-' + a.shift;
     const status = a.warnings.length > 0 ? '警告承認待ち' : '仮';
     
-    // T_シフト確定 18列構造 (シート実体に合わせる)
+    // T_シフト確定 19列構造 (シート実体に合わせる)
     // ヘッダー: shift_id / 日付 / unit_id / 事業所名 / 施設名 / ユニット名 / staff_id / 氏名
     //          / シフト種別 / 開始時刻 / 終了時刻 / 配置カウント / ステータス / 更新日時
-    //          / 実開始時刻 / 実終了時刻 / 夜勤換算時間 / 日勤換算時間
+    //          / 実開始時刻 / 実終了時刻 / 夜勤換算時間 / 日勤換算時間 / 割当役割
     const row = [
       requestId,                  // [0] shift_id
       slot.date,                  // [1] 日付
-      slot.unit.unit_id,          // [2] unit_id  (★ year_month から修正)
+      slot.unit.unit_id,          // [2] unit_id
       slot.jigyosho,              // [3] 事業所名
       slot.facility,              // [4] 施設名
       slot.unit_name,             // [5] ユニット名
@@ -1075,6 +1075,7 @@ function writeShiftResultsV4(ctx) {
       shiftPat.end,               // [15] 実終了時刻
       shiftPat.nightHours,        // [16] 夜勤換算時間
       shiftPat.dayHours,          // [17] 日勤換算時間
+      a.assignedRole || '',       // [18] 割当役割 ★Day10新規
     ];
     newRows.push(row);
     placedCount++;
@@ -1082,7 +1083,7 @@ function writeShiftResultsV4(ctx) {
   
   if (newRows.length > 0) {
     const startRow = sheet.getLastRow() + 1;
-    sheet.getRange(startRow, 1, newRows.length, 18).setValues(newRows);
+    sheet.getRange(startRow, 1, newRows.length, 19).setValues(newRows);
     Logger.log('  新規夜勤レコード書き込み: ' + newRows.length + '件');
   }
   

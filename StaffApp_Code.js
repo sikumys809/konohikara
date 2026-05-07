@@ -1560,3 +1560,89 @@ function reset_t_shift_2026_06_v4() {
   for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
   Logger.log('削除: ' + toDelete.length);
 }
+
+function debug_count_active_staff() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  let total = 0;
+  let active = 0;
+  let retired = 0;
+  let withMain = 0;
+  let withAllowedShifts = 0;
+  
+  for (let i = 1; i < data.length; i++) {
+    const sid = String(data[i][0]).trim();
+    if (!sid) continue;
+    total++;
+    
+    const isRetired = data[i][16] === true || String(data[i][16]).toLowerCase() === 'true';
+    if (isRetired) {
+      retired++;
+    } else {
+      active++;
+      if (String(data[i][9] || '').trim() !== '') withMain++;
+      if (String(data[i][13] || '').trim() !== '') withAllowedShifts++;
+    }
+  }
+  
+  Logger.log('=== M_スタッフ 集計 ===');
+  Logger.log('  総数: ' + total);
+  Logger.log('  アクティブ: ' + active);
+  Logger.log('  退職: ' + retired);
+  Logger.log('  アクティブ&メイン施設あり: ' + withMain);
+  Logger.log('  アクティブ&許可シフトあり: ' + withAllowedShifts);
+}
+
+// ============================================================
+// T_シフト確定 19列目「割当役割」追加 (Day 10 Phase 1)
+// ============================================================
+function add_assignedRole_column_to_t_shift_kakutei() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  if (!sheet) {
+    Logger.log('ERROR: T_シフト確定 シートが見つからない');
+    return;
+  }
+  
+  const lastCol = sheet.getLastColumn();
+  Logger.log('=== add_assignedRole_column ===');
+  Logger.log('現在の列数: ' + lastCol);
+  
+  if (lastCol >= 19) {
+    const header19 = sheet.getRange(1, 19).getValue();
+    if (header19 === '割当役割') {
+      Logger.log('既に19列目「割当役割」が存在します。何もせずに終了。');
+      return;
+    } else {
+      Logger.log('警告: 19列目に既に別のヘッダーがあります: ' + header19);
+      Logger.log('処理を中断します。手動で確認してください。');
+      return;
+    }
+  }
+  
+  sheet.getRange(1, 19).setValue('割当役割');
+  Logger.log('OK: 19列目「割当役割」追加完了');
+}
+
+// ============================================================
+// T_シフト確定 2026-06 全クリア (Day 10 Phase 1)
+// ============================================================
+function reset_t_shift_kakutei_2026_06_full() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const toDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    const date = data[i][1];
+    if (!(date instanceof Date)) continue;
+    const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+    if (ym === '2026-06') toDelete.push(i + 1);
+  }
+  
+  for (let i = toDelete.length - 1; i >= 0; i--) sheet.deleteRow(toDelete[i]);
+  Logger.log('=== reset_t_shift_kakutei_2026_06_full ===');
+  Logger.log('削除件数: ' + toDelete.length);
+}
