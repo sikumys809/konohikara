@@ -92,6 +92,12 @@ const DSE_V2 = {
     ROLE_SHORT_SABIKAN: 20,  // サビ管不足時の加点
     ROLE_SHORT_NURSE: 15,    // 看護師不足時の加点
     ROLE_SHORT_SEWA: 15,     // 世話人不足時の加点
+    // ★Day11: E-st 事業所バランス加点
+    EST_BALANCE_BONUS: 12,      // 前回と逆事業所への配置を促す
+    EST_BALANCE_PENALTY: -8,    // 前回と同事業所連続を抑制
+    EST_INITIAL_BONUS: 3,       // 履歴なし時 staff_id偶奇方向への弱い誘導
+    EST_FACILITY: 'ルーデンス上板橋E-st',
+    EST_JIGYOSHOS: ['GHコノヒカラ板橋北区', 'GHコノヒカラ板橋北区セカンド'],
   },
   
   // エンジン挙動
@@ -163,6 +169,7 @@ function loadEngineContextV2(targetYM) {
     staffAssignedDates: {},  // {staffId: {dateKey: [{shift, jigyosho, facility, unit, workHours, role}]}}
     slots: [],
     slotsByKey: {},
+    estLastJigyoshoByStaff: {},  // ★Day11: E-st最新配置事業所キャッシュ
   };
   
   // 1. M_ユニット
@@ -361,6 +368,13 @@ function loadEngineContextV2(targetYM) {
           isDay: DSE_V2.DAY_SHIFTS.indexOf(shift) !== -1,
         });
         ctx.monthlyAssign[staffId] = (ctx.monthlyAssign[staffId] || 0) + 1;
+      }
+      
+      // 5c. ★Day11: E-st配置履歴 (対象月内、最新で上書き)
+      if (date >= monthStart && date < monthEnd
+          && facility === DSE_V2.SCORE.EST_FACILITY
+          && DSE_V2.SCORE.EST_JIGYOSHOS.indexOf(jigyosho) !== -1) {
+        ctx.estLastJigyoshoByStaff[staffId] = jigyosho;
       }
     }
   }
@@ -713,6 +727,27 @@ function calcScoreV2(ctx, staff, wish, slot, shortage) {
     if (sh.sabikan && staff.isSabikan) score += DSE_V2.SCORE.ROLE_SHORT_SABIKAN;
     if (sh.nurse && staff.isNurse) score += DSE_V2.SCORE.ROLE_SHORT_NURSE;
     if (sh.sewa && staff.isSewa) score += DSE_V2.SCORE.ROLE_SHORT_SEWA;
+  }
+  
+  // ★Day11: E-st 事業所バランス加点
+  if (DSE_V2.SCORE.EST_JIGYOSHOS.indexOf(fac) !== -1) {
+    const isEstStaff = (staff.mainFac === DSE_V2.SCORE.EST_FACILITY)
+                    || (staff.secondFac === DSE_V2.SCORE.EST_FACILITY)
+                    || ((staff.subFacs || []).indexOf(DSE_V2.SCORE.EST_FACILITY) !== -1);
+    if (isEstStaff) {
+      const last = ctx.estLastJigyoshoByStaff[staff.staff_id];
+      if (last) {
+        score += (last === fac)
+          ? DSE_V2.SCORE.EST_BALANCE_PENALTY
+          : DSE_V2.SCORE.EST_BALANCE_BONUS;
+      } else {
+        const idNum = parseInt(staff.staff_id, 10) || 0;
+        const preferred = (idNum % 2 === 0)
+          ? 'GHコノヒカラ板橋北区'
+          : 'GHコノヒカラ板橋北区セカンド';
+        if (preferred === fac) score += DSE_V2.SCORE.EST_INITIAL_BONUS;
+      }
+    }
   }
   
   return score;
@@ -1249,6 +1284,11 @@ function _v2d_processSlotsForPriority(ctx, priorityLevel, counters) {
       assignedRole: assignedRole,
       priorityLevel: priorityLevel  // ★Day10: どのパスで配置されたか記録
     };
+    // ★Day11: E-st配置時はバランスキャッシュ更新
+    if (slot.assignment.facility === DSE_V2.SCORE.EST_FACILITY
+        && DSE_V2.SCORE.EST_JIGYOSHOS.indexOf(slot.jigyosho) !== -1) {
+      ctx.estLastJigyoshoByStaff[slot.assignment.staff_id] = slot.jigyosho;
+    }
     
     // ctx.staffAssignedDates に反映
     if (!ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey]) {
