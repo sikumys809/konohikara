@@ -519,8 +519,10 @@ function calcRoleShortage(ctx) {
 
 // ============================================================
 // findCandidatesV2: 候補スタッフ抽出 (ハード除外H1〜H9)
+// ★Day10改修: priorityLevel 引数追加 (1=メイン, 2=セカンド, 3=サブ, 0/未指定=全部)
+//   メイン優先バグ修正のための2パス方式 (実は3パス) で使用
 // ============================================================
-function findCandidatesV2(ctx, slot) {
+function findCandidatesV2(ctx, slot, priorityLevel) {
   const dsKey = slot.dateKey + '_' + slot.shift;
   const wishes = ctx.wishesByDayShift[dsKey] || [];
   if (wishes.length === 0) return [];
@@ -534,9 +536,23 @@ function findCandidatesV2(ctx, slot) {
     // H9: 許可シフト外NG
     if (staff.allowedShifts.indexOf(slot.shift) === -1) continue;
     
-    // 当該事業所と希望事業所の一致確認 (柔軟: メイン/セカンド/サブのいずれか)
-    // wish の希望施設 (main/second/sub) のいずれかが slot.jigyosho 配下にあるか判定
-    const _wishFacs = [wish.mainFac, wish.secondFac].concat(wish.subFacs).filter(Boolean);
+    // 当該事業所と希望事業所の一致確認 (priorityLevel に応じてフィルタ変更)
+    // priorityLevel=1: wish.mainFac が slot.jigyosho 配下のみ
+    // priorityLevel=2: wish.secondFac が slot.jigyosho 配下のみ
+    // priorityLevel=3: wish.subFacs のいずれかが slot.jigyosho 配下のみ
+    // priorityLevel=0/未指定: メイン/セカンド/サブいずれか (旧ロジック後方互換)
+    let _wishFacs;
+    if (priorityLevel === 1) {
+      _wishFacs = [wish.mainFac].filter(Boolean);
+    } else if (priorityLevel === 2) {
+      _wishFacs = [wish.secondFac].filter(Boolean);
+    } else if (priorityLevel === 3) {
+      _wishFacs = (wish.subFacs || []).filter(Boolean);
+    } else {
+      // 後方互換: 全部マージ
+      _wishFacs = [wish.mainFac, wish.secondFac].concat(wish.subFacs || []).filter(Boolean);
+    }
+    if (_wishFacs.length === 0) continue;
     const _matched = _wishFacs.some(function(f) {
       return (ctx.facilityToJigyoshos[f] || []).indexOf(slot.jigyosho) !== -1;
     });
@@ -1171,51 +1187,38 @@ function pickFacilityForSlot(staff, slot, ctx) {
   return '';
 }
 
-// // Step 4.5: assignByScoreV2 配置メインロジック
 // ============================================================
-function assignByScoreV2(ctx) {
-  Logger.log('assignByScoreV2: 配置開始 (' + ctx.slots.length + 'スロット)');
-  
-  ctx.pendingWarnings = [];
-  let assignedCount = 0;
-  let warningBlockCount = 0;
-  let warningOnlyCount = 0;
-  let unassignedCount = 0;
-  
-  // スロットを日付順×事業所×シフト順に処理 (配置済みを順次反映するため)
+// _v2d_processSlotsForPriority: 1パス分のslot処理 (内部関数)
+// priorityLevel = 1(メイン), 2(セカンド), 3(サブ)
+// 戻り値: { assigned, warningBlock, warningOnly }
+// ★Day10新規: メイン優先バグ修正のための3パス方式の中核
+// ============================================================
+function _v2d_processSlotsForPriority(ctx, priorityLevel, counters) {
   for (let si = 0; si < ctx.slots.length; si++) {
     const slot = ctx.slots[si];
-    if (slot.assignment) continue;
+    if (slot.assignment) continue;  // 前のパスで配置済みは飛ばす
     
     // 不足職種を毎回再計算 (動的加点)
     const shortage = calcRoleShortage(ctx);
     
-    // 候補抽出 (ハード除外済み)
-    const candidates = findCandidatesV2(ctx, slot);
-    if (candidates.length === 0) {
-      unassignedCount++;
-      continue;
-    }
+    // 候補抽出 (priorityLevel に応じてフィルタ)
+    const candidates = findCandidatesV2(ctx, slot, priorityLevel);
+    if (candidates.length === 0) continue;
     
     // 各候補のスコア + 警告判定
     candidates.forEach(function(c) {
       c.score = calcScoreV2(ctx, c.staff, c.wish, slot, shortage);
       c.warnings = checkAllWarningsV2(c.staff, slot, ctx);
-      // W2警告 = 自動除外+警告 (block) → 候補としては残すが、他に候補がいれば優先される
-      // N2警告 = 警告のみ (only) → 配置はそのまま、警告だけ記録
     });
     
     // ソート: VIP > 警告blockなし > スコア降順
     candidates.sort(function(a, b) {
-      // 1. VIP優先
       const aVIP = a.staff.isVIP ? 1 : 0;
       const bVIP = b.staff.isVIP ? 1 : 0;
       if (aVIP !== bVIP) return bVIP - aVIP;
-      // 2. block警告なし優先 (only警告は配置に影響しない)
       const aBlock = a.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; }) ? 1 : 0;
       const bBlock = b.warnings.some(function(w) { return w.level === WARNING_LEVEL.BLOCK; }) ? 1 : 0;
       if (aBlock !== bBlock) return aBlock - bBlock;
-      // 3. スコア降順
       return b.score - a.score;
     });
     
@@ -1230,8 +1233,7 @@ function assignByScoreV2(ctx) {
     
     const pickedFac = pickFacilityForSlot(top.staff, slot, ctx);
     
-    // ★ Day10新規: 配置時に役割を自動選択 (Step C簡易版)
-    // shortage[slot.jigyosho] でその事業所の不足職種を見て、世話人/生活支援員/サビ管 を選ぶ
+    // 配置時に役割を自動選択 (Step C簡易版)
     const assignedRole = (typeof pickAssignedRole === 'function')
       ? pickAssignedRole(top.staff, shortage[slot.jigyosho])
       : '';
@@ -1244,7 +1246,8 @@ function assignByScoreV2(ctx) {
       score: top.score,
       warnings: top.warnings,
       reason: reason,
-      assignedRole: assignedRole  // ★ Day10新規: T_シフト確定の19列目に書き込まれる
+      assignedRole: assignedRole,
+      priorityLevel: priorityLevel  // ★Day10: どのパスで配置されたか記録
     };
     
     // ctx.staffAssignedDates に反映
@@ -1259,11 +1262,11 @@ function assignByScoreV2(ctx) {
       workHours: wh,
       isNight: false,
       isDay: true,
-      assignedRole: assignedRole  // ★ Day10新規: calcRoleHoursV2 で集計に使う
+      assignedRole: assignedRole
     });
     ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
     
-    assignedCount++;
+    counters.assigned++;
     
     // 警告レコードをバッファ
     top.warnings.forEach(function(w) {
@@ -1280,10 +1283,49 @@ function assignByScoreV2(ctx) {
         level: w.level,
         message: w.message
       });
-      if (w.level === WARNING_LEVEL.BLOCK) warningBlockCount++;
-      else warningOnlyCount++;
+      if (w.level === WARNING_LEVEL.BLOCK) counters.warningBlock++;
+      else counters.warningOnly++;
     });
   }
+}
+
+// ============================================================
+// Step 4.5: assignByScoreV2 配置メインロジック
+// ★Day10改修: 3パス方式 (メイン > セカンド > サブ の優先順位を保証)
+// ============================================================
+function assignByScoreV2(ctx) {
+  Logger.log('assignByScoreV2: 配置開始 (' + ctx.slots.length + 'スロット, 3パス方式)');
+  
+  ctx.pendingWarnings = [];
+  const counters = {
+    assigned: 0,
+    warningBlock: 0,
+    warningOnly: 0
+  };
+  
+  // Pass 1: メイン施設マッチのスタッフのみ配置
+  Logger.log('  [Pass 1] メイン優先パス開始');
+  const beforeP1 = counters.assigned;
+  _v2d_processSlotsForPriority(ctx, 1, counters);
+  Logger.log('  [Pass 1] 配置: ' + (counters.assigned - beforeP1) + 'スロット');
+  
+  // Pass 2: セカンド施設マッチのスタッフのみ配置 (Pass 1で未配置のslot)
+  Logger.log('  [Pass 2] セカンド優先パス開始');
+  const beforeP2 = counters.assigned;
+  _v2d_processSlotsForPriority(ctx, 2, counters);
+  Logger.log('  [Pass 2] 配置: ' + (counters.assigned - beforeP2) + 'スロット');
+  
+  // Pass 3: サブ施設マッチのスタッフのみ配置 (Pass 1/2で未配置のslot)
+  Logger.log('  [Pass 3] サブ優先パス開始');
+  const beforeP3 = counters.assigned;
+  _v2d_processSlotsForPriority(ctx, 3, counters);
+  Logger.log('  [Pass 3] 配置: ' + (counters.assigned - beforeP3) + 'スロット');
+  
+  // 集計
+  let assignedCount = counters.assigned;
+  let warningBlockCount = counters.warningBlock;
+  let warningOnlyCount = counters.warningOnly;
+  let unassignedCount = ctx.slots.length - assignedCount;
   
   Logger.log('assignByScoreV2: 配置完了');
   Logger.log('  配置済み: ' + assignedCount + 'スロット');
