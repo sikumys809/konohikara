@@ -552,6 +552,7 @@ function validateWishSubmission(wishes) {
   const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
   const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];
+  const LATE_SHIFTS = ['遅出8h', '遅出4h'];  // ★Day10新規
   
   // 日付別にインデックス化
   const byDate = {};
@@ -586,35 +587,38 @@ function validateWishSubmission(wishes) {
       }
     }
     
-    // ルール2: 同日 遅出8h → 夜勤A/B/C NG (遅出4hはOK)
+    // ルール2: 同日 日勤(早出8h/早出4h/遅出8h/遅出4h) + 夜勤A/B/C NG
+    // 労基法H14: 始業日帰属で1日8時間上限のため
+    // (Day10改修: 旧「遅出8h+夜勤NG, 遅出4h+夜勤OK」を労基法準拠に統一)
     if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
       const conflict = sameDayWishes.find(function(w) {
-        return w.shift === '遅出8h';
+        return EARLY_SHIFTS.indexOf(w.shift) !== -1 || LATE_SHIFTS.indexOf(w.shift) !== -1;
       });
       if (conflict) {
         violations.push({
-          rule: 'RULE2_LATE8_TO_NIGHT',
+          rule: 'RULE2_DAY_TO_NIGHT',
           dateKey: wish.dateKey,
           shift: wish.shift,
           conflictWith: conflict.shift,
-          message: wish.dateKey + 'は既に遅出8hが提出されています。遅出8h(〜22時)と夜勤の組み合わせは不可です。'
+          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。日勤と夜勤の組み合わせは1日8時間上限のため不可です。'
         });
       }
     }
     
-    // ルール3: 同日 夜勤A/B/C → 遅出8h NG (遅出4h+夜勤はOK)
-    // 早出は別途ルール4(前日夜勤→翌日早出)で扱う
-    if (wish.shift === '遅出8h') {
+    // ルール3: 同日 夜勤A/B/C + 日勤(早出8h/早出4h/遅出8h/遅出4h) NG (逆方向チェック)
+    // 労基法H14: 始業日帰属で1日8時間上限のため
+    // (Day10改修: 旧「夜勤+遅出8hのみNG」を全日勤シフトに拡張)
+    if (EARLY_SHIFTS.indexOf(wish.shift) !== -1 || LATE_SHIFTS.indexOf(wish.shift) !== -1) {
       const conflict = sameDayWishes.find(function(w) {
         return NIGHT_SHIFTS.indexOf(w.shift) !== -1;
       });
       if (conflict) {
         violations.push({
-          rule: 'RULE3_NIGHT_TO_LATE8',
+          rule: 'RULE3_NIGHT_TO_DAY',
           dateKey: wish.dateKey,
           shift: wish.shift,
           conflictWith: conflict.shift,
-          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。同日の遅出8h(〜22時)は不可です。'
+          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。夜勤と日勤の組み合わせは1日8時間上限のため不可です。'
         });
       }
     }
@@ -670,8 +674,8 @@ function debug_test_validate_wish_submission() {
   const ok = [
     { dateKey: '2026-06-01', shift: '早出8h' },
     { dateKey: '2026-06-02', shift: '夜勤A' },
-    { dateKey: '2026-06-04', shift: '遅出4h' },
-    { dateKey: '2026-06-04', shift: '夜勤A' }  // 遅出4h+夜勤A はOK
+    { dateKey: '2026-06-04', shift: '遅出4h' }
+    // ★Day10修正: 「遅出4h+夜勤A」は労基法H14でNGになったため除外
   ];
   Logger.log('--- TC1: 正常パターン (期待: valid=true) ---');
   const r1 = validateWishSubmission(ok);
@@ -710,14 +714,14 @@ function debug_test_validate_wish_submission() {
   Logger.log('valid: ' + r4.valid);
   r4.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
   
-  // テストケース5: 遅出4h+夜勤A はOK
-  const ok2 = [
+  // テストケース5: 遅出4h+夜勤A は労基法H14でNG (Day10改修)
+  const ng5 = [
     { dateKey: '2026-06-01', shift: '遅出4h' },
     { dateKey: '2026-06-01', shift: '夜勤A' }
   ];
   Logger.log('');
-  Logger.log('--- TC5: 遅出4h+夜勤A (期待: valid=true) ---');
-  const r5 = validateWishSubmission(ok2);
+  Logger.log('--- TC5: 遅出4h+夜勤A (期待: valid=false, 労基法H14) ---');
+  const r5 = validateWishSubmission(ng5);
   Logger.log('valid: ' + r5.valid);
   
   Logger.log('');
@@ -729,8 +733,8 @@ function debug_test_validate_detail() {
   const ok = [
     { dateKey: '2026-06-01', shift: '早出8h' },
     { dateKey: '2026-06-02', shift: '夜勤A' },
-    { dateKey: '2026-06-04', shift: '遅出4h' },
-    { dateKey: '2026-06-04', shift: '夜勤A' }
+    { dateKey: '2026-06-04', shift: '遅出4h' }
+    // ★Day10修正: 「遅出4h+夜勤A」は労基法H14でNGになったため除外
   ];
   const r1 = validateWishSubmission(ok);
   Logger.log('valid: ' + r1.valid);
