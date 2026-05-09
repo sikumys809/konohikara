@@ -85,6 +85,7 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
         rowIndex: idx + 2,
         shift_id: String(row[0]),
         date: dateKey,
+        jigyosho: jigyosho,                   // ★Day11 Phase4: E-st事業所切替UI用
         facility: facility,
         unitName: String(row[5] || ''),
         staff_id: String(row[6]),
@@ -342,6 +343,58 @@ function updateDayShiftSlot(adminStaffId, params) {
         warnings: addWarnings,
         hasBlockWarning: addWarnings.some(function(w) { return w.level === 'warning_block'; })
       };
+    }
+
+    // ★Day11 Phase4: E-st事業所切替 (D列+E列 両方更新)
+    if (action === 'changeJigyosho') {
+      if (!params.rowIndex || params.rowIndex < 2) {
+        return { success: false, message: 'rowIndex不正' };
+      }
+      const newJig = String(params.newJigyosho || '').trim();
+      const ALLOWED_JIGS = ['GHコノヒカラ板橋北区', 'GHコノヒカラ板橋北区セカンド'];
+      if (ALLOWED_JIGS.indexOf(newJig) === -1) {
+        return { success: false, message: '事業所が不正: ' + newJig };
+      }
+      
+      const beforeRow = sheet.getRange(params.rowIndex, 1, 1, 18).getValues()[0];
+      const beforeFac = String(beforeRow[4] || '').trim();
+      
+      // ★Day11 Phase4修正: 実体施設(カッコ付き)に前方一致
+      const isEstRealFac = beforeFac.indexOf('ルーデンス上板橋E-st') === 0
+                        && beforeFac !== 'ルーデンス上板橋E-st';
+      if (!isEstRealFac) {
+        return { success: false, message: 'E-st配置以外は事業所切替不可: ' + beforeFac };
+      }
+      
+      const oldJig = String(beforeRow[3] || '').trim();
+      if (oldJig === newJig) {
+        return { success: true, message: '変更なし' };
+      }
+      
+      // ★Day11 Phase4修正: 新事業所に対応する実体施設名を取得
+      const newRealFac = (newJig === 'GHコノヒカラ板橋北区')
+        ? 'ルーデンス上板橋E-st（板橋北区）'
+        : 'ルーデンス上板橋E-st（板橋北区セカンド）';
+      
+      // D列(4) と E列(5) を両方更新
+      sheet.getRange(params.rowIndex, 4).setValue(newJig);          // D列 事業所
+      sheet.getRange(params.rowIndex, 5).setValue(newRealFac);      // E列 施設(実体)
+      sheet.getRange(params.rowIndex, 14).setValue(new Date());     // N列 更新日時
+      
+      const staffName = String(beforeRow[7] || '');
+      const dateKey = beforeRow[1] instanceof Date
+        ? Utilities.formatDate(beforeRow[1], 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(beforeRow[1]);
+      
+      if (typeof _recordSlotEditLog === 'function') {
+        _recordSlotEditLog(adminStaffId, auth.name || '', 'changeJigyosho',
+          { rowIndex: params.rowIndex, oldJigyosho: oldJig, oldFacility: beforeFac },
+          { rowIndex: params.rowIndex, newJigyosho: newJig, newFacility: newRealFac, staff: staffName, date: dateKey }
+        );
+      }
+      
+      SpreadsheetApp.flush();
+      return { success: true, message: 'E-st事業所を切替: ' + oldJig + ' → ' + newJig };
     }
 
     return { success: false, message: '不正なaction: ' + action };

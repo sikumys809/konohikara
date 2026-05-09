@@ -195,6 +195,11 @@ function loadEngineContextV2(targetYM) {
     }
   }
   
+  // ★Day11 Phase4: E-st仮想キー追加 (M_スタッフのカッコ無し表記対応)
+  if (typeof _injectEstVirtualKey === 'function') {
+    _injectEstVirtualKey(ctx.facilityToJigyoshos);
+  }
+  
   // 2. M_スタッフ
   const staffSheet = ss.getSheetByName(DSE_V2.SHEET_NAME_STAFF);
   if (!staffSheet) throw new Error('M_スタッフシートが見つからない');
@@ -371,8 +376,9 @@ function loadEngineContextV2(targetYM) {
       }
       
       // 5c. ★Day11: E-st配置履歴 (対象月内、最新で上書き)
+      // ★Day11 Phase4修正: E列は実体施設(カッコ付き)なので前方一致で判定
       if (date >= monthStart && date < monthEnd
-          && facility === DSE_V2.SCORE.EST_FACILITY
+          && _isEstRealFacility(facility)
           && DSE_V2.SCORE.EST_JIGYOSHOS.indexOf(jigyosho) !== -1) {
         ctx.estLastJigyoshoByStaff[staffId] = jigyosho;
       }
@@ -1285,7 +1291,8 @@ function _v2d_processSlotsForPriority(ctx, priorityLevel, counters) {
       priorityLevel: priorityLevel  // ★Day10: どのパスで配置されたか記録
     };
     // ★Day11: E-st配置時はバランスキャッシュ更新
-    if (slot.assignment.facility === DSE_V2.SCORE.EST_FACILITY
+    // ★Day11 Phase4修正: facilityは実体施設(カッコ付き)なので前方一致で判定
+    if (_isEstRealFacility(slot.assignment.facility)
         && DSE_V2.SCORE.EST_JIGYOSHOS.indexOf(slot.jigyosho) !== -1) {
       ctx.estLastJigyoshoByStaff[slot.assignment.staff_id] = slot.jigyosho;
     }

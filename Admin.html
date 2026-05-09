@@ -4303,17 +4303,38 @@ function renderDsCellBody() {
   if (cell.placements.length === 0) {
     html += '<div style="padding: 12px; background: #f9fafb; border-radius: 6px; color: #9ca3af; text-align: center;">配置なし</div>';
   } else {
-    html += cell.placements.map(p => `
+    // ★Day11 Phase4: E-st施設の場合は事業所切替ドロップダウンを表示
+    // ★Day11 Phase4 修正: 実体施設(カッコ付き)に前方一致
+    const isEst = cell.facility && cell.facility.indexOf('ルーデンス上板橋E-st') === 0
+                  && cell.facility !== 'ルーデンス上板橋E-st';
+    html += cell.placements.map(p => {
+      let estSwitchHtml = '';
+      if (isEst) {
+        const optItabashi = (p.jigyosho === 'GHコノヒカラ板橋北区') ? 'selected' : '';
+        const optSecond = (p.jigyosho === 'GHコノヒカラ板橋北区セカンド') ? 'selected' : '';
+        estSwitchHtml = `
+          <div class="ds-p-jigyosho" style="margin-top: 6px; font-size: 11px; color: #6b7280;">
+            事業所:
+            <select onchange="changeDsJigyosho(${p.rowIndex}, this.value)" style="font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid #d1d5db;">
+              <option value="GHコノヒカラ板橋北区" ${optItabashi}>板橋北区</option>
+              <option value="GHコノヒカラ板橋北区セカンド" ${optSecond}>板橋北区セカンド</option>
+            </select>
+          </div>
+        `;
+      }
+      return `
       <div class="ds-placement-item">
         <div class="ds-p-info">
           <div class="ds-p-name">${escapeHtml(p.staff_name)}</div>
           <div class="ds-p-shift">${escapeHtml(p.shiftType)} (${escapeHtml(p.startTime)}〜${escapeHtml(p.endTime)})</div>
+          ${estSwitchHtml}
         </div>
         <div class="ds-p-actions">
           <button class="btn btn-small btn-danger" onclick="deleteDsPlacement(${p.rowIndex})">削除</button>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
   
   html += `<button class="ds-add-btn" onclick="showDsAddForm()">+ 配置を追加</button>`;
@@ -4469,6 +4490,38 @@ function confirmDsAdd() {
     staff_id: dsViewState.selectedCandidate,
     shiftType: shiftType
   });
+}
+
+// ★Day11 Phase4: E-st配置の事業所切替
+function changeDsJigyosho(rowIndex, newJigyosho) {
+  if (!rowIndex || !newJigyosho) return;
+  
+  const ALLOWED = ['GHコノヒカラ板橋北区', 'GHコノヒカラ板橋北区セカンド'];
+  if (ALLOWED.indexOf(newJigyosho) === -1) {
+    alert('不正な事業所: ' + newJigyosho);
+    return;
+  }
+  
+  const label = (newJigyosho === 'GHコノヒカラ板橋北区') ? '板橋北区' : '板橋北区セカンド';
+  
+  google.script.run
+    .withSuccessHandler(res => {
+      if (!res.success) {
+        alert('事業所切替失敗: ' + res.message);
+        return;
+      }
+      // 成功 → カレンダー再読み込み + モーダル閉じる
+      closeDsCellEditor();
+      loadDayShiftCalendar();
+    })
+    .withFailureHandler(err => {
+      alert('事業所切替エラー: ' + (err && err.message ? err.message : err));
+    })
+    .updateDayShiftSlot(currentAdmin.staff_id, {
+      action: 'changeJigyosho',
+      rowIndex: rowIndex,
+      newJigyosho: newJigyosho
+    });
 }
 
 function deleteDsPlacement(rowIndex) {

@@ -404,12 +404,13 @@ function findCandidatesV4(ctx, slot, shiftType) {
     if (staff.allowedShifts.indexOf(shiftType) === -1) continue;
     
     // ★ H10: 希望施設マッチ必須NG (メイン/セカンド/サブ以外への配置不可)
+    // ★Day11 Phase4: E-st仮想キー対応 (_facilityMatchesStaffで実体↔仮想両対応)
     const slotFac = slot.facility;
-    const isFacilityMatch = (
-      staff.mainFac === slotFac ||
-      staff.secondFac === slotFac ||
-      (staff.subFacs && staff.subFacs.indexOf(slotFac) !== -1)
-    );
+    const isFacilityMatch = (typeof _facilityMatchesStaff === 'function')
+      ? _facilityMatchesStaff(slotFac, staff) !== null
+      : (staff.mainFac === slotFac
+         || staff.secondFac === slotFac
+         || (staff.subFacs && staff.subFacs.indexOf(slotFac) !== -1));
     if (!isFacilityMatch) continue;
     
     // 既配置チェック: 同日同スタッフ複数希望は1回のみ (夜勤は1日1配置)
@@ -480,9 +481,15 @@ function calcScoreV4(ctx, staff, wish, slot) {
   const fac = slot.facility;
   
   // 施設マッチング
-  if (staff.mainFac === fac) score += NSE_V4.SCORE.MAIN_FAC;
-  else if (staff.secondFac === fac) score += NSE_V4.SCORE.SECOND_FAC;
-  else if (staff.subFacs.indexOf(fac) >= 0) score += NSE_V4.SCORE.SUB_FAC;
+  // ★Day11 Phase4: E-st仮想キー対応
+  const _matchType = (typeof _facilityMatchesStaff === 'function')
+    ? _facilityMatchesStaff(fac, staff)
+    : (staff.mainFac === fac ? 'main'
+       : staff.secondFac === fac ? 'second'
+       : (staff.subFacs.indexOf(fac) >= 0 ? 'sub' : null));
+  if (_matchType === 'main') score += NSE_V4.SCORE.MAIN_FAC;
+  else if (_matchType === 'second') score += NSE_V4.SCORE.SECOND_FAC;
+  else if (_matchType === 'sub') score += NSE_V4.SCORE.SUB_FAC;
   
   // 国家資格
   if (staff.qualification) score += NSE_V4.SCORE.QUALIFIED;

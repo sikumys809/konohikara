@@ -538,3 +538,429 @@ function debug_est_score_check() {
   Logger.log('  セカンド: ' + sC2 + '  (期待: PENALTY=-8)');
   Logger.log('  差分(板橋-セカンド): ' + (sC1 - sC2) + ' (期待: 20)');
 }
+
+// ============================================================
+// Day11 Phase4: E-st事業所切替APIテスト
+// ============================================================
+
+// 1. 実機のE-st配置レコードを探す（変更対象候補を見つける）
+function debug_find_est_placements() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  const dayShifts = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  
+  Logger.log('=== T_シフト確定 のE-st配置レコード ===');
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    if (String(r[4]).trim() !== 'ルーデンス上板橋E-st') continue;
+    if (dayShifts.indexOf(String(r[8])) === -1) continue;
+    
+    const date = r[1] instanceof Date 
+      ? Utilities.formatDate(r[1], 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(r[1]);
+    Logger.log('  row' + (i+1) + ': ' + date + ' / D=' + r[3] + ' / E=' + r[4] + ' / staff=' + r[7] + ' / shift=' + r[8]);
+    count++;
+    if (count >= 10) { Logger.log('  ... (10件で打ち切り)'); break; }
+  }
+  if (count === 0) Logger.log('  E-st日勤配置レコードなし');
+  Logger.log('');
+  Logger.log('合計: ' + count + ' 件 (頭10件のみ表示)');
+}
+
+// 2. updateDayShiftSlot の changeJigyosho action を単体テスト
+//    実行前に debug_find_est_placements で対象rowIndexを確認 → 下のtargetRowに設定
+function debug_test_change_jigyosho() {
+  const targetRow = 0;  // ←ここに debug_find_est_placements で見つけたrow番号を入れる
+  
+  if (!targetRow || targetRow < 2) {
+    Logger.log('❌ targetRow を debug_find_est_placements の結果から設定してください');
+    return;
+  }
+  
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  
+  const before = sheet.getRange(targetRow, 1, 1, 18).getValues()[0];
+  const beforeJig = before[3];
+  const beforeFac = before[4];
+  Logger.log('=== 変更前 ===');
+  Logger.log('  row' + targetRow + ': D=' + beforeJig + ' / E=' + beforeFac);
+  
+  // 反対側に切替
+  const newJig = (beforeJig === 'GHコノヒカラ板橋北区')
+    ? 'GHコノヒカラ板橋北区セカンド'
+    : 'GHコノヒカラ板橋北区';
+  
+  Logger.log('');
+  Logger.log('=== updateDayShiftSlot 呼び出し ===');
+  Logger.log('  newJigyosho: ' + newJig);
+  
+  const result = updateDayShiftSlot(13, {
+    action: 'changeJigyosho',
+    rowIndex: targetRow,
+    newJigyosho: newJig
+  });
+  
+  Logger.log('');
+  Logger.log('=== 結果 ===');
+  Logger.log(JSON.stringify(result));
+  
+  const after = sheet.getRange(targetRow, 1, 1, 18).getValues()[0];
+  Logger.log('');
+  Logger.log('=== 変更後 ===');
+  Logger.log('  row' + targetRow + ': D=' + after[3] + ' / E=' + after[4]);
+  Logger.log('  D列が変わったか: ' + (beforeJig !== after[3] ? '✅ 変更成功' : '❌ 変更されてない'));
+  Logger.log('  E列は変わってないか: ' + (beforeFac === after[4] ? '✅ 不変(正しい)' : '❌ 誤って変更された'));
+  
+  // 元に戻す
+  Logger.log('');
+  Logger.log('=== ロールバック ===');
+  const rollback = updateDayShiftSlot(13, {
+    action: 'changeJigyosho',
+    rowIndex: targetRow,
+    newJigyosho: beforeJig
+  });
+  Logger.log(JSON.stringify(rollback));
+  Logger.log('元に戻しました');
+}
+
+// 3. 不正な入力を検証（エラーハンドリング確認）
+function debug_test_change_jigyosho_invalid() {
+  Logger.log('=== バリデーションテスト ===');
+  
+  // ケースA: 不正な事業所
+  const r1 = updateDayShiftSlot(13, {
+    action: 'changeJigyosho',
+    rowIndex: 2,  // 何らかのrow
+    newJigyosho: 'GHコノヒカラ品川'  // E-st配下じゃない事業所
+  });
+  Logger.log('A. 不正事業所: ' + JSON.stringify(r1));
+  
+  // ケースB: rowIndex不正
+  const r2 = updateDayShiftSlot(13, {
+    action: 'changeJigyosho',
+    rowIndex: 0,
+    newJigyosho: 'GHコノヒカラ板橋北区'
+  });
+  Logger.log('B. rowIndex=0: ' + JSON.stringify(r2));
+  
+  // ケースC: 空jigyosho
+  const r3 = updateDayShiftSlot(13, {
+    action: 'changeJigyosho',
+    rowIndex: 2,
+    newJigyosho: ''
+  });
+  Logger.log('C. 空jigyosho: ' + JSON.stringify(r3));
+}
+
+// ============================================================
+// Day11 Phase4: E-st表記の実体総点検
+// ============================================================
+function debug_est_naming_audit() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  
+  Logger.log('=========== M_ユニット の E-st 行 ===========');
+  const unitData = ss.getSheetByName('M_ユニット').getDataRange().getValues();
+  for (let i = 1; i < unitData.length; i++) {
+    const fac = String(unitData[i][3] || '');
+    if (fac.indexOf('上板橋') !== -1 || fac.indexOf('E-st') !== -1) {
+      Logger.log('  row' + (i+1) + ': jig="' + unitData[i][1] + '" fac="' + fac + '"');
+    }
+  }
+  
+  Logger.log('');
+  Logger.log('=========== M_スタッフ の E-st 関連表記 ===========');
+  const staffData = ss.getSheetByName('M_スタッフ').getDataRange().getValues();
+  let mainHits=0, subHits=0;
+  const samples = [];
+  for (let i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    if (String(staffData[i][16]).toUpperCase() === 'TRUE') continue;
+    const main = String(staffData[i][9] || '');
+    const second = String(staffData[i][10] || '');
+    const sub = String(staffData[i][11] || '');
+    
+    if (main.indexOf('上板橋') !== -1 || main.indexOf('E-st') !== -1) {
+      mainHits++;
+      if (samples.length < 5) samples.push('row' + (i+1) + ' MAIN="' + main + '"');
+    }
+    if (second.indexOf('上板橋') !== -1 || second.indexOf('E-st') !== -1) {
+      if (samples.length < 5) samples.push('row' + (i+1) + ' SECOND="' + second + '"');
+    }
+    if (sub.indexOf('上板橋') !== -1 || sub.indexOf('E-st') !== -1) {
+      subHits++;
+      if (samples.length < 8) samples.push('row' + (i+1) + ' SUB="' + sub + '"');
+    }
+  }
+  Logger.log('MAIN=' + mainHits + '名 / SUBに含む=' + subHits + '名');
+  samples.forEach(function(s) { Logger.log('  ' + s); });
+  
+  Logger.log('');
+  Logger.log('=========== T_シフト確定 の E-st 配置レコード（全件）===========');
+  const cfData = ss.getSheetByName('T_シフト確定').getDataRange().getValues();
+  let cfCount=0;
+  for (let i = 1; i < cfData.length; i++) {
+    const fac = String(cfData[i][4] || '');
+    if (fac.indexOf('上板橋') !== -1 || fac.indexOf('E-st') !== -1) {
+      const date = cfData[i][1] instanceof Date 
+        ? Utilities.formatDate(cfData[i][1], 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(cfData[i][1]);
+      Logger.log('  row' + (i+1) + ': D="' + cfData[i][3] + '" E="' + fac + '" date=' + date + ' shift=' + cfData[i][8]);
+      cfCount++;
+      if (cfCount >= 10) { Logger.log('  ...(10件で打ち切り)'); break; }
+    }
+  }
+  if (cfCount === 0) Logger.log('  T_シフト確定にE-st配置なし（クリーン状態）');
+  
+  Logger.log('');
+  Logger.log('=========== facilityToJigyoshos キー（エンジン側構築）===========');
+  if (typeof loadEngineContextV2 === 'function') {
+    const ctx = loadEngineContextV2('2026-06');
+    Object.keys(ctx.facilityToJigyoshos).forEach(function(f) {
+      if (f.indexOf('上板橋') !== -1 || f.indexOf('E-st') !== -1) {
+        Logger.log('  "' + f + '" → [' + ctx.facilityToJigyoshos[f].join(', ') + ']');
+      }
+    });
+  }
+}
+
+function debug_est_naming_audit() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  
+  Logger.log('=========== M_ユニット の E-st 行 ===========');
+  const unitData = ss.getSheetByName('M_ユニット').getDataRange().getValues();
+  for (let i = 1; i < unitData.length; i++) {
+    const fac = String(unitData[i][3] || '');
+    if (fac.indexOf('上板橋') !== -1 || fac.indexOf('E-st') !== -1) {
+      Logger.log('  row' + (i+1) + ': jig="' + unitData[i][1] + '" fac="' + fac + '"');
+    }
+  }
+  
+  Logger.log('');
+  Logger.log('=========== M_スタッフ の E-st 表記サンプル ===========');
+  const staffData = ss.getSheetByName('M_スタッフ').getDataRange().getValues();
+  let n=0;
+  for (let i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    if (String(staffData[i][16]).toUpperCase() === 'TRUE') continue;
+    const j = String(staffData[i][9] || '');
+    const k = String(staffData[i][10] || '');
+    const l = String(staffData[i][11] || '');
+    if ((j+k+l).indexOf('上板橋') === -1 && (j+k+l).indexOf('E-st') === -1) continue;
+    Logger.log('  row' + (i+1) + ' name=' + staffData[i][1]);
+    Logger.log('    J(main)="' + j + '"');
+    Logger.log('    K(second)="' + k + '"');
+    Logger.log('    L(sub)="' + l + '"');
+    n++;
+    if (n >= 5) { Logger.log('  ...(5名で打ち切り)'); break; }
+  }
+  
+  Logger.log('');
+  Logger.log('=========== T_シフト確定 のE-st 過去全件 ===========');
+  const cfData = ss.getSheetByName('T_シフト確定').getDataRange().getValues();
+  let cfN=0;
+  for (let i = 1; i < cfData.length; i++) {
+    const fac = String(cfData[i][4] || '');
+    if (fac.indexOf('上板橋') !== -1 || fac.indexOf('E-st') !== -1) {
+      const date = cfData[i][1] instanceof Date 
+        ? Utilities.formatDate(cfData[i][1], 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(cfData[i][1]);
+      Logger.log('  row' + (i+1) + ': D="' + cfData[i][3] + '" E="' + fac + '" date=' + date);
+      cfN++;
+      if (cfN >= 10) break;
+    }
+  }
+  if (cfN === 0) Logger.log('  E-st配置レコードなし（クリーン）');
+  
+  Logger.log('');
+  Logger.log('=========== facilityToJigyoshos のE-st関連キー ===========');
+  if (typeof loadEngineContextV2 === 'function') {
+    const ctx = loadEngineContextV2('2026-06');
+    Object.keys(ctx.facilityToJigyoshos).forEach(function(f) {
+      if (f.indexOf('上板橋') !== -1 || f.indexOf('E-st') !== -1) {
+        Logger.log('  "' + f + '" → [' + ctx.facilityToJigyoshos[f].join(', ') + ']');
+      }
+    });
+  }
+}
+
+// ============================================================
+// Day11 Phase4: engine_common.js のヘルパー単体テスト
+// ============================================================
+function debug_engine_common_test() {
+  Logger.log('=== _isEstRealFacility ===');
+  const cases1 = [
+    ['ルーデンス上板橋E-st（板橋北区）', true],
+    ['ルーデンス上板橋E-st（板橋北区セカンド）', true],
+    ['ルーデンス上板橋E-st', false],   // 仮想キーは実体ではない
+    ['リフレ要町', false],
+    ['', false],
+    [null, false],
+  ];
+  cases1.forEach(function(c) {
+    const got = _isEstRealFacility(c[0]);
+    const ok = got === c[1] ? '✅' : '❌';
+    Logger.log('  ' + ok + ' "' + c[0] + '" → ' + got + ' (期待: ' + c[1] + ')');
+  });
+  
+  Logger.log('');
+  Logger.log('=== _isEstVirtualKey ===');
+  const cases2 = [
+    ['ルーデンス上板橋E-st', true],
+    ['ルーデンス上板橋E-st（板橋北区）', false],
+    ['リフレ要町', false],
+  ];
+  cases2.forEach(function(c) {
+    const got = _isEstVirtualKey(c[0]);
+    const ok = got === c[1] ? '✅' : '❌';
+    Logger.log('  ' + ok + ' "' + c[0] + '" → ' + got + ' (期待: ' + c[1] + ')');
+  });
+  
+  Logger.log('');
+  Logger.log('=== _estRealFacilityToJigyosho ===');
+  Logger.log('  "（板橋北区）"   → ' + _estRealFacilityToJigyosho('ルーデンス上板橋E-st（板橋北区）'));
+  Logger.log('  "（セカンド）"   → ' + _estRealFacilityToJigyosho('ルーデンス上板橋E-st（板橋北区セカンド）'));
+  Logger.log('  "リフレ要町"      → ' + _estRealFacilityToJigyosho('リフレ要町'));
+  
+  Logger.log('');
+  Logger.log('=== _jigyoshoToEstRealFacility ===');
+  Logger.log('  "板橋北区"        → ' + _jigyoshoToEstRealFacility('GHコノヒカラ板橋北区'));
+  Logger.log('  "セカンド"        → ' + _jigyoshoToEstRealFacility('GHコノヒカラ板橋北区セカンド'));
+  Logger.log('  "品川"           → ' + _jigyoshoToEstRealFacility('GHコノヒカラ品川'));
+  
+  Logger.log('');
+  Logger.log('=== _facilityMatchesStaff (3パターン) ===');
+  
+  // パターン1: メインに仮想キー保有
+  const staffA = {
+    mainFac: 'ルーデンス上板橋E-st',  // 仮想キー
+    secondFac: 'リフレ要町',
+    subFacs: ['EST東長崎']
+  };
+  Logger.log('staffA: mainFac=仮想キー');
+  Logger.log('  実体（板橋北区）   → ' + _facilityMatchesStaff('ルーデンス上板橋E-st（板橋北区）', staffA) + ' (期待: main)');
+  Logger.log('  実体（セカンド）   → ' + _facilityMatchesStaff('ルーデンス上板橋E-st（板橋北区セカンド）', staffA) + ' (期待: main)');
+  Logger.log('  リフレ要町         → ' + _facilityMatchesStaff('リフレ要町', staffA) + ' (期待: second)');
+  Logger.log('  ルーデンス本蓮沼   → ' + _facilityMatchesStaff('ルーデンス本蓮沼', staffA) + ' (期待: null)');
+  
+  // パターン2: subに仮想キー保有
+  const staffB = {
+    mainFac: 'リフレ要町',
+    secondFac: 'EST東長崎',
+    subFacs: ['ルーデンス上板橋E-st', 'ルーデンス本蓮沼']
+  };
+  Logger.log('staffB: subFacsに仮想キー');
+  Logger.log('  実体（板橋北区）   → ' + _facilityMatchesStaff('ルーデンス上板橋E-st（板橋北区）', staffB) + ' (期待: sub)');
+  Logger.log('  実体（セカンド）   → ' + _facilityMatchesStaff('ルーデンス上板橋E-st（板橋北区セカンド）', staffB) + ' (期待: sub)');
+  
+  // パターン3: E-st無関係
+  const staffC = {
+    mainFac: 'リフレ要町',
+    secondFac: 'EST東長崎',
+    subFacs: ['ルーデンス本蓮沼']
+  };
+  Logger.log('staffC: E-st無関係');
+  Logger.log('  実体（板橋北区）   → ' + _facilityMatchesStaff('ルーデンス上板橋E-st（板橋北区）', staffC) + ' (期待: null)');
+  Logger.log('  リフレ要町         → ' + _facilityMatchesStaff('リフレ要町', staffC) + ' (期待: main)');
+  
+  Logger.log('');
+  Logger.log('=== _injectEstVirtualKey 動作確認 ===');
+  const fmap = {
+    'ルーデンス上板橋E-st（板橋北区）': ['GHコノヒカラ板橋北区'],
+    'ルーデンス上板橋E-st（板橋北区セカンド）': ['GHコノヒカラ板橋北区セカンド'],
+    'リフレ要町': ['GHコノヒカラ']
+  };
+  _injectEstVirtualKey(fmap);
+  Logger.log('  仮想キー追加後 ルーデンス上板橋E-st: ' + JSON.stringify(fmap['ルーデンス上板橋E-st']));
+  Logger.log('  期待: ["GHコノヒカラ板橋北区","GHコノヒカラ板橋北区セカンド"]');
+}
+
+
+// ============================================================
+// Day11 Phase4: facilityToJigyoshos に仮想キーが入ったか確認
+// ============================================================
+function debug_facility_map_after_inject() {
+  const ctx = loadEngineContextV2('2026-06');
+  Logger.log('=== facilityToJigyoshos のE-st関連キー (修正後) ===');
+  Object.keys(ctx.facilityToJigyoshos).forEach(function(f) {
+    if (f.indexOf('上板橋') !== -1 || f.indexOf('E-st') !== -1) {
+      Logger.log('  "' + f + '" -> [' + ctx.facilityToJigyoshos[f].join(', ') + ']');
+    }
+  });
+  
+  Logger.log('');
+  Logger.log('期待:');
+  Logger.log('  "ルーデンス上板橋E-st" -> [GHコノヒカラ板橋北区, GHコノヒカラ板橋北区セカンド]  *仮想キー*');
+  Logger.log('  "ルーデンス上板橋E-st(板橋北区)" -> [GHコノヒカラ板橋北区]');
+  Logger.log('  "ルーデンス上板橋E-st(板橋北区セカンド)" -> [GHコノヒカラ板橋北区セカンド]');
+}
+
+
+// ============================================================
+// Day11 Phase4: E-st UI動作確認用テストデータ投入/削除
+// ============================================================
+
+// 注入: staff_id=119(原拓朗 E-stメイン) の 2026-06-15 早出8h 板橋北区 配置を1件作る
+function debug_inject_est_test_placement() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  
+  const testRow = [
+    'TEST_EST_DAY11_PHASE4',                    // A shift_id (識別用、削除時に使う)
+    new Date(2026, 5, 15),                       // B 日付 2026-06-15
+    '',                                           // C unit_id (日勤は空)
+    'GHコノヒカラ板橋北区',                       // D 事業所
+    'ルーデンス上板橋E-st（板橋北区）',           // E 施設(実体)
+    '',                                           // F ユニット名 (日勤は空)
+    119,                                          // G staff_id
+    '原拓朗',                                     // H 氏名
+    '早出8h',                                     // I シフト種別
+    '07:00',                                      // J 開始
+    '16:00',                                      // K 終了
+    1,                                            // L 配置カウント
+    '仮',                                         // M ステータス
+    new Date(),                                   // N 更新日時
+    '07:00',                                      // O 実開始
+    '16:00',                                      // P 実終了
+    0,                                            // Q 夜勤換算
+    8,                                            // R 日勤換算
+    '世話人'                                      // S 割当役割
+  ];
+  
+  sheet.appendRow(testRow);
+  const newRowIdx = sheet.getLastRow();
+  sheet.getRange(newRowIdx, 2).setNumberFormat('yyyy-MM-dd');
+  sheet.getRange(newRowIdx, 14).setNumberFormat('yyyy-MM-dd HH:mm:ss');
+  
+  Logger.log('=== テスト配置注入完了 ===');
+  Logger.log('  row=' + newRowIdx);
+  Logger.log('  shift_id=TEST_EST_DAY11_PHASE4');
+  Logger.log('  staff_id=119 原拓朗');
+  Logger.log('  date=2026-06-15');
+  Logger.log('  jigyosho=GHコノヒカラ板橋北区');
+  Logger.log('  facility=ルーデンス上板橋E-st（板橋北区）');
+  Logger.log('  shift=早出8h');
+  Logger.log('');
+  Logger.log('▶ Admin画面で 2026-06 を選択 → 板橋北区行 > ルーデンス上板橋E-st（板橋北区）行 > 6/15のセルを開く');
+  Logger.log('▶ 終わったら debug_remove_est_test_placement で削除');
+}
+
+// 削除: shift_id=TEST_EST_DAY11_PHASE4 の行を削除
+function debug_remove_est_test_placement() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  let removed = 0;
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === 'TEST_EST_DAY11_PHASE4') {
+      sheet.deleteRow(i + 1);
+      removed++;
+      Logger.log('  row' + (i+1) + ' を削除');
+    }
+  }
+  
+  Logger.log('=== 削除完了: ' + removed + '件 ===');
+}
