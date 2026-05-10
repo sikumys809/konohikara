@@ -2136,3 +2136,170 @@ function debug_audit_test_data_quality() {
     Logger.log('  ' + uid + ' (施設=' + fac + '): 夜勤希望者' + cnt + '名 / 必要30日分');
   });
 }
+
+
+// ============================================================
+// Phase 5.5 テスト用関数: 1人だけ freqCount を上書き設定して検証
+// ============================================================
+
+// 指定スタッフの freqCount を一時的に上書き (テスト用)
+function debug_set_freq_for_one_staff(staffId, freqType, freqCount) {
+  staffId = staffId || '901';
+  freqType = freqType || '月次合計';
+  freqCount = freqCount || 8;
+  
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  let updated = 0;
+  
+  for (let i = 1; i < data.length; i++) {
+    const ymVal = data[i][4];
+    const ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'JST', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    if (ymStr !== '2026-06') continue;
+    
+    const sid = String(data[i][2]).trim();
+    if (sid !== String(staffId).trim()) continue;
+    
+    sheet.getRange(i + 1, 12).setValue(freqType);   // L列(1-index 12)
+    sheet.getRange(i + 1, 13).setValue(freqCount);  // M列(1-index 13)
+    updated++;
+  }
+  
+  Logger.log('=== freqCount 上書き完了 ===');
+  Logger.log('staffId: ' + staffId);
+  Logger.log('freqType: ' + freqType);
+  Logger.log('freqCount: ' + freqCount);
+  Logger.log('更新行数: ' + updated);
+}
+
+// 全スタッフのfreq設定 + 配置数を比較して整合チェック
+function debug_phase5_freq_status_all() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  const confSheet = ss.getSheetByName('T_シフト確定');
+  
+  const wishData = wishSheet.getDataRange().getValues();
+  const staffFreq = {};
+  for (let i = 1; i < wishData.length; i++) {
+    const ymVal = wishData[i][4];
+    const ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'JST', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    if (ymStr !== '2026-06') continue;
+    const sid = String(wishData[i][2]).trim();
+    if (staffFreq[sid]) continue;
+    const type = String(wishData[i][11] || '').trim();
+    const count = parseInt(wishData[i][12]) || 0;
+    if (type && count > 0) staffFreq[sid] = { type: type, count: count };
+  }
+  
+  const confData = confSheet.getDataRange().getValues();
+  const staffCount = {};
+  for (let i = 1; i < confData.length; i++) {
+    const dateVal = confData[i][1];
+    const dateStr = (dateVal instanceof Date)
+      ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM') : String(dateVal || '').substring(0, 7);
+    if (dateStr !== '2026-06') continue;
+    const sid = String(confData[i][6] || '').trim();  // ★G列(idx=6) staff_id
+    if (!sid) continue;
+    staffCount[sid] = (staffCount[sid] || 0) + 1;
+  }
+  
+  Logger.log('=== freq vs 配置数 ===');
+  Logger.log('staffFreq設定済: ' + Object.keys(staffFreq).length + '名');
+  let overLimit = 0, underLimit = 0, exactLimit = 0;
+  Object.keys(staffFreq).forEach(function(sid) {
+    const f = staffFreq[sid];
+    const c = staffCount[sid] || 0;
+    if (c > f.count) overLimit++;
+    else if (c === f.count) exactLimit++;
+    else underLimit++;
+  });
+  Logger.log('  上限超過(NG): ' + overLimit);
+  Logger.log('  上限ピッタリ: ' + exactLimit);
+  Logger.log('  上限以下: ' + underLimit);
+  
+  if (overLimit > 0) {
+    Logger.log('');
+    Logger.log('=== 上限超過スタッフ (重大NG) ===');
+    Object.keys(staffFreq).forEach(function(sid) {
+      const f = staffFreq[sid];
+      const c = staffCount[sid] || 0;
+      if (c > f.count) {
+        Logger.log('  sid=' + sid + ' / 設定=' + f.type + '/' + f.count + ' / 実配置=' + c);
+      }
+    });
+  }
+}
+
+
+// Phase 5.5: T_希望提出 2026-06 から実在のstaff_idサンプルを取得
+function debug_phase5_pick_sample_staff() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_希望提出');
+  const data = sheet.getDataRange().getValues();
+  
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const counts = {};  // sid → 夜勤希望件数
+  
+  for (let i = 1; i < data.length; i++) {
+    const ymVal = data[i][4];
+    const ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'JST', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    if (ymStr !== '2026-06') continue;
+    const shift = String(data[i][6] || '').trim();
+    if (NIGHT.indexOf(shift) === -1) continue;
+    const sid = String(data[i][2]).trim();
+    counts[sid] = (counts[sid] || 0) + 1;
+  }
+  
+  // 夜勤希望件数の多いスタッフ上位10名を出す
+  const list = Object.keys(counts).map(function(sid) { return {sid: sid, count: counts[sid]}; });
+  list.sort(function(a, b) { return b.count - a.count; });
+  
+  Logger.log('=== 夜勤希望件数 上位10名 ===');
+  list.slice(0, 10).forEach(function(s) {
+    Logger.log('  sid=' + s.sid + ' / 夜勤希望: ' + s.count + '件');
+  });
+  Logger.log('');
+  Logger.log('テストには上記から 夜勤希望が10件以上ある人を選んで');
+  Logger.log('debug_set_freq_for_one_staff(\'<sid>\', \'月次合計\', 8) で freqCount=8 設定');
+}
+
+
+// Phase 5.5: sid=24 で freqCount=8 を設定するラッパー (引数不要、GASエディタから直接実行可)
+function debug_phase5_set_sid24_freq8() {
+  debug_set_freq_for_one_staff('24', '月次合計', 8);
+}
+
+// 任意staff_idの実配置数を出す
+function debug_phase5_count_staff_assignments(staffId) {
+  staffId = staffId || '24';
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  let cnt = 0;
+  const dates = [];
+  for (let i = 1; i < data.length; i++) {
+    const dateVal = data[i][1];
+    const dateStr = (dateVal instanceof Date)
+      ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM-dd') : String(dateVal || '').substring(0, 10);
+    if (dateStr.substring(0, 7) !== '2026-06') continue;
+    const sid = String(data[i][6] || '').trim();  // ★G列(idx=6) staff_id
+    if (sid !== String(staffId).trim()) continue;
+    cnt++;
+    const shift = String(data[i][8] || '').trim();
+    dates.push(dateStr + ' ' + shift);
+  }
+  Logger.log('=== sid=' + staffId + ' の2026-06配置 ===');
+  Logger.log('配置数: ' + cnt);
+  dates.forEach(function(d) { Logger.log('  ' + d); });
+}
+
+function debug_phase5_count_sid24() {
+  debug_phase5_count_staff_assignments('24');
+}
