@@ -52,6 +52,8 @@ const NSE_V4 = {
   COL_REQ_SECOND: 8,
   COL_REQ_SUB: 9,
   COL_REQ_COMMENT: 10,
+  COL_REQ_FREQ_TYPE: 11,   // L列: 希望頻度タイプ ('月次合計' | '週次')
+  COL_REQ_FREQ_COUNT: 12,  // M列: 希望頻度数 (整数)
   
   // T_シフト確定 列 (18列構造、setup_dayshift.js準拠)
   // A:request_id / B:date / C:year_month / D:jigyosho / E:facility / F:unit / G:staff_id
@@ -138,6 +140,9 @@ function loadEngineContextV4(targetYM) {
     wishesByStaff: {},
     wishesByStaffDay: {},
     wishesByDayShift: {},
+    staffFreq: {},          // ★Phase 5.1: staff_id → {type: '月次合計'|'週次', count: N}
+    staffMonthlyCount: {},  // ★Phase 5.1: staff_id → 当月配置数 (上限チェック用)
+    staffWeeklyCount: {},   // ★Phase 5.1: staff_id_weekKey → 週単位配置数
     history3m: {},
     historyCount: 0,
     monthlyAssign: {},
@@ -237,7 +242,13 @@ function loadEngineContextV4(targetYM) {
         secondFac: String(row[NSE_V4.COL_REQ_SECOND] || '').trim(),
         subFacs: subRaw ? subRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
         comment: row[NSE_V4.COL_REQ_COMMENT] || '',
+        freqType: String(row[NSE_V4.COL_REQ_FREQ_TYPE] || '').trim(),
+        freqCount: parseInt(row[NSE_V4.COL_REQ_FREQ_COUNT]) || 0,
       };
+      // ★Phase 5.1: ctx.staffFreq にスタッフ単位で保存 (最初の値を採用、各行に複製されてる前提)
+      if (!ctx.staffFreq[staffId] && wish.freqType && wish.freqCount > 0) {
+        ctx.staffFreq[staffId] = { type: wish.freqType, count: wish.freqCount };
+      }
       
       ctx.wishes.push(wish);
       if (!ctx.wishesByStaff[staffId]) ctx.wishesByStaff[staffId] = [];
@@ -299,6 +310,7 @@ function loadEngineContextV4(targetYM) {
           workHours: workHours,
         });
         ctx.monthlyAssign[staffId] = (ctx.monthlyAssign[staffId] || 0) + 1;
+        if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, staffId, dateKey);
       }
     }
   }
@@ -412,6 +424,9 @@ function findCandidatesV4(ctx, slot, shiftType) {
          || staff.secondFac === slotFac
          || (staff.subFacs && staff.subFacs.indexOf(slotFac) !== -1));
     if (!isFacilityMatch) continue;
+    
+    // ★Phase 5.3: freqCount 上限チェック (自動配置の上限)
+    if (_v_isFreqLimitExceeded(ctx, staff.staff_id, slot.dateKey)) continue;
     
     // 既配置チェック: 同日同スタッフ複数希望は1回のみ (夜勤は1日1配置)
     const sameDayAssigns = ctx.staffAssignedDates[staff.staff_id][slot.dateKey] || [];
@@ -880,6 +895,7 @@ function assignByScoreV4(ctx) {
       workHours: wh
     });
     ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
+    if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, top.staff.staff_id, slot.dateKey);
     
     assignedCount++;
     

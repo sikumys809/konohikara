@@ -99,3 +99,64 @@ function _injectEstVirtualKey(facilityToJigyoshos) {
   });
   facilityToJigyoshos[vk] = merged;
 }
+
+
+// ============================================================
+// Phase 5.2: 希望頻度 (freqCount) 関連ヘルパー
+// ============================================================
+
+// 月曜始まりISO週のキー生成 (YYYY-WW形式: 例 "2026-W23")
+// JST固定で計算、月をまたぐ週は同じキーになる (=月またぎはユーザー側で別途扱う)
+function _v_weekKey(dateKey) {
+  const d = new Date(dateKey + 'T00:00:00');
+  // ISO 8601: 月曜=1〜日曜=7。getDay()は日曜=0なので変換
+  const day = d.getDay();
+  const dayISO = day === 0 ? 7 : day;
+  // その週の月曜
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - (dayISO - 1));
+  // 木曜基準でISO週番号 (公式定義)
+  const thursday = new Date(monday);
+  thursday.setDate(monday.getDate() + 3);
+  const year = thursday.getFullYear();
+  // 1月1日を含む週=W01の起点
+  const jan1 = new Date(year, 0, 1);
+  const jan1ISO = jan1.getDay() === 0 ? 7 : jan1.getDay();
+  const week1Start = new Date(jan1);
+  week1Start.setDate(jan1.getDate() - (jan1ISO - 1));
+  const diffMs = thursday - week1Start;
+  const week = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return year + '-W' + String(week).padStart(2, '0');
+}
+
+// 上限超過チェック: true=上限到達/超過してるので配置不可
+// freq無し or 0 のスタッフは無制限扱い (=trueにならない)
+function _v_isFreqLimitExceeded(ctx, staffId, dateKey) {
+  const freq = ctx.staffFreq[staffId];
+  if (!freq || !freq.count || freq.count <= 0) return false;  // 設定なし=無制限
+  
+  if (freq.type === '月次合計') {
+    const monthCount = ctx.staffMonthlyCount[staffId] || 0;
+    return monthCount >= freq.count;
+  } else if (freq.type === '週次') {
+    const wKey = staffId + '_' + _v_weekKey(dateKey);
+    const weekCount = ctx.staffWeeklyCount[wKey] || 0;
+    return weekCount >= freq.count;
+  }
+  return false;  // 不明なタイプ=無制限
+}
+
+// 配置確定時にカウンタ更新
+function _v_incrementFreqCounters(ctx, staffId, dateKey) {
+  ctx.staffMonthlyCount[staffId] = (ctx.staffMonthlyCount[staffId] || 0) + 1;
+  const wKey = staffId + '_' + _v_weekKey(dateKey);
+  ctx.staffWeeklyCount[wKey] = (ctx.staffWeeklyCount[wKey] || 0) + 1;
+}
+
+// デバッグ: スタッフの freq 状態を取得
+function _v_getFreqStatus(ctx, staffId) {
+  const freq = ctx.staffFreq[staffId];
+  if (!freq) return 'no-limit';
+  const monthCount = ctx.staffMonthlyCount[staffId] || 0;
+  return freq.type + '/' + monthCount + '/' + freq.count;
+}

@@ -63,6 +63,8 @@ const DSE_V2 = {
   COL_REQ_SECOND: 8,
   COL_REQ_SUB: 9,
   COL_REQ_COMMENT: 10,
+  COL_REQ_FREQ_TYPE: 11,   // L列: 希望頻度タイプ ('月次合計' | '週次')
+  COL_REQ_FREQ_COUNT: 12,  // M列: 希望頻度数 (整数)
   
   // T_シフト確定列 (18列構造)
   COL_CONF_REQUEST_ID: 0,
@@ -163,6 +165,9 @@ function loadEngineContextV2(targetYM) {
     wishesByStaff: {},
     wishesByStaffDay: {},
     wishesByDayShift: {},
+    staffFreq: {},          // ★Phase 5.1: staff_id → {type, count}
+    staffMonthlyCount: {},  // ★Phase 5.1: staff_id → 当月配置数
+    staffWeeklyCount: {},   // ★Phase 5.1: staff_id_weekKey → 週単位配置数
     history3m: {},
     historyCount: 0,
     monthlyAssign: {},
@@ -310,7 +315,13 @@ function loadEngineContextV2(targetYM) {
         secondFac: String(row[DSE_V2.COL_REQ_SECOND] || '').trim(),
         subFacs: subRaw ? subRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
         comment: row[DSE_V2.COL_REQ_COMMENT] || '',
+        freqType: String(row[DSE_V2.COL_REQ_FREQ_TYPE] || '').trim(),
+        freqCount: parseInt(row[DSE_V2.COL_REQ_FREQ_COUNT]) || 0,
       };
+      // ★Phase 5.1: ctx.staffFreq にスタッフ単位で保存
+      if (!ctx.staffFreq[staffId] && wish.freqType && wish.freqCount > 0) {
+        ctx.staffFreq[staffId] = { type: wish.freqType, count: wish.freqCount };
+      }
       
       ctx.wishes.push(wish);
       if (!ctx.wishesByStaff[staffId]) ctx.wishesByStaff[staffId] = [];
@@ -373,6 +384,7 @@ function loadEngineContextV2(targetYM) {
           isDay: DSE_V2.DAY_SHIFTS.indexOf(shift) !== -1,
         });
         ctx.monthlyAssign[staffId] = (ctx.monthlyAssign[staffId] || 0) + 1;
+        if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, staffId, dateKey);
       }
       
       // 5c. ★Day11: E-st配置履歴 (対象月内、最新で上書き)
@@ -626,6 +638,9 @@ function findCandidatesV2(ctx, slot, priorityLevel) {
       ? (SHIFT_PATTERNS[slot.shift].dayHours + SHIFT_PATTERNS[slot.shift].nightHours)
       : 8;
     if (typeof checkWeeklyHours === 'function') {
+      // ★Phase 5.3: freqCount 上限チェック (自動配置の上限)
+      if (_v_isFreqLimitExceeded(ctx, staff.staff_id, slot.dateKey)) continue;
+      
       const weekly = checkWeeklyHours(staff.staff_id, slot.dateKey, addedH, ctx);
       if (weekly.exceeded) continue;
     }
@@ -1312,6 +1327,7 @@ function _v2d_processSlotsForPriority(ctx, priorityLevel, counters) {
       assignedRole: assignedRole
     });
     ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
+    if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, top.staff.staff_id, slot.dateKey);
     
     counters.assigned++;
     
