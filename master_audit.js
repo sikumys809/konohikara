@@ -1246,7 +1246,7 @@ function inject_realistic_test_wishes_2026_06() {
       }
       
       // 次の日へ進む(2-4日間隔、月10件目標)
-      dayCursor += 2 + Math.floor(rng() * 3);
+      dayCursor += 1 + Math.floor(rng() * 2);  // Phase 5.6: 2-4日→1-2日に詰めて18件物理生成可能に
     }
     
     // 3-4. 各wish行を生成
@@ -1255,12 +1255,12 @@ function inject_realistic_test_wishes_2026_06() {
       const dateStr = TARGET_YEAR + '-' + String(TARGET_MONTH).padStart(2, '0') + '-' + String(item.day).padStart(2, '0');
       const wishId = 'TEST_WISH_2026_06_' + staff.staff_id + '_' + idx;
       
-      // ★列構造: COL_REQ_* に厳密準拠
+      // ★列構造: COL_REQ_* に厳密準拠 (Phase 5.6: 13列L/M=希望頻度を追加)
       // 仕様: スタッフはマスタの全許可施設を全希望日に必須チェック
       //   メインだけ許可 → H列のみ
       //   メイン+セカンド → H列+I列
       //   メイン+セカンド+サブ → H列+I列+J列(全サブ)
-      // 全希望日で同じ施設セット
+      // 全希望日で同じ施設セット + 全希望日に同じ希望頻度
       generatedRows.push([
         wishId,                                              // A request_id
         new Date(),                                          // B 提出日時
@@ -1273,6 +1273,8 @@ function inject_realistic_test_wishes_2026_06() {
         staff.secondFac || '',                               // I セカンド施設(あれば固定)
         staff.subFacs.join(','),                             // J サブ施設(あれば全部)
         '',                                                  // K コメント
+        '月次合計',                                          // L 希望頻度タイプ ★Phase 5.6
+        10,                                                  // M 希望頻度数 ★Phase 5.6 (5月実績に近い)
       ]);
       totalGenerated++;
     });
