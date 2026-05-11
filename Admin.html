@@ -2868,6 +2868,10 @@ function saveSlot() {
       alert('エラー: ' + res.message);
       return;
     }
+    // ★Phase 5.7: R4警告 (freqCount超過) があれば通知
+    if (res.r4Warning && res.r4Warning.triggered) {
+      alert('⚠️ R4警告: ' + res.r4Warning.message + '\n配置はされましたが、警告承認画面で承認が必要です。');
+    }
     closeSlotEditor();
     loadShiftCalendar();
   }).updateShiftSlot(currentAdmin.staff_id, shiftViewState.targetYM, es.dateKey, es.unitId, updates);

@@ -2744,3 +2744,65 @@ function debug_phase6_check_night_dayhours() {
     });
   });
 }
+
+
+// ============================================================
+// Phase 5.7 テスト: R4警告 動作確認
+// 手順:
+// 1. inject_realistic_test_wishes_2026_06 で希望2533件 (freqCount=10) 投入
+// 2. debug_run_night_2026_06 + debug_run_day_2026_06 で配置
+// 3. このテストを実行 - sid=24 を11件目として手動配置を試みる
+// ============================================================
+function debug_phase57_test_r4() {
+  const adminId = '13';  // 水野永吉 (オーナー)
+  const targetYM = '2026-06';
+  const testSid = '24';  // sid=24 のスタッフを使う
+  
+  // Step 1: T_シフト確定で sid=24 が当月何件配置されてるか確認
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const shiftSheet = ss.getSheetByName('T_シフト確定');
+  const shiftData = shiftSheet.getDataRange().getValues();
+  
+  let count = 0;
+  for (let i = 1; i < shiftData.length; i++) {
+    const sid = String(shiftData[i][6] || '').trim();
+    if (sid !== testSid) continue;
+    const d = shiftData[i][1];
+    if (!(d instanceof Date)) continue;
+    if (Utilities.formatDate(d, 'JST', 'yyyy-MM') === targetYM) count++;
+  }
+  Logger.log('=== Phase 5.7 R4テスト ===');
+  Logger.log('sid=' + testSid + ' 当月配置数: ' + count);
+  
+  // Step 2: T_希望提出 から freqCount を取得
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  const wishData = wishSheet.getDataRange().getValues();
+  let freqCount = 0;
+  for (let i = 1; i < wishData.length; i++) {
+    if (String(wishData[i][2]).trim() !== testSid) continue;
+    const ymVal = wishData[i][4];
+    const ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'JST', 'yyyy-MM') : String(ymVal || '').substring(0, 7);
+    if (ymStr !== targetYM) continue;
+    freqCount = parseInt(wishData[i][12], 10) || 0;
+    if (freqCount > 0) break;
+  }
+  Logger.log('sid=' + testSid + ' freqCount: ' + freqCount);
+  
+  if (count < freqCount) {
+    Logger.log('★ まだ上限未到達。テストの前に sid=' + testSid + ' を' + (freqCount - count + 1) + '件以上配置する必要あり');
+    Logger.log('   inject_realistic_test_wishes_2026_06 + debug_run_*_2026_06 を実行');
+    return;
+  }
+  
+  // Step 3: 上限到達済なら、checkR4ManualWarning を直接呼んで動作確認
+  const r4 = checkR4ManualWarning(testSid, targetYM, '2026-06-25');
+  Logger.log('checkR4ManualWarning 結果:');
+  Logger.log(JSON.stringify(r4, null, 2));
+  
+  if (r4.triggered) {
+    Logger.log('✅ R4警告が正常に発火 (message: ' + r4.message + ')');
+  } else {
+    Logger.log('❌ R4警告が発火しなかった、ロジック要確認');
+  }
+}

@@ -1167,6 +1167,67 @@ function getCandidateStaffForSlot(adminStaffId, targetYM, dateKey, unitId) {
 }
 
 
+
+// ============================================================
+// Phase 5.7: R4 軽量チェック (手動配置時の freqCount 超過警告)
+// updateShiftSlot から呼ばれる、ctx不要のスタンドアロン関数
+// 戻り値: {triggered: bool, message: str, freqType: str, freqCount: int, monthlyCount: int}
+// ============================================================
+function checkR4ManualWarning(staffId, targetYM, dateKey) {
+  if (!staffId || !targetYM) return { triggered: false };
+  
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  
+  // T_希望提出 から staffFreq を取得 (当月、当該スタッフ、最初のレコ)
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  if (!wishSheet) return { triggered: false };
+  const wishData = wishSheet.getDataRange().getValues();
+  
+  let freqType = '', freqCount = 0;
+  for (let i = 1; i < wishData.length; i++) {
+    const sid = String(wishData[i][2] || '').trim();
+    if (sid !== String(staffId)) continue;
+    const ymVal = wishData[i][4];
+    const ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'Asia/Tokyo', 'yyyy-MM') : String(ymVal || '').substring(0, 7);
+    if (ymStr !== targetYM) continue;
+    // L列(11)=freqType, M列(12)=freqCount
+    freqType = String(wishData[i][11] || '').trim();
+    freqCount = parseInt(wishData[i][12], 10) || 0;
+    if (freqType && freqCount > 0) break;
+  }
+  
+  if (!freqType || freqCount <= 0) return { triggered: false };
+  
+  // T_シフト確定 から当月の monthlyCount を集計
+  const shiftSheet = ss.getSheetByName('T_シフト確定');
+  if (!shiftSheet) return { triggered: false };
+  const shiftData = shiftSheet.getDataRange().getValues();
+  
+  let monthlyCount = 0;
+  for (let i = 1; i < shiftData.length; i++) {
+    const sid = String(shiftData[i][6] || '').trim();
+    if (sid !== String(staffId)) continue;
+    const d = shiftData[i][1];
+    if (!(d instanceof Date)) continue;
+    const ymStr = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM');
+    if (ymStr === targetYM) monthlyCount++;
+  }
+  
+  // 月次合計タイプのみ判定 (週次タイプは現状未使用)
+  if (freqType === '月次合計' && monthlyCount >= freqCount) {
+    return {
+      triggered: true,
+      freqType: freqType,
+      freqCount: freqCount,
+      monthlyCount: monthlyCount,
+      message: '自動配置上限(月' + freqCount + '件)を超過する手動配置です。現在' + monthlyCount + '件配置済み。'
+    };
+  }
+  
+  return { triggered: false };
+}
+
 function updateShiftSlot(adminStaffId, targetYM, dateKey, unitId, updates) {
   const admin = checkAdminAuth(adminStaffId, 'シフト作成');
   if (!admin.authorized) {
@@ -1301,8 +1362,41 @@ function updateShiftSlot(adminStaffId, targetYM, dateKey, unitId, updates) {
     );
   }
   
+  // ★Phase 5.7: R4警告チェック (新規配置の場合のみ判定、削除は別ロジック)
+  let r4Warning = null;
+  if (updates.staffId && (updates.action === 'update' || !updates.action)) {
+    try {
+      const r4 = checkR4ManualWarning(updates.staffId, targetYM, dateKey);
+      if (r4 && r4.triggered) {
+        // warning_block レコをV_警告チェックに追加
+        const shiftKind = (updates.shiftType && updates.shiftType.indexOf('夜勤') === 0) ? '夜勤' : '日勤';
+        addWarning({
+          shift_kind: shiftKind,
+          target_ym: targetYM,
+          date: dateKey,
+          jigyosho: unit.jigyosho,
+          facility: unit.facility,
+          unit: unit.unit_name,
+          staff_id: updates.staffId,
+          staff_name: staffName,
+          rule_id: 'R4',
+          level: WARNING_LEVEL.BLOCK,
+          message: r4.message,
+          status: WARNING_STATUS.PENDING
+        });
+        r4Warning = r4;
+      }
+    } catch (e) {
+      Logger.log('R4チェックエラー: ' + e);
+    }
+  }
+  
   SpreadsheetApp.flush();
-  return { success: true, message: '保存しました' };
+  
+  const successMsg = r4Warning
+    ? '保存しました (R4警告: ' + r4Warning.message + ')'
+    : '保存しました';
+  return { success: true, message: successMsg, r4Warning: r4Warning };
 }
 
 

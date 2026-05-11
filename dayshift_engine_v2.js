@@ -920,12 +920,52 @@ function checkN2WarningV2(staff, slot, ctx) {
 // ============================================================
 // 統合: 配置候補に対して全警告チェック
 // ============================================================
+// ============================================================
+// Phase 5.7: R4 警告 (自動配置上限超過)
+// 手動配置で freqCount を超過しようとした時の警告
+// 対象: スタッフのfreqType=月次合計 で、当月のmonthlyCount >= freqCount
+// レベル: warning_block (最終承認者の承認が必要)
+// ============================================================
+function checkR4WarningV2(staff, slot, ctx) {
+  if (!staff || !ctx) return null;
+  const sid = String(staff.staff_id);
+  const freq = (ctx.staffFreq && ctx.staffFreq[sid]) || null;
+  if (!freq || !freq.count || freq.count <= 0) return null;
+  
+  const monthlyCount = (ctx.staffMonthlyCount && ctx.staffMonthlyCount[sid]) || 0;
+  const weeklyCount = (ctx.staffWeeklyCount && ctx.staffWeeklyCount[sid]) || {};
+  
+  if (freq.type === '月次合計') {
+    if (monthlyCount >= freq.count) {
+      return {
+        ruleId: 'R4',
+        level: WARNING_LEVEL.BLOCK,
+        message: '自動配置上限(月' + freq.count + '件)を超過する手動配置です。現在' + monthlyCount + '件配置済み。'
+      };
+    }
+  } else if (freq.type === '週次') {
+    const weekKey = (typeof _v_weekKey === 'function') ? _v_weekKey(slot.dateKey) : '';
+    const wCount = weekKey ? (weeklyCount[weekKey] || 0) : 0;
+    if (wCount >= freq.count) {
+      return {
+        ruleId: 'R4',
+        level: WARNING_LEVEL.BLOCK,
+        message: '自動配置上限(週' + freq.count + '件)を超過する手動配置です。現在' + wCount + '件配置済み(' + weekKey + ')。'
+      };
+    }
+  }
+  return null;
+}
+
 function checkAllWarningsV2(staff, slot, ctx) {
   const warnings = [];
   const w2 = checkW2WarningV2(staff, slot, ctx);
   if (w2) warnings.push(w2);
   const n2 = checkN2WarningV2(staff, slot, ctx);
   if (n2) warnings.push(n2);
+  // ★Phase 5.7: R4警告 (freqCount超過)
+  const r4 = checkR4WarningV2(staff, slot, ctx);
+  if (r4) warnings.push(r4);
   return warnings;
 }
 
