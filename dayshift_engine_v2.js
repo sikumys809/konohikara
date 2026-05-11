@@ -525,10 +525,18 @@ function calcRoleShortage(ctx) {
       Object.keys(ctx.staffAssignedDates[sid]).forEach(function(d) {
         ctx.staffAssignedDates[sid][d].forEach(function(a) {
           if (a.jigyosho !== jig) return;
-          // 役割別に集計 (管理者は別計上)
-          if (staff.isSewa) sewaH += a.workHours;
-          if (staff.isSeikatsu) seikatsuH += a.workHours;
-          if (staff.isSabikan) sabikanH += a.workHours;
+          // ★Phase 6 修正: assignedRole ベース集計 (calcRoleHoursV2と一致させる)
+          // 旧: staff.isSewa/isSeikatsu/isSabikan で両方カウント → 兼任者で seikatsuH 過大計上
+          if (a.assignedRole === 'サビ管') sabikanH += a.workHours;
+          else if (a.assignedRole === '世話人') sewaH += a.workHours;
+          else if (a.assignedRole === '生活支援員') seikatsuH += a.workHours;
+          else {
+            // フォールバック: assignedRole無し (古いレコード or 既存配置ロード時)
+            // _v2d_pickPrimaryRole の優先順 (サビ管 > 世話人 > 生活支援員) で1つに振り分け
+            if (staff.isSabikan) sabikanH += a.workHours;
+            else if (staff.isSewa) sewaH += a.workHours;
+            else if (staff.isSeikatsu) seikatsuH += a.workHours;
+          }
           if (staff.isNurse) nurseStaffSet[sid] = true;
         });
       });
@@ -998,6 +1006,37 @@ function testWarningsV2() {
 // ============================================================
 
 // ============================================================
+
+
+// ============================================================
+// Phase 6: shortage を動的更新 (配置確定後に呼ぶ)
+// 配置されたスタッフの assignedRole に応じて該当の累積hを増やし、
+// 不足フラグを再計算する
+// ============================================================
+function _v2d_updateShortageAfterAssign(shortage, jigyosho, assignedRole, staff, addedH, basis) {
+  if (!shortage[jigyosho]) return;
+  const s = shortage[jigyosho];
+  
+  // 役割別に累積h増やす
+  if (assignedRole === 'サビ管') s.sabikanH += addedH;
+  else if (assignedRole === '世話人') s.sewaH += addedH;
+  else if (assignedRole === '生活支援員') s.seikatsuH += addedH;
+  // 管理者は別途 (二重計上で別カウンタ)
+  
+  // 看護師は人数判定
+  if (staff && staff.isNurse) {
+    if (!s.nurseSet) s.nurseSet = {};
+    s.nurseSet[staff.staff_id] = true;
+    s.nurseCount = Object.keys(s.nurseSet).length;
+  }
+  
+  // 不足フラグ再計算
+  s.sewa = s.sewaH < basis.needSewaH;
+  s.seikatsu = s.seikatsuH < basis.needSeikatsuH;
+  s.sabikan = s.sabikanH < basis.needSabikanH;
+  s.nurse = (s.nurseCount || 0) < basis.nurseRequired;
+}
+
 // _v2d_pickPrimaryRole: スタッフの主役割を1つ選ぶ (ヒエラルキー優先)
 // 兼任時は配置文脈で1つに絞る (※管理者は別計上、看護師は人数判定のため除外)
 // 優先順: サビ管 > 世話人 > 生活支援員
@@ -1289,7 +1328,8 @@ function _v2d_processSlotsForPriority(ctx, priorityLevel, counters) {
     
     const pickedFac = pickFacilityForSlot(top.staff, slot, ctx);
     
-    // 配置時に役割を自動選択 (Step C簡易版)
+    // 配置時に役割を自動選択 (Phase 6: shortage動的更新版)
+    // shortageは配置毎に更新されてるので、最新の不足状態に基づいて選択
     const assignedRole = (typeof pickAssignedRole === 'function')
       ? pickAssignedRole(top.staff, shortage[slot.jigyosho])
       : '';
@@ -1328,6 +1368,9 @@ function _v2d_processSlotsForPriority(ctx, priorityLevel, counters) {
     });
     ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
     if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, top.staff.staff_id, slot.dateKey);
+    
+    // ★Phase 6: shortage は毎ループ calcRoleShortage(ctx) で再計算されるので動的更新不要
+    // calcRoleShortage が ctx.staffAssignedDates + assignedRole を参照する形に修正済み
     
     counters.assigned++;
     

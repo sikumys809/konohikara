@@ -2305,3 +2305,442 @@ function debug_phase5_count_staff_assignments(staffId) {
 function debug_phase5_count_sid24() {
   debug_phase5_count_staff_assignments('24');
 }
+
+
+// ============================================================
+// Phase 6 検証: マスタの主職種分布調査
+// ============================================================
+function debug_phase6_check_main_roles() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_スタッフ');
+  const data = sheet.getDataRange().getValues();
+  
+  // T列(19) = 主職種
+  const roleCount = {};
+  const jigCount = {};  // 事業所×主職種
+  
+  let active = 0, retired = 0;
+  
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (String(data[i][16]).toUpperCase() === 'TRUE') { retired++; continue; }
+    active++;
+    
+    const mainFac = String(data[i][9] || '').trim();
+    const rolesRaw = String(data[i][19] || '').trim();
+    if (!rolesRaw) {
+      roleCount['(未設定)'] = (roleCount['(未設定)'] || 0) + 1;
+      continue;
+    }
+    
+    const roles = rolesRaw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    roles.forEach(function(role) {
+      roleCount[role] = (roleCount[role] || 0) + 1;
+      
+      // 事業所×主職種 (メイン施設→事業所マッピングが必要、ここでは施設名のまま)
+      const key = mainFac + '/' + role;
+      jigCount[key] = (jigCount[key] || 0) + 1;
+    });
+  }
+  
+  Logger.log('=== M_スタッフ 主職種分布 ===');
+  Logger.log('稼働: ' + active + '名 / 退職: ' + retired + '名');
+  Logger.log('');
+  Logger.log('--- 主職種別 ---');
+  Object.keys(roleCount).sort().forEach(function(r) {
+    Logger.log('  ' + r + ': ' + roleCount[r] + '名');
+  });
+  
+  // 兼任パターン
+  Logger.log('');
+  Logger.log('--- 兼任パターン分析 ---');
+  const patternCount = {};
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (String(data[i][16]).toUpperCase() === 'TRUE') continue;
+    const rolesRaw = String(data[i][19] || '').trim();
+    if (!rolesRaw) continue;
+    const roles = rolesRaw.split(',').map(function(s){return s.trim();}).filter(Boolean).sort();
+    const pattern = roles.join('+') || '(なし)';
+    patternCount[pattern] = (patternCount[pattern] || 0) + 1;
+  }
+  Object.keys(patternCount).sort().forEach(function(p) {
+    Logger.log('  ' + p + ': ' + patternCount[p] + '名');
+  });
+}
+
+// 事業所別の主職種分布 (Phase 6 修正版: 全許可施設 + E-st仮想施設対応)
+function debug_phase6_check_roles_by_jigyosho() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  
+  // ユニット → 事業所マッピング (施設経由)
+  const unitData = unitSheet.getDataRange().getValues();
+  const facToJig = {};
+  const jigSet = new Set();
+  for (let i = 1; i < unitData.length; i++) {
+    if (!unitData[i][0]) continue;
+    const jig = String(unitData[i][1] || '').trim();
+    const fac = String(unitData[i][3] || '').trim();
+    if (fac && jig) {
+      // 1施設が複数事業所にまたがる場合 (E-st) は配列で持つ
+      if (!facToJig[fac]) facToJig[fac] = new Set();
+      facToJig[fac].add(jig);
+      jigSet.add(jig);
+    }
+  }
+  
+  // 施設名 → E-st判定 (E-stを含む施設は両事業所所属)
+  function isEstFac(facName) {
+    return facName.indexOf('E-st') !== -1;
+  }
+  
+  // スタッフ主職種を事業所別に集計
+  const data = staffSheet.getDataRange().getValues();
+  const jigRoles = {};  // 事業所 → 主職種 → Set(staff_id) (重複排除)
+  const unassigned = [];  // 振り分けできなかったスタッフ
+  
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (String(data[i][16]).toUpperCase() === 'TRUE') continue;
+    
+    const sid = String(data[i][0]).trim();
+    const name = data[i][1];
+    const mainFac = String(data[i][9] || '').trim();
+    const secondFac = String(data[i][10] || '').trim();
+    const subRaw = String(data[i][11] || '').trim();
+    const subFacs = subRaw ? subRaw.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+    const rolesRaw = String(data[i][19] || '').trim();
+    if (!rolesRaw) continue;
+    const roles = rolesRaw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    
+    // スタッフが所属する事業所を全部リストアップ (メイン/セカンド/サブ施設経由)
+    const staffJigs = new Set();
+    const facs = [mainFac, secondFac].concat(subFacs).filter(Boolean);
+    
+    facs.forEach(function(fac) {
+      if (facToJig[fac]) {
+        facToJig[fac].forEach(function(jig) { staffJigs.add(jig); });
+      } else if (isEstFac(fac)) {
+        // E-st施設の振り分け: 板橋北区とセカンドの両方
+        staffJigs.add('GHコノヒカラ板橋北区');
+        staffJigs.add('GHコノヒカラ板橋北区セカンド');
+      }
+    });
+    
+    if (staffJigs.size === 0) {
+      unassigned.push({sid: sid, name: name, mainFac: mainFac});
+      continue;
+    }
+    
+    // 各事業所に主職種を加算 (重複防止のためSet)
+    staffJigs.forEach(function(jig) {
+      if (!jigRoles[jig]) jigRoles[jig] = {};
+      roles.forEach(function(role) {
+        if (!jigRoles[jig][role]) jigRoles[jig][role] = new Set();
+        jigRoles[jig][role].add(sid);
+      });
+    });
+  }
+  
+  Logger.log('=== 事業所×主職種 (メイン+セカンド+サブ全施設ベース) ===');
+  Logger.log('★同一スタッフが複数事業所所属の場合は両方にカウント');
+  Logger.log('');
+  
+  // 5事業所順で出力
+  const expectedJigs = ['GHコノヒカラ', 'GHコノヒカラ品川', 'GHコノヒカラ練馬', 'GHコノヒカラ板橋北区', 'GHコノヒカラ板橋北区セカンド'];
+  expectedJigs.forEach(function(jig) {
+    Logger.log('▼ ' + jig);
+    if (jigRoles[jig]) {
+      const roles = jigRoles[jig];
+      ['サビ管', '世話人', '生活支援員', '管理者'].forEach(function(role) {
+        if (roles[role]) {
+          Logger.log('  ' + role + ': ' + roles[role].size + '名');
+        }
+      });
+    } else {
+      Logger.log('  (該当スタッフなし)');
+    }
+    Logger.log('');
+  });
+  
+  // 未振り分けスタッフ (E-stとかにも該当しない人)
+  if (unassigned.length > 0) {
+    Logger.log('=== 未振り分けスタッフ (要確認) ===');
+    unassigned.forEach(function(s) {
+      Logger.log('  sid=' + s.sid + ' / ' + s.name + ' / メイン=' + s.mainFac);
+    });
+  }
+}
+
+
+// ============================================================
+// Phase 6 検証: M_ユニットの実データ確認
+// ============================================================
+function debug_show_units_sample() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_ユニット');
+  const data = sheet.getDataRange().getValues();
+  Logger.log('行数: ' + data.length);
+  Logger.log('ヘッダー: ' + JSON.stringify(data[0]));
+  Logger.log('');
+  for (let i = 1; i < Math.min(data.length, 23); i++) {
+    Logger.log('行' + i + ': ' + JSON.stringify(data[i]));
+  }
+}
+
+
+// ============================================================
+// Phase 6: 配置エンジンの動作トレース (sid別の assignedRole 確認)
+// ============================================================
+function debug_phase6_check_assigned_roles() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  
+  // staff_id → 主職種マップ
+  const staffRoles = {};
+  for (let i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    const sid = String(staffData[i][0]).trim();
+    const rolesRaw = String(staffData[i][19] || '').trim();
+    staffRoles[sid] = rolesRaw ? rolesRaw.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+  }
+  
+  // T_シフト確定のassignedRole列を確認 (idx=18 想定、列構造に依存)
+  // ヘッダー先に出す
+  Logger.log('=== T_シフト確定 ヘッダ (列構造確認) ===');
+  Logger.log(JSON.stringify(data[0]));
+  Logger.log('');
+  
+  // 日勤レコードのassignedRole分布
+  const roleDistByJig = {};  // 事業所 → assignedRole → 件数
+  const sidAssignedRole = {};  // sid → {assignedRole: count}
+  
+  const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  
+  for (let i = 1; i < data.length; i++) {
+    const dateVal = data[i][1];
+    const dateStr = (dateVal instanceof Date)
+      ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM') : String(dateVal || '').substring(0, 7);
+    if (dateStr !== '2026-06') continue;
+    
+    const shift = String(data[i][8] || '').trim();
+    if (DAY_SHIFTS.indexOf(shift) === -1) continue;  // 日勤のみ
+    
+    const jig = String(data[i][3] || '').trim();
+    const sid = String(data[i][6] || '').trim();
+    const assignedRole = String(data[i][18] || '').trim();  // ★assignedRole列 (要確認)
+    
+    if (!roleDistByJig[jig]) roleDistByJig[jig] = {};
+    roleDistByJig[jig][assignedRole] = (roleDistByJig[jig][assignedRole] || 0) + 1;
+    
+    if (!sidAssignedRole[sid]) sidAssignedRole[sid] = {};
+    sidAssignedRole[sid][assignedRole] = (sidAssignedRole[sid][assignedRole] || 0) + 1;
+  }
+  
+  Logger.log('=== 事業所別 assignedRole 分布 ===');
+  Object.keys(roleDistByJig).sort().forEach(function(jig) {
+    Logger.log('▼ ' + jig);
+    Object.keys(roleDistByJig[jig]).sort().forEach(function(role) {
+      Logger.log('  ' + (role || '(空)') + ': ' + roleDistByJig[jig][role] + '件');
+    });
+  });
+  
+  // 生活支援員として配置された人がいるか
+  Logger.log('');
+  Logger.log('=== 生活支援員配置 詳細 ===');
+  let seikatsuCount = 0;
+  Object.keys(sidAssignedRole).forEach(function(sid) {
+    if (sidAssignedRole[sid]['生活支援員']) {
+      seikatsuCount++;
+      Logger.log('  sid=' + sid + ' / 主職種=' + (staffRoles[sid] || []).join(',') + 
+                 ' / 生活支援員配置=' + sidAssignedRole[sid]['生活支援員'] + '件');
+    }
+  });
+  Logger.log('合計 生活支援員配置スタッフ: ' + seikatsuCount + '名');
+}
+
+
+// ============================================================
+// Phase 6: スタッフ別の配置数分布 (どこが詰まってるか調査)
+// ============================================================
+function debug_phase6_staff_assignment_distribution() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const confSheet = ss.getSheetByName('T_シフト確定');
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  
+  // スタッフごとの希望件数 (夜勤/日勤別)
+  const wishData = wishSheet.getDataRange().getValues();
+  const staffWish = {};  // sid → {night, day}
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const DAY = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  
+  for (let i = 1; i < wishData.length; i++) {
+    const ymVal = wishData[i][4];
+    const ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'JST', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    if (ymStr !== '2026-06') continue;
+    const sid = String(wishData[i][2]).trim();
+    const shift = String(wishData[i][6] || '').trim();
+    if (!staffWish[sid]) staffWish[sid] = {night: 0, day: 0};
+    if (NIGHT.indexOf(shift) !== -1) staffWish[sid].night++;
+    else if (DAY.indexOf(shift) !== -1) staffWish[sid].day++;
+  }
+  
+  // スタッフごとの実配置数 (夜勤/日勤別)
+  const confData = confSheet.getDataRange().getValues();
+  const staffAssign = {};
+  for (let i = 1; i < confData.length; i++) {
+    const dateVal = confData[i][1];
+    const dateStr = (dateVal instanceof Date)
+      ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM') : String(dateVal || '').substring(0, 7);
+    if (dateStr !== '2026-06') continue;
+    const sid = String(confData[i][6] || '').trim();
+    const shift = String(confData[i][8] || '').trim();
+    if (!staffAssign[sid]) staffAssign[sid] = {night: 0, day: 0};
+    if (NIGHT.indexOf(shift) !== -1) staffAssign[sid].night++;
+    else if (DAY.indexOf(shift) !== -1) staffAssign[sid].day++;
+  }
+  
+  // スタッフマスタ参照 (主職種・許可シフト)
+  const staffData = staffSheet.getDataRange().getValues();
+  const staffInfo = {};
+  for (let i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    if (String(staffData[i][16]).toUpperCase() === 'TRUE') continue;
+    const sid = String(staffData[i][0]).trim();
+    staffInfo[sid] = {
+      allowedShifts: String(staffData[i][13] || '').split(',').map(function(s){return s.trim();}).filter(Boolean),
+      mainRoles: String(staffData[i][19] || '').split(',').map(function(s){return s.trim();}).filter(Boolean),
+    };
+  }
+  
+  // 日勤許可で日勤希望出してるのに日勤配置0件のスタッフを抽出
+  let nightOnly = 0, dayOnly = 0, both = 0;
+  let dayUnderAssigned = 0;  // 日勤許可で希望ありなのに配置少ない
+  
+  Object.keys(staffInfo).forEach(function(sid) {
+    const allowed = staffInfo[sid].allowedShifts;
+    const hasNight = allowed.some(function(s){return NIGHT.indexOf(s) !== -1;});
+    const hasDay = allowed.some(function(s){return DAY.indexOf(s) !== -1;});
+    if (hasNight && hasDay) both++;
+    else if (hasNight) nightOnly++;
+    else if (hasDay) dayOnly++;
+    
+    if (hasDay) {
+      const assigned = (staffAssign[sid] && staffAssign[sid].day) || 0;
+      const wished = (staffWish[sid] && staffWish[sid].day) || 0;
+      if (wished > 0 && assigned < wished / 2) {
+        dayUnderAssigned++;
+      }
+    }
+  });
+  
+  Logger.log('=== スタッフ許可シフト内訳 ===');
+  Logger.log('夜勤のみ: ' + nightOnly + ' / 日勤のみ: ' + dayOnly + ' / 両方: ' + both);
+  Logger.log('日勤希望出してるのに配置半分以下のスタッフ: ' + dayUnderAssigned);
+  
+  // 日勤配置の分布
+  Logger.log('');
+  Logger.log('=== 日勤配置数分布 (日勤許可スタッフのみ) ===');
+  const dayDistribution = {};
+  Object.keys(staffInfo).forEach(function(sid) {
+    const allowed = staffInfo[sid].allowedShifts;
+    const hasDay = allowed.some(function(s){return DAY.indexOf(s) !== -1;});
+    if (!hasDay) return;
+    const assigned = (staffAssign[sid] && staffAssign[sid].day) || 0;
+    dayDistribution[assigned] = (dayDistribution[assigned] || 0) + 1;
+  });
+  Object.keys(dayDistribution).sort(function(a,b){return parseInt(a) - parseInt(b);}).forEach(function(k) {
+    Logger.log('  日勤' + k + '件配置: ' + dayDistribution[k] + '名');
+  });
+  
+  // 主職種別の配置数
+  Logger.log('');
+  Logger.log('=== 主職種別 日勤配置数集計 ===');
+  const roleAssignH = {};  // 主職種 → 配置総件数(日勤)
+  Object.keys(staffInfo).forEach(function(sid) {
+    const roles = staffInfo[sid].mainRoles;
+    const assigned = (staffAssign[sid] && staffAssign[sid].day) || 0;
+    roles.forEach(function(r) {
+      if (!roleAssignH[r]) roleAssignH[r] = {count: 0, staff: 0};
+      roleAssignH[r].count += assigned;
+      if (assigned > 0) roleAssignH[r].staff += 1;
+    });
+  });
+  Object.keys(roleAssignH).sort().forEach(function(r) {
+    Logger.log('  ' + r + ': 配置' + roleAssignH[r].count + '件 / 配置されたスタッフ' + roleAssignH[r].staff + '名');
+  });
+}
+
+
+// ============================================================
+// Phase 6: 夜勤レコードの日勤換算時間が充足率に反映されてるか検証
+// ============================================================
+function debug_phase6_check_night_dayhours() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const jigNightStats = {};  // 事業所 → {totalNightDayH, recordCount, byShift}
+  
+  for (let i = 1; i < data.length; i++) {
+    const dateVal = data[i][1];
+    const dateStr = (dateVal instanceof Date)
+      ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM') : String(dateVal || '').substring(0, 7);
+    if (dateStr !== '2026-06') continue;
+    
+    const shift = String(data[i][8] || '').trim();
+    if (NIGHT.indexOf(shift) === -1) continue;
+    
+    const jig = String(data[i][3] || '').trim();
+    const dayH = parseFloat(data[i][17]) || 0;  // idx=17 日勤換算時間
+    const nightH = parseFloat(data[i][16]) || 0;
+    const assignedRole = String(data[i][18] || '').trim();
+    
+    if (!jigNightStats[jig]) {
+      jigNightStats[jig] = {
+        totalNightDayH: 0,
+        totalNightNightH: 0,
+        recordCount: 0,
+        byShift: {},
+        byRole: {}
+      };
+    }
+    jigNightStats[jig].totalNightDayH += dayH;
+    jigNightStats[jig].totalNightNightH += nightH;
+    jigNightStats[jig].recordCount++;
+    
+    if (!jigNightStats[jig].byShift[shift]) jigNightStats[jig].byShift[shift] = {count: 0, dayH: 0};
+    jigNightStats[jig].byShift[shift].count++;
+    jigNightStats[jig].byShift[shift].dayH += dayH;
+    
+    if (!jigNightStats[jig].byRole[assignedRole]) jigNightStats[jig].byRole[assignedRole] = 0;
+    jigNightStats[jig].byRole[assignedRole]++;
+  }
+  
+  Logger.log('=== 夜勤レコードの日勤換算時間 集計 ===');
+  Object.keys(jigNightStats).sort().forEach(function(jig) {
+    const s = jigNightStats[jig];
+    Logger.log('');
+    Logger.log('▼ ' + jig);
+    Logger.log('  夜勤レコード: ' + s.recordCount + '件');
+    Logger.log('  夜勤換算時間合計: ' + s.totalNightNightH + 'h');
+    Logger.log('  日勤換算時間合計: ' + s.totalNightDayH + 'h  ← これが世話人h等に加算されるはず');
+    Logger.log('  シフト別:');
+    Object.keys(s.byShift).sort().forEach(function(sh) {
+      Logger.log('    ' + sh + ': ' + s.byShift[sh].count + '件, 日勤換算 ' + s.byShift[sh].dayH + 'h');
+    });
+    Logger.log('  assignedRole分布:');
+    Object.keys(s.byRole).sort().forEach(function(r) {
+      Logger.log('    ' + (r || '(空)') + ': ' + s.byRole[r] + '件');
+    });
+  });
+}

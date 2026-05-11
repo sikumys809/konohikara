@@ -887,13 +887,25 @@ function assignByScoreV4(ctx) {
     if (!ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey]) {
       ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey] = [];
     }
+    // ★Phase 6: 夜勤も assignedRole を設定 (calcRoleHoursV2で正しく集計するため)
+    // 夜勤B/C は 2h を日勤カウント、その時間が世話人h/生活支援員h/サビ管h に分配される
+    // shortage を渡せるなら不足職種優先、無ければ pickAssignedRole が静的優先順位を使う
+    const _v4_assignedRole = (typeof _v2d_pickPrimaryRole === 'function')
+      ? _v2d_pickPrimaryRole(top.staff)
+      : '';
+    
     ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey].push({
       shift: top.shift,
       jigyosho: slot.jigyosho,
       facility: slot.facility,
       unit: slot.unit_name,
-      workHours: wh
+      workHours: wh,
+      assignedRole: _v4_assignedRole,  // ★Phase 6
+      isNight: true
     });
+    
+    // slot.assignment にも反映 (writeShiftResultsV4で書き込みに使う)
+    if (slot.assignment) slot.assignment.assignedRole = _v4_assignedRole;
     ctx.monthlyAssign[top.staff.staff_id] = (ctx.monthlyAssign[top.staff.staff_id] || 0) + 1;
     if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, top.staff.staff_id, slot.dateKey);
     
