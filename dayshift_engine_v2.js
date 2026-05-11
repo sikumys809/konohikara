@@ -1722,6 +1722,16 @@ function runDayShiftEngineV2(targetYM) {
   const overallStart = Date.now();
   Logger.log('===== runDayShiftEngineV2 開始: ' + targetYM + ' =====');
   
+  // ★Phase 7: 固定配置を先取り書込 (自動配置エンジンより前)
+  if (typeof preplaceFixedAssignments === 'function') {
+    try {
+      const fixedResult = preplaceFixedAssignments(targetYM);
+      Logger.log('[Phase 7] 固定配置先取り: ' + JSON.stringify(fixedResult));
+    } catch (e) {
+      Logger.log('[Phase 7] 固定配置先取りエラー: ' + e + ' (続行)');
+    }
+  }
+  
   // 1. ctx 構築
   Logger.log('[1/5] ctx構築...');
   const ctx = loadEngineContextV2(targetYM);
