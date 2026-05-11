@@ -2669,3 +2669,174 @@ function testUpdateDayShiftSlotWithWarnings() {
   Logger.log('');
   Logger.log('=== 完了 ===');
 }
+
+
+// ============================================================
+// 固定配置機能 (Phase 7): Admin画面用 公開API
+// ============================================================
+
+// 固定配置一覧取得 (権限チェック付き)
+function getFixedAssignmentsForAdmin(adminStaffId, filter) {
+  const admin = checkAdminAuth(adminStaffId, null);
+  if (!admin.authorized) {
+    return { success: false, message: admin.message };
+  }
+  
+  filter = filter || {};
+  const result = listFixedAssignments(filter);
+  if (!result.success) return result;
+  
+  // スタッフ名・ユニット情報を埋め込み (UI表示用)
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  const staffMap = {};
+  for (var i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    staffMap[String(staffData[i][0])] = {
+      name: staffData[i][1],
+      retired: String(staffData[i][16]).toUpperCase() === 'TRUE'
+    };
+  }
+  
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  const unitData = unitSheet.getDataRange().getValues();
+  const unitMap = {};
+  for (var j = 1; j < unitData.length; j++) {
+    if (!unitData[j][0]) continue;
+    unitMap[String(unitData[j][0])] = {
+      jigyosho: unitData[j][1],
+      unit_name: unitData[j][2],
+      facility: unitData[j][3]
+    };
+  }
+  
+  result.items.forEach(function(item) {
+    const s = staffMap[item.staff_id];
+    item.staff_name = s ? s.name : '(不明)';
+    item.staff_retired = s ? s.retired : false;
+    const u = unitMap[item.unit_id];
+    if (u) {
+      item.jigyosho = u.jigyosho;
+      item.unit_name = u.unit_name;
+      item.facility = u.facility;
+    } else {
+      item.jigyosho = '(不明)';
+      item.unit_name = '(不明)';
+      item.facility = '(不明)';
+    }
+  });
+  
+  return result;
+}
+
+// 固定配置 追加 (権限チェック付き)
+function addFixedAssignmentForAdmin(adminStaffId, params) {
+  const admin = checkAdminAuth(adminStaffId, 'マスタ編集');
+  if (!admin.authorized) {
+    return { success: false, message: admin.message };
+  }
+  
+  const result = addFixedAssignment(params);
+  
+  if (result.success) {
+    writeAdminLog(
+      admin.staff_id, admin.name, admin.role,
+      '固定配置追加', 'M_固定配置', result.fixed_id,
+      '',
+      'sid=' + params.staff_id + ' / ' + params.type + ' / ' + params.shift_type + ' @ ' + params.unit_id,
+      'staff=' + params.staff_id + ' の固定配置を追加'
+    );
+  }
+  
+  return result;
+}
+
+// 固定配置 削除 (権限チェック付き)
+function deleteFixedAssignmentForAdmin(adminStaffId, fixedId) {
+  const admin = checkAdminAuth(adminStaffId, 'マスタ編集');
+  if (!admin.authorized) {
+    return { success: false, message: admin.message };
+  }
+  
+  const result = deleteFixedAssignment(fixedId);
+  
+  if (result.success) {
+    writeAdminLog(
+      admin.staff_id, admin.name, admin.role,
+      '固定配置削除', 'M_固定配置', fixedId,
+      fixedId, '', '固定配置を削除'
+    );
+  }
+  
+  return result;
+}
+
+// 固定配置 有効/無効切替 (権限チェック付き)
+function toggleFixedAssignmentForAdmin(adminStaffId, fixedId, isActive) {
+  const admin = checkAdminAuth(adminStaffId, 'マスタ編集');
+  if (!admin.authorized) {
+    return { success: false, message: admin.message };
+  }
+  
+  const result = toggleFixedAssignment(fixedId, isActive);
+  
+  if (result.success) {
+    writeAdminLog(
+      admin.staff_id, admin.name, admin.role,
+      '固定配置切替', 'M_固定配置', fixedId,
+      '', isActive ? 'TRUE' : 'FALSE',
+      'is_active = ' + (isActive ? 'TRUE' : 'FALSE')
+    );
+  }
+  
+  return result;
+}
+
+// 固定配置スタッフ一覧 (スタッフUIで提出無効化判定用、軽量版)
+function getFixedAssignedStaffIds(targetYM) {
+  const result = listFixedAssignments({ is_active: true });
+  if (!result.success) return [];
+  
+  const ids = {};
+  result.items.forEach(function(item) {
+    // 有効期間チェック
+    if (item.valid_from && targetYM < item.valid_from) return;
+    if (item.valid_to && targetYM > item.valid_to) return;
+    // 日付指定の場合は対象月一致のみ
+    if (item.type === '日付指定' && item.target_ym !== targetYM) return;
+    ids[item.staff_id] = true;
+  });
+  
+  return Object.keys(ids);
+}
+
+
+// ============================================================
+// Phase 7: ユニット一覧取得 (固定配置UIで使用)
+// ============================================================
+function getUnitsList(adminStaffId) {
+  const admin = checkAdminAuth(adminStaffId, null);
+  if (!admin.authorized) {
+    return { success: false, message: admin.message };
+  }
+  
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_ユニット');
+  if (!sheet) return { success: false, message: 'M_ユニットシート無し' };
+  
+  const data = sheet.getDataRange().getValues();
+  const items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    items.push({
+      unit_id: String(data[i][0]),
+      jigyosho: data[i][1],
+      unit_name: data[i][2],
+      facility: data[i][3],
+      capacity: data[i][4]
+    });
+  }
+  
+  return { success: true, items: items };
+}

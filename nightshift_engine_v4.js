@@ -1067,8 +1067,9 @@ function writeShiftResultsV4(ctx) {
     for (let i = 0; i < allData.length; i++) {
       const ym = _v4_normYm(allData[i][NSE_V4.COL_CONF_YM]);
       const shift = String(allData[i][NSE_V4.COL_CONF_SHIFT] || '').trim();
-      // 対象月 かつ 夜勤シフト
-      if (ym === ctx.targetYM && NSE_V4.NIGHT_SHIFTS.indexOf(shift) !== -1) {
+      const shiftId = String(allData[i][0] || '');
+      // 対象月 かつ 夜勤シフト かつ 固定配置でない (★Phase 7: 固定配置は保護)
+      if (ym === ctx.targetYM && NSE_V4.NIGHT_SHIFTS.indexOf(shift) !== -1 && shiftId.indexOf('FIXED_') !== 0) {
         rowsToDelete.push(i + 2); // 1-indexed + ヘッダー1行
       }
     }

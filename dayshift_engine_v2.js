@@ -1625,8 +1625,9 @@ function writeShiftResultsV2(ctx) {
         ym = _v2d_normYm(allData[i][DSE_V2.COL_CONF_YM]);  // フォールバック
       }
       const shift = String(allData[i][DSE_V2.COL_CONF_SHIFT] || '').trim();
-      // 対象月 かつ 日勤シフト
-      if (ym === ctx.targetYM && DSE_V2.DAY_SHIFTS.indexOf(shift) !== -1) {
+      const shiftId = String(allData[i][0] || '');
+      // 対象月 かつ 日勤シフト かつ 固定配置でない (★Phase 7: 固定配置は保護)
+      if (ym === ctx.targetYM && DSE_V2.DAY_SHIFTS.indexOf(shift) !== -1 && shiftId.indexOf('FIXED_') !== 0) {
         rowsToDelete.push(i + 2);
       }
     }

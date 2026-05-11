@@ -432,6 +432,31 @@ function onLoginResult(res) {
   renderBulkShifts();
   loadMyRequests();
   loadFacilityOptions();
+  
+  // ★Phase 7: 固定配置スタッフは希望提出無効化
+  if (res.isFixedAssigned) {
+    applyFixedAssignmentLock();
+  }
+}
+
+function applyFixedAssignmentLock() {
+  // 提出ボタン無効化
+  const btn = document.getElementById('submitBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '🔒 固定配置中 (提出不可)';
+    btn.style.background = '#9ca3af';
+    btn.style.cursor = 'not-allowed';
+  }
+  
+  // 希望提出タブの最上部に案内バナー追加
+  const submitTab = document.querySelector('[data-tab="submit"]') || document.getElementById('tab-submit');
+  if (submitTab) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background: #fef3c7; color: #92400e; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #f59e0b; font-weight: 600;';
+    banner.innerHTML = '🔒 <strong>固定配置中</strong><br><span style="font-size: 13px; font-weight: 400;">あなたは固定配置が設定されているため、希望提出は不要です。スケジュールは自動的に確定されます。詳細は管理者にお問い合わせください。</span>';
+    submitTab.insertBefore(banner, submitTab.firstChild);
+  }
 }
 
 function loadMotivationMessage() {

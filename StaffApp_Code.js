@@ -31,6 +31,21 @@ const COL_SHIFT = {
 const SUBMIT_START_DAY = 10;  // デフォルト値
 const SUBMIT_END_DAY = 22;    // デフォルト値
 
+
+// ============================================================
+// Phase 7: スタッフの固定配置あり判定 (Index.html.html で使用)
+// ============================================================
+function _isStaffFixedAssigned(staffId) {
+  try {
+    if (typeof listFixedAssignments !== 'function') return false;
+    const result = listFixedAssignments({ staff_id: staffId, is_active: true });
+    if (!result.success) return false;
+    return result.items.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 function _getSubmitDays() {
   try {
     if (typeof getSubmissionPeriod === 'function') {
@@ -319,6 +334,7 @@ function authenticateStaff(email) {
     return {
       success: true,
       staff_id: String(row[COL_STAFF.ID]).trim(),
+      isFixedAssigned: _isStaffFixedAssigned(String(row[COL_STAFF.ID]).trim()),
       name: cleanStaffName(row[COL_STAFF.NAME]),
       employment: String(row[COL_STAFF.EMPLOYMENT] || '').trim(),
       qualification: String(row[COL_STAFF.QUALIFICATION] || '').trim(),
@@ -642,6 +658,7 @@ function authenticateStaffById(staffId) {
     return {
       success: true,
       staff_id: String(row[COL_STAFF.ID]).trim(),
+      isFixedAssigned: _isStaffFixedAssigned(String(row[COL_STAFF.ID]).trim()),
       name: cleanStaffName(row[COL_STAFF.NAME]),
       mainFacility: mainFac,
       secondFacility: secondFac && secondFac !== mainFac ? secondFac : '',
