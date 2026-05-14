@@ -90,13 +90,21 @@ function getDashboardStats() {
   const staffData = staffSheet.getDataRange().getValues();
   let activeStaffCount = 0;
   let adminStaffCount = 0;
+  let sewaCount = 0;
+  let seikatsuCount = 0;
+  let nurseCount = 0;
   for (let i = 1; i < staffData.length; i++) {
     const retired = String(staffData[i][COL_STAFF.RETIRE]).toUpperCase() === 'TRUE';
     if (!retired && staffData[i][COL_STAFF.ID]) {
       activeStaffCount++;
-      if (String(staffData[i][18] || '').trim()) {
-        adminStaffCount++;
-      }
+      // T列(19) 主職種ベースの集計
+      const mainRoles = String(staffData[i][19] || '').split(',').map(r => r.trim());
+      if (mainRoles.indexOf('管理者') >= 0) adminStaffCount++;
+      if (mainRoles.indexOf('世話人') >= 0) sewaCount++;
+      if (mainRoles.indexOf('生活支援員') >= 0) seikatsuCount++;
+      // F列(5) 国家資格ベース (看護師は資格保持で判定)
+      const qual = String(staffData[i][5] || '');
+      if (qual.indexOf('看護師') >= 0) nurseCount++;
     }
   }
   
@@ -134,6 +142,9 @@ function getDashboardStats() {
     success: true,
     activeStaffCount: activeStaffCount,
     adminStaffCount: adminStaffCount,
+    sewaCount: sewaCount,
+    seikatsuCount: seikatsuCount,
+    nurseCount: nurseCount,
     facilityCount: facCount,
     targetYM: targetYM,
     submittedCount: submittedIds.size,
