@@ -160,19 +160,33 @@ function listFixedAssignments(filter) {
   for (var i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     
+    // Date オブジェクトを yyyy-MM 文字列に変換するヘルパー
+    const _toYm = function(v) {
+      if (!v) return '';
+      if (v instanceof Date) return Utilities.formatDate(v, 'JST', 'yyyy-MM');
+      const s = String(v);
+      // ISO形式や日時形式から年月だけ抽出
+      const m = s.match(/^(\d{4}-\d{2})/);
+      return m ? m[1] : s;
+    };
+    
     const item = {
       fixed_id: data[i][0],
       staff_id: String(data[i][1] || ''),
       type: data[i][2],
-      target_ym: String(data[i][3] || ''),
+      target_ym: _toYm(data[i][3]),
       dates_or_weekdays: data[i][4],
       shift_type: data[i][5],
       unit_id: data[i][6],
-      valid_from: String(data[i][7] || ''),
-      valid_to: String(data[i][8] || ''),
+      valid_from: _toYm(data[i][7]),
+      valid_to: _toYm(data[i][8]),
       is_active: String(data[i][9]).toUpperCase() === 'TRUE',
       note: data[i][10],
-      created_at: data[i][11]
+      created_at: data[i][11] ? (data[i][11] instanceof Date ? Utilities.formatDate(data[i][11], 'JST', 'yyyy-MM-dd HH:mm:ss') : String(data[i][11])) : '',
+      // ★ Phase 7.5: 拡張フィールド (note列に JSON 埋め込み or 専用列)
+      dates_shifts_map: _parseDatesShiftsMap(data[i][10]),  // K列 noteから抽出 (後方互換)
+      dates_config_map: _parseDatesShiftsMap(data[i][10]),  // ★ Phase 7.5.4: 同じJSON、UIから別名で読む用
+      facility: ''  // 将来的に専用列に分離する場合
     };
     
     // フィルタ
@@ -274,6 +288,41 @@ function testFixedAssignmentSystem() {
 }
 
 
+
+
+// ============================================================
+// Phase 7.5: dates_shifts_map JSONを noteフィールドから抽出
+// 既存の note を破壊しないため、note内に JSON_MAP:{...} という形式で埋め込む
+// ============================================================
+function _parseDatesShiftsMap(noteStr) {
+  if (!noteStr) return null;
+  const s = String(noteStr);
+  const m = s.match(/JSON_MAP:(\{.*?\})(?:\s|$)/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]);
+  } catch (e) {
+    return null;
+  }
+}
+
+// noteフィールドに JSON_MAP を埋め込む
+function _embedDatesShiftsMap(note, mapObj) {
+  if (!mapObj) return note || '';
+  const json = JSON.stringify(mapObj);
+  const clean = String(note || '').replace(/JSON_MAP:\{.*?\}(?:\s|$)/g, '').trim();
+  return (clean ? clean + ' ' : '') + 'JSON_MAP:' + json;
+}
+
+// ユニットIDが見つからない時にfacilityから探す (将来使用)
+function _findUnitByFacility(item, unitMap) {
+  if (!item.facility) return null;
+  for (var k in unitMap) {
+    if (unitMap[k].facility === item.facility) return unitMap[k];
+  }
+  return null;
+}
+
 // ============================================================
 // 固定配置展開: M_固定配置 → 対象月の日付に展開
 // 戻り値: [{staff_id, dateKey, shift, unit_id, jigyosho, facility, unit_name}, ...]
@@ -318,21 +367,68 @@ function expandFixedAssignments(targetYM) {
     if (item.valid_from && targetYM < item.valid_from) return;
     if (item.valid_to && targetYM > item.valid_to) return;
     
+    // ★ Phase 7.5: dates_shifts_map (JSON) があれば優先、無ければ既存形式 (item.shift_type を全日に適用)
+    // 値は文字列 "早出8h" or オブジェクト {shift, facility, unit_id}
+    var shiftMap = null;
+    if (item.dates_shifts_map) {
+      try {
+        shiftMap = (typeof item.dates_shifts_map === 'string')
+          ? JSON.parse(item.dates_shifts_map)
+          : item.dates_shifts_map;
+      } catch (e) {
+        Logger.log('dates_shifts_map JSONパース失敗 (' + item.fixed_id + '): ' + e);
+        shiftMap = null;
+      }
+    }
+    
+    // configMapから shift/facility/unit_id を取り出すヘルパー
+    function _getConfig(key, defaultShift, defaultUnitId) {
+      if (!shiftMap || !shiftMap[key]) return null;
+      const v = shiftMap[key];
+      if (typeof v === 'string') {
+        // 旧形式: 値がシフト種別の文字列
+        return { shift: v, unit_id: defaultUnitId, facility_override: null };
+      } else if (typeof v === 'object' && v.shift) {
+        // 新形式 (Phase 7.5.4): {shift, facility, unit_id}
+        return {
+          shift: v.shift,
+          unit_id: v.unit_id || defaultUnitId,
+          facility_override: v.facility || null
+        };
+      }
+      return null;
+    }
+    
     // 日付指定の場合: target_ym 一致のみ
     if (item.type === FIXED_ASSIGN_TYPE.DATE) {
       if (item.target_ym !== targetYM) return;
       const dates = String(item.dates_or_weekdays).split(',').map(function(d){return parseInt(d.trim(), 10);}).filter(function(d){return d > 0 && d <= daysInMonth;});
       dates.forEach(function(d) {
         const dateKey = targetYM + '-' + String(d).padStart(2, '0');
-        const unit = unitMap[item.unit_id];
+        const cfg = _getConfig(String(d), item.shift_type, item.unit_id);
+        const dayShift = cfg ? cfg.shift : item.shift_type;
+        if (!dayShift) return;
+        // facility override があればそれ、無ければ item.unit_id の施設
+        let unit = null;
+        if (cfg && cfg.facility_override) {
+          // facility名から最初のユニットを探す
+          for (var ukey in unitMap) {
+            if (unitMap[ukey].facility === cfg.facility_override) {
+              if (cfg.unit_id && unitMap[ukey].unit_id === cfg.unit_id) { unit = unitMap[ukey]; break; }
+              if (!unit) unit = unitMap[ukey];
+            }
+          }
+        } else {
+          unit = unitMap[cfg && cfg.unit_id ? cfg.unit_id : item.unit_id];
+        }
         if (!unit) return;
         expanded.push({
           fixed_id: item.fixed_id,
           staff_id: item.staff_id,
           staff_name: staffNameMap[item.staff_id] || '',
           dateKey: dateKey,
-          shift: item.shift_type,
-          unit_id: item.unit_id,
+          shift: dayShift,
+          unit_id: unit.unit_id,
           jigyosho: unit.jigyosho,
           facility: unit.facility,
           unit_name: unit.unit_name
@@ -346,17 +442,32 @@ function expandFixedAssignments(targetYM) {
       
       for (var d = 1; d <= daysInMonth; d++) {
         const date = new Date(year, month - 1, d);
-        if (weekdayNums.indexOf(date.getDay()) === -1) continue;
+        const dayOfWeek = date.getDay();
+        if (weekdayNums.indexOf(dayOfWeek) === -1) continue;
         const dateKey = targetYM + '-' + String(d).padStart(2, '0');
-        const unit = unitMap[item.unit_id];
+        const weekdayName = ['日','月','火','水','木','金','土'][dayOfWeek];
+        const cfg = _getConfig(weekdayName, item.shift_type, item.unit_id);
+        const dayShift = cfg ? cfg.shift : item.shift_type;
+        if (!dayShift) continue;
+        let unit = null;
+        if (cfg && cfg.facility_override) {
+          for (var ukey in unitMap) {
+            if (unitMap[ukey].facility === cfg.facility_override) {
+              if (cfg.unit_id && unitMap[ukey].unit_id === cfg.unit_id) { unit = unitMap[ukey]; break; }
+              if (!unit) unit = unitMap[ukey];
+            }
+          }
+        } else {
+          unit = unitMap[cfg && cfg.unit_id ? cfg.unit_id : item.unit_id];
+        }
         if (!unit) continue;
         expanded.push({
           fixed_id: item.fixed_id,
           staff_id: item.staff_id,
           staff_name: staffNameMap[item.staff_id] || '',
           dateKey: dateKey,
-          shift: item.shift_type,
-          unit_id: item.unit_id,
+          shift: dayShift,
+          unit_id: unit.unit_id,
           jigyosho: unit.jigyosho,
           facility: unit.facility,
           unit_name: unit.unit_name
@@ -530,5 +641,33 @@ function debug_test_fixed_assignment_full() {
   Logger.log('T_シフト確定 内の固定配置: ' + fixedCount + '件');
   Object.keys(fixedByStaff).forEach(function(sid) {
     Logger.log('  sid=' + sid + ': ' + fixedByStaff[sid] + '件');
+  });
+}
+
+
+// 動作確認用クイックテスト
+function quick_test_phase7_admin() {
+  try {
+    const r = getFixedAssignmentsForAdmin('13', {});
+    Logger.log('OK: ' + JSON.stringify(r).substring(0, 500));
+  } catch (e) {
+    Logger.log('❌ エラー: ' + e + ' / line: ' + (e.lineNumber || '?') + ' / stack: ' + (e.stack || ''));
+  }
+}
+
+
+// デバッグ: 返値の全フィールドの型を出力
+function debug_check_response_types() {
+  const r = getFixedAssignmentsForAdmin('13', {});
+  if (!r.success || !r.items || r.items.length === 0) {
+    Logger.log('No items');
+    return;
+  }
+  const item = r.items[0];
+  Logger.log('=== item[0] フィールド型 ===');
+  Object.keys(item).forEach(function(k) {
+    const v = item[k];
+    const t = v === null ? 'null' : (v instanceof Date ? 'Date' : typeof v);
+    Logger.log(k + ' = ' + t + ' / value: ' + (v instanceof Date ? v.toISOString() : JSON.stringify(v)).substring(0, 100));
   });
 }

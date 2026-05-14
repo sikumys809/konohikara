@@ -2806,3 +2806,77 @@ function debug_phase57_test_r4() {
     Logger.log('❌ R4警告が発火しなかった、ロジック要確認');
   }
 }
+
+
+// ============================================================
+// Phase 7.5 デバッグ関数 (上代直人のallowedShifts確認)
+// ============================================================
+function debug_check_uesiro_allowed() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_スタッフ');
+  const data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] == 23) {
+      Logger.log('=== sid=23 (' + data[i][1] + ') ===');
+      Logger.log('J(9) メイン: [' + data[i][9] + ']');
+      Logger.log('K(10) セカンド: [' + data[i][10] + ']');
+      Logger.log('L(11) サブ: [' + data[i][11] + ']');
+      Logger.log('M(12) シフト区分: [' + data[i][12] + ']');
+      Logger.log('N(13) allowedShifts: [' + data[i][13] + ']');
+      Logger.log('  type: ' + typeof data[i][13]);
+      Logger.log('  split: ' + JSON.stringify(String(data[i][13] || '').split(',').map(s => s.trim()).filter(Boolean)));
+      Logger.log('T(19) 主職種: [' + data[i][19] + ']');
+      Logger.log('退職: [' + data[i][16] + ']');
+      return;
+    }
+  }
+  Logger.log('sid=23 not found');
+}
+
+function debug_check_fixed_003() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_固定配置');
+  const data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === 'FIXED_003') {
+      Logger.log('=== FIXED_003 全カラム ===');
+      const headers = ['A(0)fixed_id','B(1)staff_id','C(2)type','D(3)target_ym','E(4)dates_or_weekdays','F(5)shift_type','G(6)unit_id','H(7)valid_from','I(8)valid_to','J(9)is_active','K(10)note','L(11)created_at'];
+      for (var j = 0; j < data[i].length; j++) {
+        Logger.log((headers[j] || 'col'+j) + ': [' + data[i][j] + ']');
+      }
+      return;
+    }
+  }
+  Logger.log('FIXED_003 not found');
+}
+
+
+// ============================================================
+// Phase 7.5: E-st 確認用デバッグ
+// ============================================================
+function debug_check_est_units() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_ユニット');
+  const data = sh.getDataRange().getValues();
+  Logger.log('=== M_ユニット 全件 (facility含む施設名で重複) ===');
+  const facilities = {};
+  for (var i = 1; i < data.length; i++) {
+    const fac = data[i][3];
+    if (!facilities[fac]) facilities[fac] = [];
+    facilities[fac].push({
+      unit_id: data[i][0],
+      jigyosho: data[i][1],
+      unit_name: data[i][2]
+    });
+  }
+  // 複数事業所にまたがる施設のみ抽出
+  for (const fac in facilities) {
+    const units = facilities[fac];
+    const jigyoshos = [...new Set(units.map(u => u.jigyosho))];
+    if (jigyoshos.length > 1) {
+      Logger.log('★ 複数事業所: ' + fac);
+      units.forEach(u => Logger.log('  ' + u.unit_id + ' / ' + u.jigyosho + ' / ' + u.unit_name));
+    }
+  }
+  Logger.log('=== 全施設リスト ===');
+  for (const fac in facilities) {
+    Logger.log(fac + ' (' + facilities[fac].length + 'ユニット, 事業所=' + [...new Set(facilities[fac].map(u => u.jigyosho))].join('/') + ')');
+  }
+}

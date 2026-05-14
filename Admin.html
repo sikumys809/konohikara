@@ -730,8 +730,10 @@
 
 <!-- ========== 🔒 固定配置設定ビュー (Phase 7) ========== -->
 <div id="view-fixed-assignment" class="hidden" style="padding: 0;">
-  <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 16px;">
-    <h2 style="margin-top: 16px;">🔒 固定配置設定</h2>
+  <div style="padding: 24px;">
+    <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
+  <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 16px; margin-top: 16px;">
+    <h2 style="margin-top: 0;">🔒 固定配置設定</h2>
     <p style="color: #6b7280; margin: 8px 0 16px 0;">スタッフの固定配置を設定します。固定配置されたスタッフは自動配置の対象外となり、必ず指定された日時・施設・シフトで配置されます。</p>
     
     <div style="margin-bottom: 16px;">
@@ -743,81 +745,114 @@
       <div style="padding: 24px; text-align: center; color: #9ca3af;">読み込み中...</div>
     </div>
   </div>
+  </div>
 </div>
 
 <!-- 固定配置 追加モーダル -->
 <div id="fixedAssignmentAddModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: none; align-items: center; justify-content: center;">
-  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto;">
+  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
     <h3 style="margin-top: 0;">🔒 固定配置 追加</h3>
-    <div style="display: grid; gap: 12px;">
+    <div style="display: grid; gap: 16px;">
+      
+      <!-- ① スタッフ -->
       <div>
-        <label style="display: block; font-weight: 600; margin-bottom: 4px;">スタッフ <span style="color: #ef4444;">*</span></label>
-        <select id="faStaffId" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 4px;">① スタッフ <span style="color: #ef4444;">*</span></label>
+        <select id="faStaffId" onchange="onFaStaffChange()" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
           <option value="">-- スタッフ選択 --</option>
         </select>
+        <div id="faStaffInfo" style="font-size: 12px; color: #6b7280; margin-top: 4px;"></div>
       </div>
+      
+      <!-- ② タイプ -->
       <div>
-        <label style="display: block; font-weight: 600; margin-bottom: 4px;">タイプ <span style="color: #ef4444;">*</span></label>
-        <select id="faType" onchange="onFaTypeChange()" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
-          <option value="曜日指定">曜日指定 (毎週繰り返し)</option>
-          <option value="日付指定">日付指定 (特定月の特定日)</option>
-        </select>
-      </div>
-      <div id="faTargetYmBox" style="display: none;">
-        <label style="display: block; font-weight: 600; margin-bottom: 4px;">対象月 (日付指定の場合) <span style="color: #ef4444;">*</span></label>
-        <input type="month" id="faTargetYm" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
-      </div>
-      <div>
-        <label style="display: block; font-weight: 600; margin-bottom: 4px;" id="faDatesLabel">曜日 <span style="color: #ef4444;">*</span></label>
-        <div id="faWeekdaysBox">
-          <label><input type="checkbox" value="月" class="fa-weekday"> 月</label>
-          <label style="margin-left: 12px;"><input type="checkbox" value="火" class="fa-weekday"> 火</label>
-          <label style="margin-left: 12px;"><input type="checkbox" value="水" class="fa-weekday"> 水</label>
-          <label style="margin-left: 12px;"><input type="checkbox" value="木" class="fa-weekday"> 木</label>
-          <label style="margin-left: 12px;"><input type="checkbox" value="金" class="fa-weekday"> 金</label>
-          <label style="margin-left: 12px;"><input type="checkbox" value="土" class="fa-weekday"> 土</label>
-          <label style="margin-left: 12px;"><input type="checkbox" value="日" class="fa-weekday"> 日</label>
+        <label style="display: block; font-weight: 600; margin-bottom: 4px;">② タイプ <span style="color: #ef4444;">*</span></label>
+        <div style="display: flex; gap: 12px;">
+          <label style="cursor: pointer; padding: 10px 16px; border: 2px solid #10b981; border-radius: 6px; flex: 1; text-align: center; background: #d1fae5;" id="faTypeLabelWeekday">
+            <input type="radio" name="faType" value="曜日指定" onchange="onFaTypeChange()" checked style="margin-right: 6px;">曜日指定 (毎週繰返)
+          </label>
+          <label style="cursor: pointer; padding: 10px 16px; border: 2px solid #d1d5db; border-radius: 6px; flex: 1; text-align: center;" id="faTypeLabelDate">
+            <input type="radio" name="faType" value="日付指定" onchange="onFaTypeChange()" style="margin-right: 6px;">日付指定 (月単位)
+          </label>
         </div>
-        <input type="text" id="faDatesInput" placeholder="例: 1,8,15,22,29 (カンマ区切り)" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; display: none;">
       </div>
-      <div>
-        <label style="display: block; font-weight: 600; margin-bottom: 4px;">シフト種別 <span style="color: #ef4444;">*</span></label>
-        <select id="faShiftType" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
-          <option value="早出8h">早出8h (07:00-16:00)</option>
-          <option value="早出4h">早出4h (07:00-11:00)</option>
-          <option value="遅出8h">遅出8h (13:00-22:00)</option>
-          <option value="遅出4h">遅出4h (13:00-17:00)</option>
-          <option value="夜勤A">夜勤A (20:00-05:00)</option>
-          <option value="夜勤B">夜勤B (22:00-07:00)</option>
-          <option value="夜勤C">夜勤C (22:00-08:00)</option>
+      
+      <!-- ③ 曜日指定 セクション -->
+      <div id="faWeekdaySection">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">③ 曜日ごとのシフト種別</label>
+        <div style="background: #f9fafb; padding: 12px; border-radius: 8px;">
+          <div id="faWeekdayMatrix" style="display: grid; grid-template-columns: 50px 1fr; gap: 8px 12px; align-items: center; font-size: 13px;"></div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+            <div style="font-size: 12px; color: #6b7280; margin-bottom: 6px;">⚡ 一括設定:</div>
+            <div id="faWeekdayBulk" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- ③ 日付指定 セクション -->
+      <div id="faDateSection" style="display: none;">
+        <label style="display: block; font-weight: 600; margin-bottom: 4px;">③ 対象月 <span style="color: #ef4444;">*</span></label>
+        <input type="month" id="faTargetYm" onchange="renderFaCalendar()" style="width: 200px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+        
+        <div style="margin-top: 16px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 8px;">カレンダー (クリックで選択/解除)</label>
+          <div id="faCalendar" style="background: #f9fafb; padding: 12px; border-radius: 8px;">
+            <div style="text-align: center; color: #9ca3af; padding: 20px;">対象月を選択してください</div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 16px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 8px;">選択日 + シフト種別</label>
+          <div id="faDateList" style="background: #f9fafb; padding: 12px; border-radius: 8px; max-height: 250px; overflow-y: auto;">
+            <div style="text-align: center; color: #9ca3af;">カレンダーから日付を選択してください</div>
+          </div>
+          <div style="margin-top: 8px; font-size: 12px; color: #6b7280;">⚡ 一括設定:</div>
+          <div id="faDateBulk" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px;"></div>
+        </div>
+      </div>
+      
+      <!-- ④ 配置先 -->
+      <div style="border-top: 2px solid #e5e7eb; padding-top: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 4px;">④ 配置先 施設 <span style="color: #ef4444;">*</span></label>
+        <select id="faFacility" onchange="onFaFacilityChange()" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+          <option value="">-- 施設選択 (先にスタッフを選択) --</option>
         </select>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">スタッフの許可施設(メイン/セカンド/サブ)から選択</div>
       </div>
-      <div>
-        <label style="display: block; font-weight: 600; margin-bottom: 4px;">配置先ユニット <span style="color: #ef4444;">*</span></label>
+      
+      <div id="faUnitSection" style="display: none;">
+        <label style="display: block; font-weight: 600; margin-bottom: 4px;">⑤ 配置先 ユニット <span style="color: #ef4444;">*</span></label>
         <select id="faUnitId" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
           <option value="">-- ユニット選択 --</option>
         </select>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">夜勤シフトを含む場合は必須</div>
       </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+      
+      <!-- ⑥ 有効期間 -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid #e5e7eb; padding-top: 16px;">
         <div>
           <label style="display: block; font-weight: 600; margin-bottom: 4px;">有効期間 開始</label>
           <input type="month" id="faValidFrom" value="2026-01" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
         </div>
         <div>
           <label style="display: block; font-weight: 600; margin-bottom: 4px;">有効期間 終了</label>
-          <input type="text" id="faValidTo" value="9999-12" placeholder="9999-12 = 永続" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+          <input type="month" id="faValidTo" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+          <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">空欄=永続</div>
         </div>
       </div>
+      
+      <!-- 備考 -->
       <div>
         <label style="display: block; font-weight: 600; margin-bottom: 4px;">備考</label>
         <input type="text" id="faNote" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
       </div>
     </div>
+    
     <div style="display: flex; gap: 8px; margin-top: 20px;">
       <button onclick="closeFixedAssignmentAddModal()" style="padding: 10px 20px; background: #e5e7eb; border: none; border-radius: 6px; cursor: pointer;">キャンセル</button>
       <button onclick="saveFixedAssignment()" style="padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; margin-left: auto; font-weight: 600;">追加</button>
     </div>
   </div>
+</div>
 </div>
 
 <!-- ========== ⚠️ 警告承認ビュー (Phase 5.5) ========== -->
@@ -5102,9 +5137,18 @@ function addNewStaff() {
 
 
 // ============================================================
-// Phase 7: 固定配置設定UI
+// Phase 7.5: 固定配置設定UI (再実装)
 // ============================================================
 let fixedAssignments = [];
+let faState = {
+  staff: null,                   // 選択中のスタッフオブジェクト (allowedShifts等含む)
+  type: '曜日指定',              // '曜日指定' or '日付指定'
+  weekdayShifts: {},             // {日: '', 月: '早出8h', ...}
+  dateShifts: {},                // {1: '早出8h', 8: '遅出8h', ...}
+  selectedDates: [],             // [1, 8, 15, ...]
+  targetYm: '',
+  units: []                       // 全ユニット
+};
 
 function showFixedAssignmentView() {
   hideAllViews();
@@ -5114,44 +5158,40 @@ function showFixedAssignmentView() {
 
 function loadFixedAssignmentsList() {
   const container = document.getElementById('fixedAssignmentsList');
+  if (!currentAdmin || !currentAdmin.staff_id) {
+    container.innerHTML = '<div style="padding: 24px; color: #ef4444;">currentAdmin 未定義</div>';
+    return;
+  }
   container.innerHTML = '<div style="padding: 24px; text-align: center; color: #9ca3af;">読み込み中...</div>';
   
   google.script.run.withSuccessHandler(res => {
-    if (!res.success) {
-      container.innerHTML = '<div style="padding: 24px; color: #ef4444;">エラー: ' + res.message + '</div>';
+    if (!res || !res.success) {
+      container.innerHTML = '<div style="padding: 24px; color: #ef4444;">エラー: ' + (res && res.message ? res.message : '不明') + '</div>';
       return;
     }
     fixedAssignments = res.items || [];
     renderFixedAssignmentsList();
   }).withFailureHandler(err => {
-    container.innerHTML = '<div style="padding: 24px; color: #ef4444;">通信エラー: ' + err + '</div>';
+    container.innerHTML = '<div style="padding: 24px; color: #ef4444;">通信エラー: ' + (err && err.message ? err.message : err) + '</div>';
   }).getFixedAssignmentsForAdmin(currentAdmin.staff_id, {});
 }
 
 function renderFixedAssignmentsList() {
   const container = document.getElementById('fixedAssignmentsList');
-  
   if (fixedAssignments.length === 0) {
     container.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af;">固定配置はまだ設定されていません</div>';
     return;
   }
-  
   let html = '<table style="width: 100%; border-collapse: collapse;">';
   html += '<thead><tr style="background: #f3f4f6;">';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">ID</th>';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">スタッフ</th>';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">タイプ</th>';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">日付/曜日</th>';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">シフト</th>';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">配置先</th>';
-  html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">有効期間</th>';
-  html += '<th style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb;">状態</th>';
-  html += '<th style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb;">操作</th>';
+  ['ID', 'スタッフ', 'タイプ', '日付/曜日', 'シフト', '配置先', '有効期間', '状態', '操作'].forEach(h => {
+    html += '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb;">' + h + '</th>';
+  });
   html += '</tr></thead><tbody>';
   
   fixedAssignments.forEach(item => {
     const targetInfo = item.type === '日付指定' ? (item.target_ym + ' / ' + item.dates_or_weekdays) : item.dates_or_weekdays;
-    const placeInfo = item.jigyosho + ' / ' + item.unit_name;
+    const placeInfo = item.jigyosho + ' / ' + (item.unit_name || item.facility || '');
     const validRange = item.valid_from + ' 〜 ' + (item.valid_to === '9999-12' ? '永続' : item.valid_to);
     const statusBadge = item.is_active
       ? '<span style="padding: 2px 8px; background: #d1fae5; color: #065f46; border-radius: 4px; font-size: 11px;">有効</span>'
@@ -5171,37 +5211,50 @@ function renderFixedAssignmentsList() {
     html += '<button onclick="deleteFa(\'' + item.fixed_id + '\')" style="padding: 4px 8px; background: #fee2e2; color: #991b1b; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">削除</button>';
     html += '</td></tr>';
   });
-  
   html += '</tbody></table>';
   container.innerHTML = html;
 }
 
+// 固定配置 追加モーダルを開く
 function openFixedAssignmentAddModal() {
-  // スタッフ一覧をロード
-  const staffSelect = document.getElementById('faStaffId');
-  staffSelect.innerHTML = '<option value="">-- スタッフ選択 --</option>';
-  (allStaff || []).filter(s => !s.retired).forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.staff_id;
-    opt.textContent = s.name + ' (sid=' + s.staff_id + ')';
-    staffSelect.appendChild(opt);
-  });
+  // 状態リセット (Phase 7.5.4: 拡張版)
+  faState = _faInitState();
   
-  // ユニット一覧をロード
-  google.script.run.withSuccessHandler(res => {
-    const unitSelect = document.getElementById('faUnitId');
-    unitSelect.innerHTML = '<option value="">-- ユニット選択 --</option>';
-    if (res && res.success && res.items) {
-      res.items.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.unit_id;
-        opt.textContent = u.unit_id + ' / ' + u.jigyosho + ' / ' + u.unit_name;
-        unitSelect.appendChild(opt);
-      });
+  const staffSelect = document.getElementById('faStaffId');
+  staffSelect.innerHTML = '<option value="">読み込み中...</option>';
+  document.getElementById('faStaffInfo').textContent = '';
+  document.getElementById('faFacility').innerHTML = '<option value="">-- 施設選択 (先にスタッフを選択) --</option>';
+  document.getElementById('faUnitId').innerHTML = '<option value="">-- ユニット選択 --</option>';
+  document.getElementById('faUnitSection').style.display = 'none';
+  
+  let staffLoaded = false, unitsLoaded = false;
+  const tryShow = () => {
+    if (staffLoaded && unitsLoaded) {
+      onFaTypeChange();
+      document.getElementById('fixedAssignmentAddModal').classList.remove('hidden');
+      document.getElementById('fixedAssignmentAddModal').style.display = 'flex';
     }
-    document.getElementById('fixedAssignmentAddModal').classList.remove('hidden');
-    document.getElementById('fixedAssignmentAddModal').style.display = 'flex';
-  }).getUnitsList(currentAdmin.staff_id);
+  };
+  
+  google.script.run.withSuccessHandler(res => {
+    staffSelect.innerHTML = '<option value="">-- スタッフ選択 --</option>';
+    const list = (res && res.success && res.staff) ? res.staff : [];
+    list.filter(s => !s.isRetired).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.staff_id;
+      opt.dataset.staff = JSON.stringify(s);
+      opt.textContent = s.name + ' (sid=' + s.staff_id + ')';
+      staffSelect.appendChild(opt);
+    });
+    staffLoaded = true;
+    tryShow();
+  }).withFailureHandler(() => { staffLoaded = true; tryShow(); }).getAllStaffList(currentAdmin.staff_id);
+  
+  google.script.run.withSuccessHandler(res => {
+    if (res && res.success && res.items) faState.units = res.items;
+    unitsLoaded = true;
+    tryShow();
+  }).withFailureHandler(() => { unitsLoaded = true; tryShow(); }).getUnitsList(currentAdmin.staff_id);
 }
 
 function closeFixedAssignmentAddModal() {
@@ -5209,90 +5262,463 @@ function closeFixedAssignmentAddModal() {
   document.getElementById('fixedAssignmentAddModal').style.display = 'none';
 }
 
-function onFaTypeChange() {
-  const type = document.getElementById('faType').value;
-  if (type === '日付指定') {
-    document.getElementById('faTargetYmBox').style.display = 'block';
-    document.getElementById('faDatesLabel').textContent = '日付 (例: 1,8,15,22,29) ';
-    document.getElementById('faWeekdaysBox').style.display = 'none';
-    document.getElementById('faDatesInput').style.display = 'block';
-  } else {
-    document.getElementById('faTargetYmBox').style.display = 'none';
-    document.getElementById('faDatesLabel').textContent = '曜日 ';
-    document.getElementById('faWeekdaysBox').style.display = 'block';
-    document.getElementById('faDatesInput').style.display = 'none';
+// スタッフ選択時
+function onFaStaffChange() {
+  const sel = document.getElementById('faStaffId');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.dataset.staff) {
+    faState.staff = null;
+    document.getElementById('faStaffInfo').textContent = '';
+    document.getElementById('faFacility').innerHTML = '<option value="">-- 施設選択 (先にスタッフを選択) --</option>';
+    return;
   }
+  faState.staff = JSON.parse(opt.dataset.staff);
+  
+  // スタッフ情報表示
+  const allowed = faState.staff.allowedShifts || [];
+  document.getElementById('faStaffInfo').textContent = '許可シフト: ' + (allowed.length > 0 ? allowed.join(', ') : 'なし') + ' / メイン: ' + (faState.staff.mainFacility || '-');
+  
+  // 施設プルダウン生成 (メイン + セカンド + サブ)
+  const facSel = document.getElementById('faFacility');
+  facSel.innerHTML = '<option value="">-- 施設選択 --</option>';
+  const facs = [];
+  if (faState.staff.mainFacility) facs.push({name: faState.staff.mainFacility, role: 'メイン'});
+  if (faState.staff.secondFacility) facs.push({name: faState.staff.secondFacility, role: 'セカンド'});
+  (faState.staff.subFacilities || []).forEach(f => facs.push({name: f, role: 'サブ'}));
+  facs.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.name;
+    o.textContent = f.name + ' (' + f.role + ')';
+    facSel.appendChild(o);
+  });
+  
+  // 既存マトリクス再描画 (シフトプルダウンを更新するため)
+  renderFaWeekdayMatrix();
+  renderFaBulkButtons();
 }
 
-function saveFixedAssignment() {
-  const type = document.getElementById('faType').value;
-  let datesOrWeekdays = '';
+// タイプ変更時
+function onFaTypeChange() {
+  const checked = document.querySelector('input[name="faType"]:checked');
+  faState.type = checked ? checked.value : '曜日指定';
   
-  if (type === '日付指定') {
-    datesOrWeekdays = document.getElementById('faDatesInput').value.trim();
-    if (!datesOrWeekdays) {
-      alert('日付を入力してください (例: 1,8,15,22,29)');
-      return;
-    }
+  // タイプボタンのスタイル更新
+  const wdLabel = document.getElementById('faTypeLabelWeekday');
+  const dtLabel = document.getElementById('faTypeLabelDate');
+  if (faState.type === '曜日指定') {
+    wdLabel.style.borderColor = '#10b981';
+    wdLabel.style.background = '#d1fae5';
+    dtLabel.style.borderColor = '#d1d5db';
+    dtLabel.style.background = 'white';
+    document.getElementById('faWeekdaySection').style.display = 'block';
+    document.getElementById('faDateSection').style.display = 'none';
   } else {
-    const checks = document.querySelectorAll('.fa-weekday:checked');
-    const weekdays = [];
-    checks.forEach(c => weekdays.push(c.value));
-    if (weekdays.length === 0) {
-      alert('曜日を1つ以上選択してください');
-      return;
-    }
-    datesOrWeekdays = weekdays.join(',');
+    wdLabel.style.borderColor = '#d1d5db';
+    wdLabel.style.background = 'white';
+    dtLabel.style.borderColor = '#10b981';
+    dtLabel.style.background = '#d1fae5';
+    document.getElementById('faWeekdaySection').style.display = 'none';
+    document.getElementById('faDateSection').style.display = 'block';
   }
   
-  const params = {
-    staff_id: document.getElementById('faStaffId').value,
-    type: type,
-    target_ym: type === '日付指定' ? document.getElementById('faTargetYm').value : '',
-    dates_or_weekdays: datesOrWeekdays,
-    shift_type: document.getElementById('faShiftType').value,
-    unit_id: document.getElementById('faUnitId').value,
-    valid_from: document.getElementById('faValidFrom').value,
-    valid_to: document.getElementById('faValidTo').value || '9999-12',
-    is_active: true,
-    note: document.getElementById('faNote').value
+  renderFaWeekdayMatrix();
+  renderFaBulkButtons();
+  renderFaDateList();
+}
+
+// 曜日マトリクス描画
+// faState 初期化を上書き (faStateの構造拡張)
+function _faInitState() {
+  return {
+    staff: null,
+    type: '曜日指定',
+    weekdayShifts: {  // 各値は {shift, overrideFacility, facility, unit_id}
+      '日': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
+      '月': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
+      '火': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
+      '水': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
+      '木': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
+      '金': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
+      '土': {shift: '', overrideFacility: false, facility: '', unit_id: ''}
+    },
+    dateShifts: {},  // {1: {shift, overrideFacility, facility, unit_id}, ...}
+    selectedDates: [],
+    targetYm: '',
+    units: [],
+    defaultFacility: ''  // ④で選んだデフォルト施設
   };
+}
+
+// 曜日マトリクス描画 (拡張版: シフト + 別施設チェック + 施設プルダウン + 夜勤時ユニット)
+function renderFaWeekdayMatrix() {
+  const box = document.getElementById('faWeekdayMatrix');
+  const weekdays = ['日','月','火','水','木','金','土'];
+  const allowed = (faState.staff && faState.staff.allowedShifts) ? faState.staff.allowedShifts : [];
   
-  if (!params.staff_id || !params.unit_id) {
-    alert('スタッフとユニットは必須です');
+  if (allowed.length === 0) {
+    box.innerHTML = '<div style="grid-column: 1/-1; color: #9ca3af; font-size: 12px;">先にスタッフを選択してください</div>';
     return;
   }
   
-  google.script.run.withSuccessHandler(res => {
-    if (!res.success) {
-      alert('エラー: ' + res.message);
-      return;
+  // グリッドカラム数を変える (5カラム: 曜日 / シフト / 別施設チェック / 施設 / ユニット)
+  box.style.gridTemplateColumns = '40px 130px 90px 1fr 100px';
+  
+  // ヘッダ
+  let html = '';
+  html += '<div></div>';
+  html += '<div style="font-size: 11px; color: #6b7280;">シフト</div>';
+  html += '<div style="font-size: 11px; color: #6b7280;">別施設</div>';
+  html += '<div style="font-size: 11px; color: #6b7280;">施設(別施設の時)</div>';
+  html += '<div style="font-size: 11px; color: #6b7280;">ユニット(夜勤時)</div>';
+  
+  weekdays.forEach(w => {
+    const cfg = faState.weekdayShifts[w];
+    const isNight = cfg.shift && cfg.shift.indexOf('夜勤') === 0;
+    const dayColor = w === '日' ? '#dc2626' : w === '土' ? '#2563eb' : '#000';
+    
+    // 曜日
+    html += '<div style="font-weight: 600; color: ' + dayColor + ';">' + w + '</div>';
+    
+    // シフト選択
+    html += '<select onchange="faOnWeekdayShiftChange(\'' + w + '\', this.value)" style="padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;">';
+    html += '<option value="">選択なし</option>';
+    allowed.forEach(s => {
+      html += '<option value="' + s + '"' + (cfg.shift === s ? ' selected' : '') + '>' + s + '</option>';
+    });
+    html += '</select>';
+    
+    // 別施設チェック
+    html += '<label style="display: flex; align-items: center; gap: 4px; font-size: 12px;">';
+    html += '<input type="checkbox" onchange="faOnWeekdayOverrideChange(\'' + w + '\', this.checked)"' + (cfg.overrideFacility ? ' checked' : '') + '> 別施設';
+    html += '</label>';
+    
+    // 施設プルダウン (overrideFacility=true のときのみ有効)
+    html += '<select onchange="faOnWeekdayFacilityChange(\'' + w + '\', this.value)" ' + (cfg.overrideFacility ? '' : 'disabled') + ' style="padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;' + (cfg.overrideFacility ? '' : ' background: #f3f4f6;') + '">';
+    html += '<option value="">-- 施設選択 --</option>';
+    _faGetAllowedFacilities().forEach(f => {
+      html += '<option value="' + f.name + '"' + (cfg.facility === f.name ? ' selected' : '') + '>' + f.name + ' (' + f.role + ')</option>';
+    });
+    html += '</select>';
+    
+    // ユニット (夜勤時のみ)
+    if (isNight) {
+      html += '<select onchange="faState.weekdayShifts[\'' + w + '\'].unit_id=this.value" style="padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;">';
+      html += '<option value="">-- ユニット --</option>';
+      const targetFacility = cfg.overrideFacility ? cfg.facility : faState.defaultFacility;
+      (faState.units || []).filter(u => u.facility === targetFacility).forEach(u => {
+        html += '<option value="' + u.unit_id + '"' + (cfg.unit_id === u.unit_id ? ' selected' : '') + '>' + u.unit_id + ' / ' + u.unit_name + '</option>';
+      });
+      html += '</select>';
+    } else {
+      html += '<div style="font-size: 11px; color: #9ca3af;">-</div>';
     }
+  });
+  box.innerHTML = html;
+}
+
+function faOnWeekdayShiftChange(w, value) {
+  faState.weekdayShifts[w].shift = value;
+  renderFaWeekdayMatrix();  // 夜勤切替時にユニット列が出るため再描画
+}
+
+function faOnWeekdayOverrideChange(w, checked) {
+  faState.weekdayShifts[w].overrideFacility = checked;
+  if (!checked) faState.weekdayShifts[w].facility = '';
+  renderFaWeekdayMatrix();
+}
+
+// スタッフの許可施設リスト
+function _faGetAllowedFacilities() {
+  const s = faState.staff;
+  if (!s) return [];
+  const facs = [];
+  if (s.mainFacility) facs.push({name: s.mainFacility, role: 'メイン'});
+  if (s.secondFacility) facs.push({name: s.secondFacility, role: 'セカンド'});
+  (s.subFacilities || []).forEach(f => {
+    if (f && f !== s.mainFacility && f !== s.secondFacility) facs.push({name: f, role: 'サブ'});
+  });
+  return facs;
+}
+
+// 一括設定ボタン
+function renderFaBulkButtons() {
+  const allowed = (faState.staff && faState.staff.allowedShifts) ? faState.staff.allowedShifts : [];
+  const wdBox = document.getElementById('faWeekdayBulk');
+  let wdHtml = '';
+  allowed.forEach(s => {
+    wdHtml += '<button type="button" onclick="faBulkSetAllWeekdays(\'' + s + '\')" style="padding: 4px 10px; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; font-size: 12px;">全日 ' + s + '</button>';
+  });
+  wdHtml += '<button type="button" onclick="faBulkClearWeekdays()" style="padding: 4px 10px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; cursor: pointer; font-size: 12px;">クリア</button>';
+  wdBox.innerHTML = wdHtml;
+  
+  const dtBox = document.getElementById('faDateBulk');
+  let dtHtml = '';
+  allowed.forEach(s => {
+    dtHtml += '<button type="button" onclick="faBulkSetAllDates(\'' + s + '\')" style="padding: 4px 10px; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; font-size: 12px;">全部 ' + s + '</button>';
+  });
+  dtHtml += '<button type="button" onclick="faBulkClearDates()" style="padding: 4px 10px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; cursor: pointer; font-size: 12px;">クリア</button>';
+  dtBox.innerHTML = dtHtml;
+}
+
+function faBulkSetAllWeekdays(shift) {
+  ['日','月','火','水','木','金','土'].forEach(w => {
+    faState.weekdayShifts[w].shift = shift;
+  });
+  renderFaWeekdayMatrix();
+}
+
+function faBulkClearWeekdays() {
+  ['日','月','火','水','木','金','土'].forEach(w => {
+    faState.weekdayShifts[w] = {shift: '', overrideFacility: false, facility: '', unit_id: ''};
+  });
+  renderFaWeekdayMatrix();
+}
+
+function faBulkSetAllDates(shift) {
+  faState.selectedDates.forEach(d => {
+    if (!faState.dateShifts[d]) faState.dateShifts[d] = {shift: '', overrideFacility: false, facility: '', unit_id: ''};
+    faState.dateShifts[d].shift = shift;
+  });
+  renderFaDateList();
+}
+
+function faBulkClearDates() {
+  faState.selectedDates = [];
+  faState.dateShifts = {};
+  renderFaCalendar();
+  renderFaDateList();
+}
+
+// カレンダー描画 (変更なし)
+function renderFaCalendar() {
+  const targetYm = document.getElementById('faTargetYm').value;
+  if (!targetYm) {
+    document.getElementById('faCalendar').innerHTML = '<div style="text-align: center; color: #9ca3af; padding: 20px;">対象月を選択してください</div>';
+    return;
+  }
+  faState.targetYm = targetYm;
+  const [y, m] = targetYm.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  let html = '<div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; max-width: 420px;">';
+  const heads = ['日','月','火','水','木','金','土'];
+  heads.forEach((h, i) => {
+    const c = i === 0 ? '#dc2626' : i === 6 ? '#2563eb' : '#000';
+    html += '<div style="text-align: center; font-weight: 600; color: ' + c + '; padding: 4px;">' + h + '</div>';
+  });
+  for (let i = 0; i < firstDow; i++) html += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isSel = faState.selectedDates.indexOf(d) >= 0;
+    const dow = (firstDow + d - 1) % 7;
+    const c = dow === 0 ? '#dc2626' : dow === 6 ? '#2563eb' : '#000';
+    const bg = isSel ? '#10b981' : '#fff';
+    const fc = isSel ? '#fff' : c;
+    html += '<div onclick="faToggleDate(' + d + ')" style="cursor: pointer; text-align: center; padding: 8px 4px; border: 1px solid #d1d5db; border-radius: 4px; background: ' + bg + '; color: ' + fc + '; font-weight: ' + (isSel ? '600' : '400') + ';">' + d + '</div>';
+  }
+  html += '</div>';
+  document.getElementById('faCalendar').innerHTML = html;
+}
+
+function faToggleDate(d) {
+  const idx = faState.selectedDates.indexOf(d);
+  if (idx >= 0) {
+    faState.selectedDates.splice(idx, 1);
+    delete faState.dateShifts[d];
+  } else {
+    faState.selectedDates.push(d);
+    faState.dateShifts[d] = {shift: '', overrideFacility: false, facility: '', unit_id: ''};
+    faState.selectedDates.sort((a, b) => a - b);
+  }
+  renderFaCalendar();
+  renderFaDateList();
+}
+
+// 選択日リスト (拡張版)
+function renderFaDateList() {
+  const box = document.getElementById('faDateList');
+  if (faState.selectedDates.length === 0) {
+    box.innerHTML = '<div style="text-align: center; color: #9ca3af;">カレンダーから日付を選択してください</div>';
+    return;
+  }
+  const allowed = (faState.staff && faState.staff.allowedShifts) ? faState.staff.allowedShifts : [];
+  let html = '';
+  faState.selectedDates.forEach(d => {
+    const cfg = faState.dateShifts[d];
+    const isNight = cfg.shift && cfg.shift.indexOf('夜勤') === 0;
+    html += '<div style="display: grid; grid-template-columns: 90px 130px 90px 1fr 100px 30px; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">';
+    html += '<div style="font-weight: 600; font-size: 13px;">' + faState.targetYm + '-' + String(d).padStart(2, '0') + '</div>';
+    // シフト
+    html += '<select onchange="faOnDateShiftChange(' + d + ', this.value)" style="padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;">';
+    html += '<option value="">選択なし</option>';
+    allowed.forEach(s => {
+      html += '<option value="' + s + '"' + (cfg.shift === s ? ' selected' : '') + '>' + s + '</option>';
+    });
+    html += '</select>';
+    // 別施設チェック
+    html += '<label style="display: flex; align-items: center; gap: 4px; font-size: 11px;">';
+    html += '<input type="checkbox" onchange="faOnDateOverrideChange(' + d + ', this.checked)"' + (cfg.overrideFacility ? ' checked' : '') + '> 別施設';
+    html += '</label>';
+    // 施設
+    html += '<select onchange="faOnDateFacilityChange(' + d + ', this.value)" ' + (cfg.overrideFacility ? '' : 'disabled') + ' style="padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;' + (cfg.overrideFacility ? '' : ' background: #f3f4f6;') + '">';
+    html += '<option value="">--</option>';
+    _faGetAllowedFacilities().forEach(f => {
+      html += '<option value="' + f.name + '"' + (cfg.facility === f.name ? ' selected' : '') + '>' + f.name + '</option>';
+    });
+    html += '</select>';
+    // ユニット (夜勤時のみ)
+    if (isNight) {
+      html += '<select onchange="faState.dateShifts[' + d + '].unit_id=this.value" style="padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;">';
+      html += '<option value="">-- U --</option>';
+      const targetFacility = cfg.overrideFacility ? cfg.facility : faState.defaultFacility;
+      (faState.units || []).filter(u => u.facility === targetFacility).forEach(u => {
+        html += '<option value="' + u.unit_id + '"' + (cfg.unit_id === u.unit_id ? ' selected' : '') + '>' + u.unit_id + '</option>';
+      });
+      html += '</select>';
+    } else {
+      html += '<div style="font-size: 11px; color: #9ca3af;">-</div>';
+    }
+    // 削除
+    html += '<button type="button" onclick="faToggleDate(' + d + ')" style="padding: 4px; background: #fee2e2; color: #991b1b; border: none; border-radius: 4px; cursor: pointer;">×</button>';
+    html += '</div>';
+  });
+  box.innerHTML = html;
+}
+
+function faOnDateShiftChange(d, value) {
+  if (!faState.dateShifts[d]) faState.dateShifts[d] = {shift: '', overrideFacility: false, facility: '', unit_id: ''};
+  faState.dateShifts[d].shift = value;
+  renderFaDateList();
+}
+
+function faOnDateOverrideChange(d, checked) {
+  if (!faState.dateShifts[d]) faState.dateShifts[d] = {shift: '', overrideFacility: false, facility: '', unit_id: ''};
+  faState.dateShifts[d].overrideFacility = checked;
+  if (!checked) faState.dateShifts[d].facility = '';
+  renderFaDateList();
+}
+
+function faOnWeekdayFacilityChange(w, value) {
+  faState.weekdayShifts[w].facility = value;
+  faState.weekdayShifts[w].unit_id = '';  // 施設変えたらユニットリセット
+  renderFaWeekdayMatrix();
+}
+
+function faOnDateFacilityChange(d, value) {
+  if (!faState.dateShifts[d]) faState.dateShifts[d] = {shift: '', overrideFacility: false, facility: '', unit_id: ''};
+  faState.dateShifts[d].facility = value;
+  faState.dateShifts[d].unit_id = '';  // 施設変えたらユニットリセット
+  renderFaDateList();
+}
+
+
+// デフォルト施設 (④) 変更時
+function onFaFacilityChange() {
+  faState.defaultFacility = document.getElementById('faFacility').value;
+  renderFaWeekdayMatrix();  // ユニットの絞り込み再計算
+  renderFaDateList();
+}
+
+function _faHasNightShift() {
+  if (faState.type === '曜日指定') {
+    return Object.values(faState.weekdayShifts).some(c => c.shift && c.shift.indexOf('夜勤') === 0);
+  } else {
+    return Object.values(faState.dateShifts).some(c => c.shift && c.shift.indexOf('夜勤') === 0);
+  }
+}
+
+// 保存
+function saveFixedAssignment() {
+  if (!faState.staff) return alert('スタッフを選択してください');
+  
+  const defaultFac = document.getElementById('faFacility').value;
+  if (!defaultFac) return alert('④ 配置先施設(デフォルト)を選択してください');
+  faState.defaultFacility = defaultFac;
+  
+  // 設定マップ作成
+  let configMap = {};
+  let datesList = '';
+  
+  if (faState.type === '曜日指定') {
+    Object.keys(faState.weekdayShifts).forEach(w => {
+      const cfg = faState.weekdayShifts[w];
+      if (!cfg.shift) return;
+      const entry = { shift: cfg.shift };
+      if (cfg.overrideFacility && cfg.facility) entry.facility = cfg.facility;
+      if (cfg.shift.indexOf('夜勤') === 0 && cfg.unit_id) entry.unit_id = cfg.unit_id;
+      configMap[w] = entry;
+    });
+    if (Object.keys(configMap).length === 0) return alert('曜日ごとのシフト種別を1つ以上選択してください');
+    datesList = Object.keys(configMap).join(',');
+  } else {
+    if (faState.selectedDates.length === 0) return alert('カレンダーから日付を選択してください');
+    if (!faState.targetYm) return alert('対象月を選択してください');
+    faState.selectedDates.forEach(d => {
+      const cfg = faState.dateShifts[d];
+      if (!cfg || !cfg.shift) return;
+      const entry = { shift: cfg.shift };
+      if (cfg.overrideFacility && cfg.facility) entry.facility = cfg.facility;
+      if (cfg.shift.indexOf('夜勤') === 0 && cfg.unit_id) entry.unit_id = cfg.unit_id;
+      configMap[String(d)] = entry;
+    });
+    if (Object.keys(configMap).length === 0) return alert('各日のシフト種別を選択してください');
+    datesList = Object.keys(configMap).join(',');
+  }
+  
+  // 夜勤の場合のユニット必須チェック
+  for (const k in configMap) {
+    const e = configMap[k];
+    if (e.shift.indexOf('夜勤') === 0 && !e.unit_id) {
+      return alert(k + ' の夜勤シフトにはユニット選択が必要です');
+    }
+  }
+  
+  // 代表シフト/ユニットID (旧API互換)
+  const firstEntry = Object.values(configMap)[0];
+  const firstShift = firstEntry.shift;
+  // unit_id: 夜勤がある場合のみその unit_id、日勤のみなら空文字
+  // (施設名で事業所まで一意決定するため日勤は unit_id 不要)
+  let firstUnitId = '';
+  for (const k in configMap) {
+    if (configMap[k].unit_id) { firstUnitId = configMap[k].unit_id; break; }
+  }
+  
+  const note = document.getElementById('faNote').value || '';
+  const noteWithJson = (note ? note + ' ' : '') + 'JSON_MAP:' + JSON.stringify(configMap);
+  
+  const params = {
+    staff_id: faState.staff.staff_id,
+    type: faState.type,
+    target_ym: faState.type === '日付指定' ? faState.targetYm : '',
+    dates_or_weekdays: datesList,
+    shift_type: firstShift,
+    unit_id: firstUnitId,
+    valid_from: document.getElementById('faValidFrom').value || '2026-01',
+    valid_to: document.getElementById('faValidTo').value || '9999-12',
+    is_active: true,
+    note: noteWithJson
+  };
+  
+  google.script.run.withSuccessHandler(res => {
+    if (!res.success) return alert('エラー: ' + res.message);
     alert('追加しました (' + res.fixed_id + ')');
     closeFixedAssignmentAddModal();
     loadFixedAssignmentsList();
   }).withFailureHandler(err => {
-    alert('通信エラー: ' + err);
+    alert('通信エラー: ' + (err && err.message ? err.message : err));
   }).addFixedAssignmentForAdmin(currentAdmin.staff_id, params);
 }
 
 function deleteFa(fixedId) {
   if (!confirm('固定配置 ' + fixedId + ' を削除しますか?')) return;
   google.script.run.withSuccessHandler(res => {
-    if (!res.success) {
-      alert('エラー: ' + res.message);
-      return;
-    }
+    if (!res.success) return alert('エラー: ' + res.message);
     loadFixedAssignmentsList();
   }).deleteFixedAssignmentForAdmin(currentAdmin.staff_id, fixedId);
 }
 
 function toggleFa(fixedId, isActive) {
   google.script.run.withSuccessHandler(res => {
-    if (!res.success) {
-      alert('エラー: ' + res.message);
-      return;
-    }
+    if (!res.success) return alert('エラー: ' + res.message);
     loadFixedAssignmentsList();
   }).toggleFixedAssignmentForAdmin(currentAdmin.staff_id, fixedId, isActive);
 }

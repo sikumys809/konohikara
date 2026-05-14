@@ -216,9 +216,9 @@ function getAllStaffList(adminStaffId) {
       kubun: row[8] || '',
       mainFacility: row[9] || '',
       secondFacility: row[10] || '',
-      subFacilities: row[11] || '',
+      subFacilities: row[11] ? String(row[11]).split(',').map(s => s.trim()).filter(Boolean) : [],
       shiftKubun: row[12] || '',
-      allowedShifts: row[13] || '',
+      allowedShifts: row[13] ? String(row[13]).split(',').map(s => s.trim()).filter(Boolean) : [],
       isProtected: String(row[14]).toUpperCase() === 'TRUE',
       isVIP: String(row[15]).toUpperCase() === 'TRUE',
       isRetired: String(row[16]).toUpperCase() === 'TRUE',
@@ -265,9 +265,9 @@ function getStaffDetail(adminStaffId, targetStaffId) {
         kubun: row[8] || '',
         mainFacility: row[9] || '',
         secondFacility: row[10] || '',
-        subFacilities: row[11] || '',
+        subFacilities: row[11] ? String(row[11]).split(',').map(s => s.trim()).filter(Boolean) : [],
         shiftKubun: row[12] || '',
-        allowedShifts: row[13] || '',
+        allowedShifts: row[13] ? String(row[13]).split(',').map(s => s.trim()).filter(Boolean) : [],
         isProtected: String(row[14]).toUpperCase() === 'TRUE',
         isVIP: String(row[15]).toUpperCase() === 'TRUE',
         isRetired: String(row[16]).toUpperCase() === 'TRUE',
@@ -2839,4 +2839,59 @@ function getUnitsList(adminStaffId) {
   }
   
   return { success: true, items: items };
+}
+
+
+// ============================================================
+// Phase 7.5 デバッグ: ターミナルから直接実行可能なヘルパー
+// ============================================================
+function _debug_uesiro() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_スタッフ');
+  const data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] == 23) {
+      const result = {
+        sid: 23,
+        name: data[i][1],
+        main: data[i][9],
+        second: data[i][10],
+        sub: data[i][11],
+        shiftKubun: data[i][12],
+        allowedShifts_raw: data[i][13],
+        allowedShifts_type: typeof data[i][13],
+        allowedShifts_split: String(data[i][13] || '').split(',').map(s => s.trim()).filter(Boolean),
+        shusyoku: data[i][19],
+        retired: data[i][16]
+      };
+      Logger.log(JSON.stringify(result, null, 2));
+      return result;
+    }
+  }
+  return null;
+}
+
+function _debug_fixed003() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_固定配置');
+  const data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === 'FIXED_003') {
+      const result = {
+        A_fixed_id: data[i][0],
+        B_staff_id: data[i][1],
+        C_type: data[i][2],
+        D_target_ym: data[i][3],
+        E_dates_or_weekdays: data[i][4],
+        F_shift_type: data[i][5],
+        G_unit_id: data[i][6],
+        H_valid_from: data[i][7],
+        I_valid_to: data[i][8],
+        J_is_active: data[i][9],
+        K_note: data[i][10],
+        L_created_at: data[i][11]
+      };
+      Logger.log(JSON.stringify(result, null, 2));
+      return result;
+    }
+  }
+  return null;
 }
