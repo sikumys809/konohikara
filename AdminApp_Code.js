@@ -2711,15 +2711,45 @@ function getFixedAssignmentsForAdmin(adminStaffId, filter) {
     };
   }
   
+  // 施設名から jigyosho/unit を引くためのマップ作成
+  const facilityToUnit = {};
+  for (var fk in unitMap) {
+    const u = unitMap[fk];
+    if (!facilityToUnit[u.facility]) facilityToUnit[u.facility] = u;
+  }
+  
   result.items.forEach(function(item) {
     const s = staffMap[item.staff_id];
     item.staff_name = s ? s.name : '(不明)';
     item.staff_retired = s ? s.retired : false;
+    
+    // 1. unit_id があればそれを優先
     const u = unitMap[item.unit_id];
     if (u) {
       item.jigyosho = u.jigyosho;
       item.unit_name = u.unit_name;
       item.facility = u.facility;
+      return;
+    }
+    
+    // 2. dates_config_map から facility を取得
+    let representativeFacility = '';
+    if (item.dates_config_map) {
+      for (const k in item.dates_config_map) {
+        const cfg = item.dates_config_map[k];
+        if (typeof cfg === 'object' && cfg.facility) {
+          representativeFacility = cfg.facility;
+          break;
+        }
+      }
+    }
+    
+    // 3. その施設のユニットから jigyosho を引く
+    if (representativeFacility && facilityToUnit[representativeFacility]) {
+      const fu = facilityToUnit[representativeFacility];
+      item.jigyosho = fu.jigyosho;
+      item.unit_name = '(施設指定)';  // 日勤は施設だけ指定 (ユニット不問)
+      item.facility = representativeFacility;
     } else {
       item.jigyosho = '(不明)';
       item.unit_name = '(不明)';

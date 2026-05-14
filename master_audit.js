@@ -2880,3 +2880,22 @@ function debug_check_est_units() {
     Logger.log(fac + ' (' + facilities[fac].length + 'ユニット, 事業所=' + [...new Set(facilities[fac].map(u => u.jigyosho))].join('/') + ')');
   }
 }
+
+
+// ============================================================
+// FIXED_003 (高田陸玖) のデータ確認
+// ============================================================
+function debug_check_fixed003_takada() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_固定配置');
+  const data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === 'FIXED_003') {
+      Logger.log('=== FIXED_003 全カラム ===');
+      const headers = ['A_fixed_id','B_staff_id','C_type','D_target_ym','E_dates_or_weekdays','F_shift_type','G_unit_id','H_valid_from','I_valid_to','J_is_active','K_note','L_created_at'];
+      for (var j = 0; j < data[i].length; j++) {
+        Logger.log(headers[j] + ': [' + data[i][j] + ']');
+      }
+      return;
+    }
+  }
+}

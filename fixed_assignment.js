@@ -111,9 +111,13 @@ function addFixedAssignment(params) {
     sheet = ss.getSheetByName(FIXED_ASSIGNMENT_SHEET_NAME);
   }
   
-  // バリデーション
-  if (!params.staff_id || !params.type || !params.dates_or_weekdays || !params.shift_type || !params.unit_id) {
-    return { success: false, message: '必須項目不足: staff_id, type, dates_or_weekdays, shift_type, unit_id' };
+  // バリデーション (unit_id は夜勤時のみ必須、日勤は空文字でOK)
+  if (!params.staff_id || !params.type || !params.dates_or_weekdays || !params.shift_type) {
+    return { success: false, message: '必須項目不足: staff_id, type, dates_or_weekdays, shift_type' };
+  }
+  // 夜勤シフトの場合のみ unit_id 必須チェック
+  if (params.shift_type && params.shift_type.indexOf('夜勤') === 0 && !params.unit_id) {
+    return { success: false, message: '夜勤シフトの場合は unit_id が必須' };
   }
   if (params.type !== FIXED_ASSIGN_TYPE.DATE && params.type !== FIXED_ASSIGN_TYPE.WEEKDAY) {
     return { success: false, message: 'type は "日付指定" または "曜日指定" のみ' };

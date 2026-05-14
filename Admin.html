@@ -817,6 +817,20 @@
           <option value="">-- 施設選択 (先にスタッフを選択) --</option>
         </select>
         <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">スタッフの許可施設(メイン/セカンド/サブ)から選択</div>
+        
+        <!-- E-st選択時のみ表示: 事業所選択 -->
+        <div id="faDefaultEstJigyoshoUI" style="display: none; margin-top: 12px; padding: 12px; background: #fef3c7; border-radius: 6px; border: 1px solid #fcd34d;">
+          <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">🏢 E-st 配置先 事業所 <span style="color: #ef4444;">*</span></label>
+          <div style="display: flex; gap: 12px;">
+            <label style="cursor: pointer; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;">
+              <input type="radio" name="faDefaultEstJigyosho" value="板橋北区" onchange="onFaDefaultEstJigyoshoChange()" style="margin-right: 4px;">板橋北区
+            </label>
+            <label style="cursor: pointer; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;">
+              <input type="radio" name="faDefaultEstJigyosho" value="板橋北区セカンド" onchange="onFaDefaultEstJigyoshoChange()" style="margin-right: 4px;">板橋北区セカンド
+            </label>
+          </div>
+          <div style="font-size: 11px; color: #92400e; margin-top: 4px;">E-stはどっちの事業所として配置するか必須</div>
+        </div>
       </div>
       
       <div id="faUnitSection" style="display: none;">
@@ -5332,20 +5346,21 @@ function _faInitState() {
   return {
     staff: null,
     type: '曜日指定',
-    weekdayShifts: {  // 各値は {shift, overrideFacility, facility, unit_id}
-      '日': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
-      '月': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
-      '火': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
-      '水': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
-      '木': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
-      '金': {shift: '', overrideFacility: false, facility: '', unit_id: ''},
-      '土': {shift: '', overrideFacility: false, facility: '', unit_id: ''}
+    weekdayShifts: {  // 各値は {shift, overrideFacility, facility, unit_id, est_jigyosho}
+      '日': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''},
+      '月': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''},
+      '火': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''},
+      '水': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''},
+      '木': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''},
+      '金': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''},
+      '土': {shift: '', overrideFacility: false, facility: '', unit_id: '', est_jigyosho: ''}
     },
-    dateShifts: {},  // {1: {shift, overrideFacility, facility, unit_id}, ...}
+    dateShifts: {},  // {1: {shift, overrideFacility, facility, unit_id, est_jigyosho}, ...}
     selectedDates: [],
     targetYm: '',
     units: [],
-    defaultFacility: ''  // ④で選んだデフォルト施設
+    defaultFacility: '',  // ④で選んだデフォルト施設
+    defaultEstJigyosho: ''  // E-stデフォルト事業所 (板橋北区 or 板橋北区セカンド)
   };
 }
 
@@ -5393,12 +5408,21 @@ function renderFaWeekdayMatrix() {
     html += '</label>';
     
     // 施設プルダウン (overrideFacility=true のときのみ有効)
-    html += '<select onchange="faOnWeekdayFacilityChange(\'' + w + '\', this.value)" ' + (cfg.overrideFacility ? '' : 'disabled') + ' style="padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;' + (cfg.overrideFacility ? '' : ' background: #f3f4f6;') + '">';
+    html += '<div>';
+    html += '<select onchange="faOnWeekdayFacilityChange(\'' + w + '\', this.value)" ' + (cfg.overrideFacility ? '' : 'disabled') + ' style="width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;' + (cfg.overrideFacility ? '' : ' background: #f3f4f6;') + '">';
     html += '<option value="">-- 施設選択 --</option>';
     _faGetAllowedFacilities().forEach(f => {
       html += '<option value="' + f.name + '"' + (cfg.facility === f.name ? ' selected' : '') + '>' + f.name + ' (' + f.role + ')</option>';
     });
     html += '</select>';
+    // E-st選択時の事業所選択
+    if (cfg.overrideFacility && _faIsEstFacility(cfg.facility)) {
+      html += '<div style="margin-top: 4px; font-size: 11px; padding: 4px; background: #fef3c7; border-radius: 4px;">';
+      html += '<label style="margin-right: 8px;"><input type="radio" name="faWdEstJ_' + w + '" value="板橋北区" onchange="faState.weekdayShifts[\'' + w + '\'].est_jigyosho=this.value"' + (cfg.est_jigyosho === '板橋北区' ? ' checked' : '') + '> 板橋北区</label>';
+      html += '<label><input type="radio" name="faWdEstJ_' + w + '" value="板橋北区セカンド" onchange="faState.weekdayShifts[\'' + w + '\'].est_jigyosho=this.value"' + (cfg.est_jigyosho === '板橋北区セカンド' ? ' checked' : '') + '> セカンド</label>';
+      html += '</div>';
+    }
+    html += '</div>';
     
     // ユニット (夜勤時のみ)
     if (isNight) {
@@ -5425,6 +5449,36 @@ function faOnWeekdayOverrideChange(w, checked) {
   faState.weekdayShifts[w].overrideFacility = checked;
   if (!checked) faState.weekdayShifts[w].facility = '';
   renderFaWeekdayMatrix();
+}
+
+
+
+// ============================================================
+// Phase 7.5.5: E-st 関連ヘルパー
+// ============================================================
+const EST_VIRTUAL_KEY = 'ルーデンス上板橋E-st';
+const EST_REAL_FACILITIES = {
+  '板橋北区': 'ルーデンス上板橋E-st（板橋北区）',
+  '板橋北区セカンド': 'ルーデンス上板橋E-st（板橋北区セカンド）'
+};
+
+function _faIsEstFacility(facility) {
+  if (!facility) return false;
+  return facility === EST_VIRTUAL_KEY 
+    || facility.indexOf(EST_VIRTUAL_KEY + '（') === 0;
+}
+
+// 仮想キー → 事業所選択時の実体施設名
+function _faGetEstRealFacility(jigyosho) {
+  return EST_REAL_FACILITIES[jigyosho] || EST_VIRTUAL_KEY;
+}
+
+// 実体施設名 → 事業所
+function _faGetEstJigyosho(realFacility) {
+  for (const j in EST_REAL_FACILITIES) {
+    if (EST_REAL_FACILITIES[j] === realFacility) return j;
+  }
+  return '';
 }
 
 // スタッフの許可施設リスト
@@ -5559,12 +5613,21 @@ function renderFaDateList() {
     html += '<input type="checkbox" onchange="faOnDateOverrideChange(' + d + ', this.checked)"' + (cfg.overrideFacility ? ' checked' : '') + '> 別施設';
     html += '</label>';
     // 施設
-    html += '<select onchange="faOnDateFacilityChange(' + d + ', this.value)" ' + (cfg.overrideFacility ? '' : 'disabled') + ' style="padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;' + (cfg.overrideFacility ? '' : ' background: #f3f4f6;') + '">';
+    html += '<div>';
+    html += '<select onchange="faOnDateFacilityChange(' + d + ', this.value)" ' + (cfg.overrideFacility ? '' : 'disabled') + ' style="width: 100%; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;' + (cfg.overrideFacility ? '' : ' background: #f3f4f6;') + '">';
     html += '<option value="">--</option>';
     _faGetAllowedFacilities().forEach(f => {
       html += '<option value="' + f.name + '"' + (cfg.facility === f.name ? ' selected' : '') + '>' + f.name + '</option>';
     });
     html += '</select>';
+    // E-st選択時の事業所選択
+    if (cfg.overrideFacility && _faIsEstFacility(cfg.facility)) {
+      html += '<div style="margin-top: 3px; font-size: 10px; padding: 2px; background: #fef3c7; border-radius: 3px;">';
+      html += '<label style="margin-right: 6px;"><input type="radio" name="faDtEstJ_' + d + '" value="板橋北区" onchange="faState.dateShifts[' + d + '].est_jigyosho=this.value"' + (cfg.est_jigyosho === '板橋北区' ? ' checked' : '') + '> 板橋</label>';
+      html += '<label><input type="radio" name="faDtEstJ_' + d + '" value="板橋北区セカンド" onchange="faState.dateShifts[' + d + '].est_jigyosho=this.value"' + (cfg.est_jigyosho === '板橋北区セカンド' ? ' checked' : '') + '> セカンド</label>';
+      html += '</div>';
+    }
+    html += '</div>';
     // ユニット (夜勤時のみ)
     if (isNight) {
       html += '<select onchange="faState.dateShifts[' + d + '].unit_id=this.value" style="padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;">';
@@ -5614,7 +5677,19 @@ function faOnDateFacilityChange(d, value) {
 // デフォルト施設 (④) 変更時
 function onFaFacilityChange() {
   faState.defaultFacility = document.getElementById('faFacility').value;
-  renderFaWeekdayMatrix();  // ユニットの絞り込み再計算
+  // E-st判定 → 事業所選択UI表示/非表示
+  const estUI = document.getElementById('faDefaultEstJigyoshoUI');
+  if (estUI) {
+    estUI.style.display = _faIsEstFacility(faState.defaultFacility) ? 'block' : 'none';
+  }
+  renderFaWeekdayMatrix();
+  renderFaDateList();
+}
+
+function onFaDefaultEstJigyoshoChange() {
+  const sel = document.querySelector('input[name="faDefaultEstJigyosho"]:checked');
+  faState.defaultEstJigyosho = sel ? sel.value : '';
+  renderFaWeekdayMatrix();
   renderFaDateList();
 }
 
@@ -5634,6 +5709,13 @@ function saveFixedAssignment() {
   if (!defaultFac) return alert('④ 配置先施設(デフォルト)を選択してください');
   faState.defaultFacility = defaultFac;
   
+  // デフォルト施設がE-stの場合、事業所選択も必要
+  if (_faIsEstFacility(defaultFac)) {
+    const defJ = document.querySelector('input[name="faDefaultEstJigyosho"]:checked');
+    if (!defJ) return alert('デフォルト配置先がE-stの場合、事業所(板橋北区/セカンド)を選択してください');
+    faState.defaultEstJigyosho = defJ.value;
+  }
+  
   // 設定マップ作成
   let configMap = {};
   let datesList = '';
@@ -5643,7 +5725,16 @@ function saveFixedAssignment() {
       const cfg = faState.weekdayShifts[w];
       if (!cfg.shift) return;
       const entry = { shift: cfg.shift };
-      if (cfg.overrideFacility && cfg.facility) entry.facility = cfg.facility;
+      // 別施設指定時: その施設(E-stなら事業所別実体)を保存
+      if (cfg.overrideFacility && cfg.facility) {
+        if (_faIsEstFacility(cfg.facility)) {
+          const j = cfg.est_jigyosho || faState.defaultEstJigyosho;
+          if (!j) { alert(w + '曜日: E-st選択時は事業所を指定してください'); return; }
+          entry.facility = _faGetEstRealFacility(j);
+        } else {
+          entry.facility = cfg.facility;
+        }
+      }
       if (cfg.shift.indexOf('夜勤') === 0 && cfg.unit_id) entry.unit_id = cfg.unit_id;
       configMap[w] = entry;
     });
@@ -5656,7 +5747,15 @@ function saveFixedAssignment() {
       const cfg = faState.dateShifts[d];
       if (!cfg || !cfg.shift) return;
       const entry = { shift: cfg.shift };
-      if (cfg.overrideFacility && cfg.facility) entry.facility = cfg.facility;
+      if (cfg.overrideFacility && cfg.facility) {
+        if (_faIsEstFacility(cfg.facility)) {
+          const j = cfg.est_jigyosho || faState.defaultEstJigyosho;
+          if (!j) { alert(d + '日: E-st選択時は事業所を指定してください'); return; }
+          entry.facility = _faGetEstRealFacility(j);
+        } else {
+          entry.facility = cfg.facility;
+        }
+      }
       if (cfg.shift.indexOf('夜勤') === 0 && cfg.unit_id) entry.unit_id = cfg.unit_id;
       configMap[String(d)] = entry;
     });
@@ -5680,6 +5779,21 @@ function saveFixedAssignment() {
   let firstUnitId = '';
   for (const k in configMap) {
     if (configMap[k].unit_id) { firstUnitId = configMap[k].unit_id; break; }
+  }
+  
+  // デフォルト施設実体名 (E-stなら事業所別)
+  let defaultFacReal = defaultFac;
+  if (_faIsEstFacility(defaultFac) && faState.defaultEstJigyosho) {
+    defaultFacReal = _faGetEstRealFacility(faState.defaultEstJigyosho);
+  }
+  // configMap 内で facility 未指定 (デフォルト使用) かつ defaultFac が E-st の場合、
+  // 実体施設名を facility に埋め込む (エンジン側でユニット解決のため)
+  if (_faIsEstFacility(defaultFac)) {
+    for (const k in configMap) {
+      if (!configMap[k].facility) {
+        configMap[k].facility = defaultFacReal;
+      }
+    }
   }
   
   const note = document.getElementById('faNote').value || '';
