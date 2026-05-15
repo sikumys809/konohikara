@@ -4305,30 +4305,33 @@ function renderDayShiftFulfillmentCards() {
     if (n >= 80) return '#ca8a04';
     return '#dc2626';
   };
-
+// 常勤換算 + 時間 + パーセント 表示
+  const renderRoleRow = (label, actualH, needH, rate, getColor) => {
+    const a = parseFloat(actualH) || 0;
+    const n = parseFloat(needH) || 0;
+    const aP = (a / 172).toFixed(1);
+    const nP = (n / 172).toFixed(1);
+    return `
+      <div class="ds-ff-row">
+        <span class="ds-ff-label">${label}</span>
+        <span class="ds-ff-value" style="color: ${getColor(rate)}; font-size: 11px; text-align: right;">${aP}/${nP}人 (${Math.round(a)}/${Math.round(n)}h) ${escapeHtml(rate)}</span>
+      </div>
+    `;
+  };
   box.innerHTML = list.map(f => {
     const nurseColor = f.nurseJudge === 'OK' ? '#059669' : '#dc2626';
     return `
       <div class="ds-ff-card">
         <div class="ds-ff-name">${escapeHtml(f.facility)} <span style="font-size: 11px; color: #9ca3af; font-weight: 400;">定員${f.capacity}</span></div>
-        <div class="ds-ff-row">
-          <span class="ds-ff-label">特定加配</span>
-          <span class="ds-ff-value" style="color: ${getColor(f.tokuteiRate)};">${escapeHtml(f.tokuteiRate)}</span>
-        </div>
-        <div class="ds-ff-row">
-          <span class="ds-ff-label">世話人</span>
-          <span class="ds-ff-value" style="color: ${getColor(f.sewaRate)};">${escapeHtml(f.sewaRate)}</span>
-        </div>
-        <div class="ds-ff-row">
-          <span class="ds-ff-label">サビ管</span>
-          <span class="ds-ff-value" style="color: ${getColor(f.sabikanRate)};">${escapeHtml(f.sabikanRate)}</span>
-        </div>
+        ${renderRoleRow('特定加配', f.tokuteiActual, f.tokuteiNeed, f.tokuteiRate, getColor)}
+        ${renderRoleRow('世話人', f.sewaActual, f.sewaNeed, f.sewaRate, getColor)}
+        ${renderRoleRow('サビ管', f.sabikanActual, f.sabikanNeed, f.sabikanRate, getColor)}
         <div class="ds-ff-row">
           <span class="ds-ff-label">看護師</span>
-          <span class="ds-ff-value" style="color: ${nurseColor};">${escapeHtml(f.nurseActual)}/${escapeHtml(f.nurseNeed)} ${escapeHtml(f.nurseJudge)}</span>
+          <span class="ds-ff-value" style="color: ${nurseColor}; font-size: 11px;">${escapeHtml(f.nurseActual)}/${escapeHtml(f.nurseNeed)}人 ${escapeHtml(f.nurseJudge)}</span>
         </div>
       </div>
-    `;
+    `; 
   }).join('');
 }
 
