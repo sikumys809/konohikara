@@ -90,6 +90,7 @@ function getDashboardStats() {
   const staffData = staffSheet.getDataRange().getValues();
   let activeStaffCount = 0;
   let adminStaffCount = 0;
+  let sabikanCount = 0;
   let sewaCount = 0;
   let seikatsuCount = 0;
   let nurseCount = 0;
@@ -100,6 +101,7 @@ function getDashboardStats() {
       // T列(19) 主職種ベースの集計
       const mainRoles = String(staffData[i][19] || '').split(',').map(r => r.trim());
       if (mainRoles.indexOf('管理者') >= 0) adminStaffCount++;
+      if (mainRoles.indexOf('サビ管') >= 0) sabikanCount++;
       if (mainRoles.indexOf('世話人') >= 0) sewaCount++;
       if (mainRoles.indexOf('生活支援員') >= 0) seikatsuCount++;
       // F列(5) 国家資格ベース (看護師は資格保持で判定)
@@ -142,6 +144,7 @@ function getDashboardStats() {
     success: true,
     activeStaffCount: activeStaffCount,
     adminStaffCount: adminStaffCount,
+    sabikanCount: sabikanCount,
     sewaCount: sewaCount,
     seikatsuCount: seikatsuCount,
     nurseCount: nurseCount,
