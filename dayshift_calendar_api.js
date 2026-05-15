@@ -50,6 +50,7 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
     const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
 
     const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
+    const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);  // ★Day13: 夜勤も日勤カレンダーに表示
 
     const matrix = {};
     facilities.forEach(f => {
@@ -66,7 +67,11 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       if (rowYm !== ym) return;
 
       const shift = String(row[8]).trim();
-      if (!dayShiftSet.has(shift)) return;
+      const isDay = dayShiftSet.has(shift);
+      const isNight = nightShiftSet.has(shift);
+      if (!isDay && !isNight) return;
+      // 夜勤は dayHours > 0 のみ表示 (=日勤カウント貢献ある夜勤、現在は ABC全て2h)
+      if (isNight && (parseFloat(row[17]) || 0) === 0) return;
 
       const jigyosho = String(row[3]).trim();
       const facility = String(row[4]).trim();
@@ -85,7 +90,7 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
         rowIndex: idx + 2,
         shift_id: String(row[0]),
         date: dateKey,
-        jigyosho: jigyosho,                   // ★Day11 Phase4: E-st事業所切替UI用
+        jigyosho: jigyosho,
         facility: facility,
         unitName: String(row[5] || ''),
         staff_id: String(row[6]),
@@ -93,8 +98,9 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
         shiftType: shift,
         startTime: _formatTimeCell(row[9]),
         endTime: _formatTimeCell(row[10]),
-        status: String(row[12] || '仮'),    // ★ M列(12) ステータス (旧 row[13])
-        dayHours: parseFloat(row[17]) || 0   // ★ R列(17) 日勤換算 (旧 row[18])
+        status: String(row[12] || '仮'),
+        dayHours: parseFloat(row[17]) || 0,
+        isFromNight: isNight  // ★Day13: 夜勤からの日勤カウント貢献分なら true
       });
     });
 

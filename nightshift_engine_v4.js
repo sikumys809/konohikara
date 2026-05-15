@@ -308,6 +308,7 @@ function loadEngineContextV4(targetYM) {
           facility: facility,
           unit: unit,
           workHours: workHours,
+          assignedRole: String(row[18] || '').trim(),  // ★Day 13 fix: シート18列目から読込
         });
         ctx.monthlyAssign[staffId] = (ctx.monthlyAssign[staffId] || 0) + 1;
         if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, staffId, dateKey);
@@ -887,11 +888,12 @@ function assignByScoreV4(ctx) {
     if (!ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey]) {
       ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey] = [];
     }
-    // ★Phase 6: 夜勤も assignedRole を設定 (calcRoleHoursV2で正しく集計するため)
-    // 夜勤B/C は 2h を日勤カウント、その時間が世話人h/生活支援員h/サビ管h に分配される
-    // shortage を渡せるなら不足職種優先、無ければ pickAssignedRole が静的優先順位を使う
-    const _v4_assignedRole = (typeof _v2d_pickPrimaryRole === 'function')
-      ? _v2d_pickPrimaryRole(top.staff)
+    // ★Day 13 fix: pickAssignedRole に切替 (水野さん仕様、契約書 https://www.notion.so/361ec81ceecf811ea5c4d3be5634ca12)
+    // 夜勤A/B/C すべて 2h を日勤カウント、その時間が assignedRole で世話人/生活支援員/サビ管 に分配
+    // 夜勤は運用上「常に世話人優先」: 夜勤だけでは世話人充足しない前提で shortage={全項目true} で渡す
+    const _v4_shortage = { sewa: true, seikatsu: true, sabikan: true, nurse: true };
+    const _v4_assignedRole = (typeof pickAssignedRole === 'function')
+      ? pickAssignedRole(top.staff, _v4_shortage)
       : '';
     
     ctx.staffAssignedDates[top.staff.staff_id][slot.dateKey].push({

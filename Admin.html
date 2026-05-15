@@ -4392,11 +4392,13 @@ function renderDayShiftCalendar() {
           if (cell.count === 0) {
             html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.jigyosho, cell.dateKey)}</td>`;
           } else {
-            const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
-            const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
+            const early = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('早出') !== -1).length;
+            const late = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('遅出') !== -1).length;
+            const night = cell.placements.filter(p => p.isFromNight === true).length;  // ★Day13: 夜勤からの日勤カウント貢献
             const subParts = [];
             if (early > 0) subParts.push(`🌅${early}`);
             if (late > 0) subParts.push(`🌆${late}`);
+            if (night > 0) subParts.push(`🌙${night}`);  // 夜勤分は別マーク
             html += `<td class="ds-cell" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} ${b.facility}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.jigyosho, cell.dateKey)}</td>`;
           }
         }
@@ -4410,11 +4412,13 @@ function renderDayShiftCalendar() {
         if (cell.count === 0) {
           html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.facility, cell.dateKey)}</td>`;
         } else {
-          const early = cell.placements.filter(p => p.shiftType.indexOf('早出') !== -1).length;
-          const late = cell.placements.filter(p => p.shiftType.indexOf('遅出') !== -1).length;
+          const early = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('早出') !== -1).length;
+          const late = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('遅出') !== -1).length;
+          const night = cell.placements.filter(p => p.isFromNight === true).length;  // ★Day13: 夜勤からの日勤カウント貢献
           const subParts = [];
           if (early > 0) subParts.push(`🌅${early}`);
           if (late > 0) subParts.push(`🌆${late}`);
+          if (night > 0) subParts.push(`🌙${night}`);  // 夜勤分は別マーク
           html += `<td class="ds-cell" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.facility, cell.dateKey)}</td>`;
         }
       }

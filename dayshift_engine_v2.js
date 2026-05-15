@@ -1148,7 +1148,7 @@ function calcRoleHoursV2(ctx) {
         if (isNight) {
           // 夜勤は基本日勤カウントしない、ただし夜勤B/Cは早朝日勤として2h加算
           if (typeof SHIFT_PATTERNS !== 'undefined' && SHIFT_PATTERNS[a.shift]) {
-            dayH = SHIFT_PATTERNS[a.shift].dayHours;  // B=2, C=2, A=0
+            dayH = SHIFT_PATTERNS[a.shift].dayHours;  // A/B/C すべて 2h (Day10 訂正済)
           } else {
             dayH = 0;
           }
