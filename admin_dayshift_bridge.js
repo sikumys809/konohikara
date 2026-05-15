@@ -33,7 +33,7 @@ function executeDayShiftEngineFromAdmin(adminStaffId, yearMonth) {
     const engineResult = runDayShiftEngineV2(yearMonth);
 
     // ④ 充足率レポート生成
-    generateDayShiftFulfillmentReport(yearMonth);
+    generateDayShiftFulfillmentReportV2(yearMonth);
 
     // ⑤ 充足率サマリ取得（画面表示用）
     const fulfillmentSummary = _extractFulfillmentSummary(yearMonth);
@@ -91,7 +91,8 @@ function _checkDayShiftExecPermission(staffId) {
 }
 
 /**
- * V_日勤充足 シートから事業所別サマリを取得
+ * V_日勤充足 シートから事業所別サマリを取得 (V2: 20列構造)
+ * 行7〜データ実体、20列。生成側: generateDayShiftFulfillmentReportV2
  */
 function _extractFulfillmentSummary(yearMonth) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -99,34 +100,32 @@ function _extractFulfillmentSummary(yearMonth) {
   if (!sheet) return [];
 
   const lastRow = sheet.getLastRow();
-  if (lastRow < 6) return [];
+  if (lastRow < 7) return [];
 
-  // 6行目以降がデータ行（1-2:タイトル、4-5:ヘッダー2段）
-  const data = sheet.getRange(6, 1, lastRow - 5, 17).getValues();
+  // V2構造: 7行目以降がデータ行、20列
+  const data = sheet.getRange(7, 1, lastRow - 6, 20).getValues();
 
   return data.map(row => ({
     facility: row[0],
     capacity: row[1],
-    // 特定加配(世+生)
     tokuteiNeed: row[2],
     tokuteiActual: row[3],
     tokuteiRate: row[4],
-    // 世話人
     sewaNeed: row[5],
     sewaActual: row[6],
     sewaRate: row[7],
-    // 生活支援員
     seikatsuNeed: row[8],
     seikatsuActual: row[9],
     seikatsuRate: row[10],
-    // サビ管
     sabikanNeed: row[11],
     sabikanActual: row[12],
     sabikanRate: row[13],
-    // 看護師
-    nurseNeed: row[14],
-    nurseActual: row[15],
-    nurseJudge: row[16]
+    kanrishaNeed: row[14],
+    kanrishaActual: row[15],
+    kanrishaRate: row[16],
+    nurseNeed: row[17],
+    nurseActual: row[18],
+    nurseJudge: row[19]
   }));
 }
 
