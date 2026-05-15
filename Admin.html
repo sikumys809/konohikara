@@ -5220,7 +5220,11 @@ function renderFixedAssignmentsList() {
   
   fixedAssignments.forEach(item => {
     const targetInfo = item.type === '日付指定' ? (item.target_ym + ' / ' + item.dates_or_weekdays) : item.dates_or_weekdays;
-    const placeInfo = item.jigyosho + ' / ' + (item.unit_name || item.facility || '');
+    // 表記: 施設名 (事業所名) [ユニット名] のような形
+    const facName = item.facility || '(不明)';
+    const jName = item.jigyosho || '(不明)';
+    const uName = item.unit_name || '';
+    const placeInfo = facName + '（' + jName + '）' + (uName ? ' / ' + uName : '');
     const validRange = item.valid_from + ' 〜 ' + (item.valid_to === '9999-12' ? '永続' : item.valid_to);
     const statusBadge = item.is_active
       ? '<span style="padding: 2px 8px; background: #d1fae5; color: #065f46; border-radius: 4px; font-size: 11px;">有効</span>'
@@ -5801,13 +5805,11 @@ function saveFixedAssignment() {
   if (_faIsEstFacility(defaultFac) && faState.defaultEstJigyosho) {
     defaultFacReal = _faGetEstRealFacility(faState.defaultEstJigyosho);
   }
-  // configMap 内で facility 未指定 (デフォルト使用) かつ defaultFac が E-st の場合、
-  // 実体施設名を facility に埋め込む (エンジン側でユニット解決のため)
-  if (_faIsEstFacility(defaultFac)) {
-    for (const k in configMap) {
-      if (!configMap[k].facility) {
-        configMap[k].facility = defaultFacReal;
-      }
+  // configMap 内で facility 未指定 (デフォルト使用) のエントリに、
+  // デフォルト施設の実体施設名を必ず埋め込む (一覧表示・エンジン側でユニット解決のため)
+  for (const k in configMap) {
+    if (!configMap[k].facility) {
+      configMap[k].facility = defaultFacReal;
     }
   }
   

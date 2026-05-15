@@ -2759,11 +2759,11 @@ function getFixedAssignmentsForAdmin(adminStaffId, filter) {
     if (representativeFacility && facilityToUnit[representativeFacility]) {
       const fu = facilityToUnit[representativeFacility];
       item.jigyosho = fu.jigyosho;
-      item.unit_name = '(施設指定)';  // 日勤は施設だけ指定 (ユニット不問)
+      item.unit_name = '';  // ユニット表示しない
       item.facility = representativeFacility;
     } else {
       item.jigyosho = '(不明)';
-      item.unit_name = '(不明)';
+      item.unit_name = '';
       item.facility = '(不明)';
     }
   });

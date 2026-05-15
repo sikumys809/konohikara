@@ -2899,3 +2899,22 @@ function debug_check_fixed003_takada() {
     }
   }
 }
+
+
+// ============================================================
+// FIXED_002 (水野恵子) を詳細確認
+// ============================================================
+function debug_check_fixed002_keiko() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('M_固定配置');
+  const data = sh.getDataRange().getValues();
+  Logger.log('=== M_固定配置 全件 ===');
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    Logger.log('--- ' + data[i][0] + ' / sid=' + data[i][1] + ' ---');
+    Logger.log('  D(target_ym): ' + data[i][3]);
+    Logger.log('  E(dates_or_weekdays): ' + data[i][4]);
+    Logger.log('  F(shift_type): [' + data[i][5] + ']');
+    Logger.log('  G(unit_id): [' + data[i][6] + ']');
+    Logger.log('  K(note): ' + data[i][10]);
+  }
+}
