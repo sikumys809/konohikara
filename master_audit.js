@@ -2931,3 +2931,36 @@ function debug_fixed_display() {
     Logger.log('  dates_config_map: ' + JSON.stringify(it.dates_config_map));
   });
 }
+// FIXED_001の固定配置がT_シフト確定に書き込まれてるか確認
+function debug_check_fixed_in_kakutei() {
+  const sh = SpreadsheetApp.openById('1IVRo8kj0lmaiuokomDlXVUn6E8XC8tktkwaXjtAAHHE').getSheetByName('T_シフト確定');
+  const data = sh.getDataRange().getValues();
+  Logger.log('=== T_シフト確定 全件: ' + (data.length - 1) + '件 ===');
+  
+  let fixed001Count = 0;
+  let nightCount = 0;
+  let dayCount = 0;
+  
+  for (var i = 1; i < data.length; i++) {
+    const row = data[i];
+    const staffId = row[2]; // C列: staff_id
+    const date = row[1]; // B列: date
+    const shift = row[5]; // F列: shift_type
+    const jigyosho = row[3]; // D列: jigyosho
+    const facility = row[4]; // E列: facility
+    const note = row[14] || ''; // O列あたりにFIXED prefix?
+    
+    // FIXED prefixがついてるレコ or staff_id=13 のレコを表示
+    if (staffId == 13) {
+      fixed001Count++;
+      Logger.log('FIXED_001: ' + date + ' / ' + shift + ' / ' + facility + '（' + jigyosho + '）');
+      if (String(shift).indexOf('夜勤') === 0) nightCount++;
+      else dayCount++;
+    }
+  }
+  
+  Logger.log('---');
+  Logger.log('FIXED_001 (sid=13) 配置: ' + fixed001Count + '件');
+  Logger.log('  夜勤: ' + nightCount + '件');
+  Logger.log('  日勤: ' + dayCount + '件');
+}
