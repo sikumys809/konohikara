@@ -2734,37 +2734,78 @@ function getFixedAssignmentsForAdmin(adminStaffId, filter) {
     item.staff_name = s ? s.name : '(不明)';
     item.staff_retired = s ? s.retired : false;
     
-    // 1. unit_id があればそれを優先
-    const u = unitMap[item.unit_id];
-    if (u) {
-      item.jigyosho = u.jigyosho;
-      item.unit_name = u.unit_name;
-      item.facility = u.facility;
-      return;
-    }
+    // dates_config_map を走査して facility ごとに unit_id を集約
+    const uniqueShifts = [];
+    const facUnitMap = {}; // {"facility": {unit_id: true, ...}}
     
-    // 2. dates_config_map から facility を取得
-    let representativeFacility = '';
     if (item.dates_config_map) {
       for (const k in item.dates_config_map) {
         const cfg = item.dates_config_map[k];
-        if (typeof cfg === 'object' && cfg.facility) {
-          representativeFacility = cfg.facility;
-          break;
+        if (typeof cfg !== 'object' || !cfg.facility) continue;
+        
+        if (cfg.shift && uniqueShifts.indexOf(cfg.shift) === -1) {
+          uniqueShifts.push(cfg.shift);
+        }
+        
+        if (!facUnitMap[cfg.facility]) facUnitMap[cfg.facility] = {};
+        
+        const isNight = cfg.shift && cfg.shift.indexOf('夜勤') === 0;
+        if (isNight && cfg.unit_id) {
+          facUnitMap[cfg.facility][cfg.unit_id] = true;
         }
       }
     }
     
-    // 3. その施設のユニットから jigyosho を引く
-    if (representativeFacility && facilityToUnit[representativeFacility]) {
-      const fu = facilityToUnit[representativeFacility];
-      item.jigyosho = fu.jigyosho;
-      item.unit_name = '';  // ユニット表示しない
-      item.facility = representativeFacility;
-    } else {
+    // 後方互換: dates_config_map が空なら unit_id から取得
+    if (Object.keys(facUnitMap).length === 0) {
+      const u = unitMap[item.unit_id];
+      if (u && u.facility) {
+        facUnitMap[u.facility] = {};
+        if (item.unit_id) facUnitMap[u.facility][item.unit_id] = true;
+      }
+    }
+    
+    if (Object.keys(facUnitMap).length === 0) {
       item.jigyosho = '(不明)';
       item.unit_name = '';
       item.facility = '(不明)';
+      return;
+    }
+    
+    const jigyoshoSet = [];
+    const facLabels = [];
+    
+    Object.keys(facUnitMap).forEach(function(fac) {
+      let j = '';
+      if (fac.indexOf('ルーデンス上板橋E-st') === 0) {
+        j = fac.indexOf('セカンド') >= 0 ? 'GHコノヒカラ板橋北区セカンド' : 'GHコノヒカラ板橋北区';
+      } else if (facilityToUnit[fac]) {
+        j = facilityToUnit[fac].jigyosho;
+      } else {
+        j = '(不明)';
+      }
+      if (jigyoshoSet.indexOf(j) === -1) jigyoshoSet.push(j);
+      
+      const unitIds = Object.keys(facUnitMap[fac]);
+      const unitNames = [];
+      unitIds.forEach(function(uid) {
+        if (uid && unitMap[uid]) {
+          unitNames.push(unitMap[uid].unit_name);
+        }
+      });
+      
+      if (unitNames.length > 0) {
+        facLabels.push(fac + '(' + unitNames.join(', ') + ')');
+      } else {
+        facLabels.push(fac);
+      }
+    });
+    
+    item.jigyosho = jigyoshoSet.join(' / ');
+    item.facility = facLabels.join(' / ');
+    item.unit_name = '';
+    if (uniqueShifts.length > 0) {
+      item.shift_type = uniqueShifts.join(' / ');
     }
   });
   

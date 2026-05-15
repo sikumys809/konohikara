@@ -2918,3 +2918,16 @@ function debug_check_fixed002_keiko() {
     Logger.log('  K(note): ' + data[i][10]);
   }
 }
+// FIXED一覧の表示デバッグ
+function debug_fixed_display() {
+  const r = getFixedAssignmentsForAdmin(13, {});
+  Logger.log('=== FIXED ALL ===');
+  r.items.forEach(function(it) {
+    Logger.log('--- ' + it.fixed_id + ' / ' + it.staff_name + ' ---');
+    Logger.log('  unit_id (G列): ' + it.unit_id);
+    Logger.log('  jigyosho: ' + it.jigyosho);
+    Logger.log('  facility: ' + it.facility);
+    Logger.log('  shift_type: ' + it.shift_type);
+    Logger.log('  dates_config_map: ' + JSON.stringify(it.dates_config_map));
+  });
+}
