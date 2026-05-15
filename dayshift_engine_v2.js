@@ -382,6 +382,7 @@ function loadEngineContextV2(targetYM) {
           workHours: workHours,
           isNight: DSE_V2.NIGHT_SHIFTS.indexOf(shift) !== -1,
           isDay: DSE_V2.DAY_SHIFTS.indexOf(shift) !== -1,
+          assignedRole: String(row[18] || '').trim(),  // ★Day 13 fix: シート18列目から読込
         });
         ctx.monthlyAssign[staffId] = (ctx.monthlyAssign[staffId] || 0) + 1;
         if (typeof _v_incrementFreqCounters === 'function') _v_incrementFreqCounters(ctx, staffId, dateKey);

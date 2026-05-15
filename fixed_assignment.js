@@ -489,6 +489,9 @@ function expandFixedAssignments(targetYM) {
 // 通常のエンジン実行前に呼ぶ
 // ============================================================
 function preplaceFixedAssignments(targetYM) {
+  // ★Day13: assignedRole 計算用にスタッフシート参照
+  var staffSheet = SpreadsheetApp.openById(STAFF_SS_ID).getSheetByName('M_スタッフ');
+
   Logger.log('=== 固定配置 先取り書込 開始: ' + targetYM + ' ===');
   
   const expanded = expandFixedAssignments(targetYM);
@@ -565,7 +568,7 @@ function preplaceFixedAssignments(targetYM) {
       si.end,                     // [15] 実終了時刻
       si.nightH,                  // [16] 夜勤換算時間
       si.dayH,                    // [17] 日勤換算時間
-      ''                          // [18] 割当役割 (後で計算)
+      _calcFixedAssignedRole(item.staff_id, staffSheet)  // [18] 割当役割 ★Day13 fix
     ]);
   });
   
@@ -674,4 +677,40 @@ function debug_check_response_types() {
     const t = v === null ? 'null' : (v instanceof Date ? 'Date' : typeof v);
     Logger.log(k + ' = ' + t + ' / value: ' + (v instanceof Date ? v.toISOString() : JSON.stringify(v)).substring(0, 100));
   });
+}
+
+
+// ============================================================
+// ★Day13: 固定配置の assignedRole を計算 (シート書込時)
+// 水野さん仕様 (Day12確定):
+//   サビ管持ち → サビ管
+//   世話人だけ持ち → 世話人
+//   生活支援員だけ持ち → 生活支援員
+//   両方持ち → 世話人 (書込時点では世話人不足扱い)
+// ============================================================
+function _calcFixedAssignedRole(staffId, staffSheet) {
+  if (!staffSheet) {
+    const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+    staffSheet = ss.getSheetByName('M_スタッフ');
+  }
+  const data = staffSheet.getDataRange().getValues();
+  let mainRoles = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(staffId)) {
+      mainRoles = String(data[i][19] || '').trim();
+      break;
+    }
+  }
+  if (!mainRoles) return '';
+  
+  const roles = mainRoles.split(',').map(function(s){return s.trim();});
+  const isSabikan = roles.indexOf('サビ管') !== -1;
+  const isSewa = roles.indexOf('世話人') !== -1;
+  const isSeikatsu = roles.indexOf('生活支援員') !== -1;
+  
+  if (isSabikan) return 'サビ管';
+  if (isSewa && !isSeikatsu) return '世話人';
+  if (!isSewa && isSeikatsu) return '生活支援員';
+  if (isSewa && isSeikatsu) return '世話人';  // 両方持ちは世話人(書込時点では不足扱い)
+  return '';
 }

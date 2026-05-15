@@ -3357,3 +3357,520 @@ function inject_sabikan_fixed_test_2026_06() {
   Logger.log('1. ブラウザで「⚡自動割当実行」(2026-06)');
   Logger.log('2. 全5事業所でサビ管充足率100%以上か確認');
 }
+
+// Day 13: M_固定配置の現状確認 (どれが手動・どれがDay12テスト由来か区別)
+function debug_check_fixed_assignments() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('M_固定配置');
+  if (!sheet) {
+    Logger.log('M_固定配置シートなし');
+    return;
+  }
+  const data = sheet.getDataRange().getValues();
+  Logger.log('=== M_固定配置 全レコード ===');
+  Logger.log('総数: ' + (data.length - 1) + '件');
+  Logger.log('');
+  Logger.log('ヘッダー: ' + JSON.stringify(data[0]));
+  Logger.log('');
+  for (let i = 1; i < data.length; i++) {
+    const note = String(data[i][10] || '').substring(0, 80);
+    const isDay12Test = note.indexOf('Day12テスト') !== -1;
+    Logger.log((isDay12Test ? '[Day12]' : '[手動?]') + ' ' + data[i][0] + ' / staff=' + data[i][1] + ' / type=' + data[i][2] + ' / dates=' + String(data[i][4]).substring(0, 50));
+  }
+}
+
+// ============================================================
+// Day 13: 全テストデータ投入 (135名分: 固定配置6名除く)
+// 仕様:
+//   - 1人15日提出、各日1シフト(提出ルール準拠)
+//   - シフト種別: 許可シフトからランダム選択(連日制約遵守)
+//   - 施設: 許可施設(メイン/セカンド/サブ)全部チェック
+//   - L列="月次合計", M列=10
+//   - 提出ルール:
+//     ① 同日日勤1つまで(1日1レコードで保証)
+//     ② 同日 遅出8h+夜勤NG(1日1レコードで保証)
+//     ③ 同日 夜勤+日勤NG(同上)
+//     ④ 前日夜勤→翌日早出NG(隣接日チェック)
+// ============================================================
+function inject_full_test_wishes_2026_06_v2() {
+  const TARGET_YM = '2026-06';
+  const YEAR = 2026, MONTH = 6, DAYS_IN_MONTH = 30;
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  const fixedSheet = ss.getSheetByName('M_固定配置');
+  
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const EARLY_SHIFTS = ['早出8h', '早出4h'];  // 前日夜勤→NG
+  
+  // 1. 固定配置スタッフのstaff_id取得
+  const fixedIds = {};
+  if (fixedSheet) {
+    const fixedData = fixedSheet.getDataRange().getValues();
+    for (let i = 1; i < fixedData.length; i++) {
+      if (!fixedData[i][1]) continue;
+      fixedIds[String(fixedData[i][1])] = true;
+    }
+  }
+  Logger.log('固定配置スタッフ: ' + Object.keys(fixedIds).length + '名 (' + Object.keys(fixedIds).join(',') + ')');
+  
+  // 2. 対象スタッフ取得 (稼働 ∩ 固定配置以外)
+  const staffData = staffSheet.getDataRange().getValues();
+  const targets = [];
+  for (let i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    if (String(staffData[i][16]).toUpperCase() === 'TRUE') continue;  // 退職
+    const sid = String(staffData[i][0]);
+    if (fixedIds[sid]) continue;  // 固定配置スキップ
+    
+    const allowedRaw = String(staffData[i][13] || '').trim();
+    if (!allowedRaw) continue;
+    const allowed = allowedRaw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    if (allowed.length === 0) continue;
+    
+    targets.push({
+      sid: sid,
+      name: staffData[i][1],
+      mainFac: String(staffData[i][9] || '').trim(),
+      secondFac: String(staffData[i][10] || '').trim(),
+      subFacs: String(staffData[i][11] || '').trim(),
+      allowed: allowed
+    });
+  }
+  Logger.log('対象スタッフ: ' + targets.length + '名');
+  
+  // 3. 既存2026-06希望を全削除(固定配置スタッフ分も含む)
+  const wishData = wishSheet.getDataRange().getValues();
+  const header = wishData[0];
+  const keepRows = [];
+  let deletedCount = 0;
+  
+  for (let i = 1; i < wishData.length; i++) {
+    let ymVal = wishData[i][4];
+    let ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'Asia/Tokyo', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    if (ymStr === TARGET_YM) {
+      deletedCount++;
+      continue;
+    }
+    keepRows.push(wishData[i]);
+  }
+  
+  const lastCol = wishSheet.getLastColumn();
+  const lastRow = wishSheet.getLastRow();
+  if (lastRow > 1) {
+    wishSheet.getRange(2, 1, lastRow - 1, lastCol).setDataValidation(null);
+    wishSheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+  if (keepRows.length > 0) {
+    wishSheet.getRange(2, 1, keepRows.length, header.length).setValues(keepRows);
+  }
+  Logger.log('既存2026-06希望: ' + deletedCount + '件削除 / 残り: ' + keepRows.length + '件');
+  
+  // 4. 各スタッフの15日分シフト生成
+  function pseudoRandom(seed) {
+    let x = seed;
+    return function() {
+      x = (x * 9301 + 49297) % 233280;
+      return x / 233280;
+    };
+  }
+  
+  const generatedRows = [];
+  const now = new Date();
+  let totalGenerated = 0;
+  let skippedStaff = 0;
+  
+  targets.forEach(function(staff, sIdx) {
+    const rng = pseudoRandom(parseInt(staff.sid, 10) * 31 + 7);
+    
+    // 15日をランダム選択(1-30から)
+    const allDays = [];
+    for (let d = 1; d <= DAYS_IN_MONTH; d++) allDays.push(d);
+    // シャッフル
+    for (let i = allDays.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = allDays[i]; allDays[i] = allDays[j]; allDays[j] = tmp;
+    }
+    const selectedDays = allDays.slice(0, 15).sort(function(a, b){return a - b;});
+    
+    // 各日にシフト割り当て(連日制約チェック)
+    const dayShiftMap = {};  // day → shift
+    
+    selectedDays.forEach(function(day) {
+      const prevDay = day - 1;
+      const prevShift = dayShiftMap[prevDay];
+      const wasNightYesterday = prevShift && NIGHT_SHIFTS.indexOf(prevShift) !== -1;
+      
+      // 候補シフト: 許可シフトから前日制約クリアできるもの
+      const candidates = staff.allowed.filter(function(s) {
+        // ④ 前日夜勤 → 翌日早出NG
+        if (wasNightYesterday && EARLY_SHIFTS.indexOf(s) !== -1) return false;
+        return true;
+      });
+      
+      if (candidates.length === 0) return;  // 候補なし、この日スキップ
+      
+      const picked = candidates[Math.floor(rng() * candidates.length)];
+      dayShiftMap[day] = picked;
+    });
+    
+    // T_希望提出レコード生成
+    const days = Object.keys(dayShiftMap).map(Number).sort(function(a, b){return a - b;});
+    if (days.length === 0) { skippedStaff++; return; }
+    
+    days.forEach(function(day, dIdx) {
+      const date = new Date(YEAR, MONTH - 1, day);
+      const shift = dayShiftMap[day];
+      const requestId = staff.sid + '_' + TARGET_YM + '_' + String(dIdx + 1).padStart(3, '0');
+      
+      // T_希望提出 13列: A:ID B:提出日時 C:sid D:名 E:対象YM F:希望日 G:シフト H:メイン I:セカンド J:サブ K:コメント L:頻度タイプ M:頻度数
+      const row = [
+        requestId, now, staff.sid, staff.name, TARGET_YM,
+        date, shift, staff.mainFac, staff.secondFac, staff.subFacs,
+        'Day13テスト: 全許可シフトローテーション', '月次合計', 10
+      ];
+      generatedRows.push(row);
+      totalGenerated++;
+    });
+  });
+  
+  // 5. 一括書き込み(プルダウン回避のためsetValuesで直接)
+  if (generatedRows.length > 0) {
+    const startRow = wishSheet.getLastRow() + 1;
+    wishSheet.getRange(startRow, 1, generatedRows.length, 13).setValues(generatedRows);
+  }
+  
+  Logger.log('');
+  Logger.log('===== 完了 =====');
+  Logger.log('対象スタッフ: ' + targets.length + '名');
+  Logger.log('スキップ: ' + skippedStaff + '名 (候補シフトなし)');
+  Logger.log('総希望件数: ' + totalGenerated + '件');
+  Logger.log('1人あたり平均: ' + (totalGenerated / targets.length).toFixed(1) + '件');
+  Logger.log('');
+  Logger.log('次のステップ:');
+  Logger.log('1. ブラウザで「⚡自動割当実行」(2026-06) → 日勤');
+  Logger.log('2. 夜勤エンジンも実行 (該当ボタンorGAS関数)');
+  Logger.log('3. 充足率カードで結果確認');
+}
+
+// Day 13: T_シフト確定 2026-06 の assignedRole 列の埋まり方を確認
+function debug_check_assigned_role_filled() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  let total = 0, filled = 0, empty = 0;
+  const sample = [];
+  const empty_role_breakdown = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    let ymVal = data[i][4];
+    let ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'Asia/Tokyo', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    if (ymStr !== '2026-06') continue;
+    
+    const shift = String(data[i][6] || '').trim();
+    if (['夜勤A', '夜勤B', '夜勤C'].indexOf(shift) !== -1) continue;  // 日勤のみ
+    
+    total++;
+    const assignedRole = String(data[i][18] || '').trim();
+    if (assignedRole) {
+      filled++;
+    } else {
+      empty++;
+      const shiftId = String(data[i][0] || '');
+      const isFixed = shiftId.indexOf('FIXED_') === 0;
+      const key = isFixed ? 'FIXED_' : '通常';
+      empty_role_breakdown[key] = (empty_role_breakdown[key] || 0) + 1;
+    }
+    
+    if (sample.length < 10) {
+      sample.push('shift_id=' + data[i][0] + ' sid=' + data[i][2] + ' shift=' + shift + ' assignedRole="' + assignedRole + '"');
+    }
+  }
+  
+  Logger.log('=== 2026-06 日勤の assignedRole列 充填率 ===');
+  Logger.log('総レコード: ' + total + '件');
+  Logger.log('埋まってる: ' + filled + '件');
+  Logger.log('空: ' + empty + '件');
+  Logger.log('');
+  Logger.log('空レコード内訳:');
+  Object.keys(empty_role_breakdown).forEach(function(k) {
+    Logger.log('  ' + k + ': ' + empty_role_breakdown[k] + '件');
+  });
+  Logger.log('');
+  Logger.log('サンプル(先頭10件):');
+  sample.forEach(function(s) { Logger.log('  ' + s); });
+}
+
+// Day 13: T_シフト確定の全月別件数を確認
+function debug_check_shift_all_months() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  Logger.log('総行数(ヘッダー込): ' + data.length);
+  
+  const byYM = {};
+  for (let i = 1; i < data.length; i++) {
+    let ymVal = data[i][4];
+    let ymStr = (ymVal instanceof Date)
+      ? Utilities.formatDate(ymVal, 'Asia/Tokyo', 'yyyy-MM')
+      : String(ymVal || '').substring(0, 7);
+    byYM[ymStr] = (byYM[ymStr] || 0) + 1;
+  }
+  
+  Logger.log('=== 月別レコード数 ===');
+  Object.keys(byYM).sort().forEach(function(ym) {
+    Logger.log('  ' + ym + ': ' + byYM[ym] + '件');
+  });
+  
+  // 先頭5行のサンプル
+  Logger.log('');
+  Logger.log('=== 先頭5行サンプル ===');
+  for (let i = 1; i <= Math.min(5, data.length - 1); i++) {
+    Logger.log('row ' + i + ': ' + JSON.stringify(data[i].slice(0, 8)));
+  }
+}
+
+// Day 13 v2: 列構造を正しく踏まえて再確認
+// 構造: shift_id, 配置日時, unit_id, 事業所, 施設, unit_name, staff_id, name, ..., [17] dayHours, [18] assignedRole
+function debug_check_assigned_role_v2() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  // ヘッダー確認
+  Logger.log('=== ヘッダー (列名) ===');
+  data[0].forEach(function(h, idx) {
+    Logger.log('  [' + idx + '] ' + h);
+  });
+  Logger.log('');
+  
+  // シフトIDのプレフィックスで2026-06日勤を識別
+  // 日勤: DSE-V2-2026-06-... 夜勤: NSE-V4-2026-06-... 固定: FIXED_...
+  let total = 0, dayTotal = 0, nightTotal = 0, fixedTotal = 0;
+  let dayFilled = 0, dayEmpty = 0;
+  const sampleDay = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const shiftId = String(data[i][0] || '');
+    if (shiftId.indexOf('2026-06') === -1 && shiftId.indexOf('FIXED_') !== 0) continue;
+    
+    total++;
+    const shift = String(data[i][8] || '').trim();  // シフト種別はどこ?
+    const assignedRole = String(data[i][18] || '').trim();
+    const isFixed = shiftId.indexOf('FIXED_') === 0;
+    const isNight = ['夜勤A','夜勤B','夜勤C'].indexOf(shift) !== -1;
+    
+    if (isFixed) fixedTotal++;
+    else if (isNight) nightTotal++;
+    else {
+      dayTotal++;
+      if (assignedRole) dayFilled++; else dayEmpty++;
+      if (sampleDay.length < 10) {
+        sampleDay.push('id=' + shiftId.substring(0, 35) + ' sid=' + data[i][6] + ' shift="' + shift + '" assignedRole="' + assignedRole + '"');
+      }
+    }
+  }
+  
+  Logger.log('=== 集計 (2026-06関連) ===');
+  Logger.log('総数: ' + total);
+  Logger.log('  日勤(DSE): ' + dayTotal);
+  Logger.log('    assignedRole埋まってる: ' + dayFilled);
+  Logger.log('    assignedRole空: ' + dayEmpty);
+  Logger.log('  夜勤(NSE): ' + nightTotal);
+  Logger.log('  固定配置(FIXED): ' + fixedTotal);
+  Logger.log('');
+  Logger.log('=== 日勤サンプル ===');
+  sampleDay.forEach(function(s) { Logger.log('  ' + s); });
+}
+
+// Day 13 v3: 2026-06 日勤の assignedRole 分布を全件カウント
+function debug_assigned_role_distribution() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const NIGHT = ['夜勤A','夜勤B','夜勤C'];
+  const distAll = {};
+  const distByJig = {};
+  const fixedRoleDist = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const shiftId = String(data[i][0] || '');
+    if (shiftId.indexOf('2026-06') === -1 && shiftId.indexOf('FIXED_') !== 0) continue;
+    const shift = String(data[i][8] || '').trim();
+    if (NIGHT.indexOf(shift) !== -1) continue;  // 日勤のみ
+    
+    const jig = String(data[i][3] || '').trim();
+    const role = String(data[i][18] || '').trim() || '(空)';
+    const isFixed = shiftId.indexOf('FIXED_') === 0;
+    
+    distAll[role] = (distAll[role] || 0) + 1;
+    if (!distByJig[jig]) distByJig[jig] = {};
+    distByJig[jig][role] = (distByJig[jig][role] || 0) + 1;
+    if (isFixed) fixedRoleDist[role] = (fixedRoleDist[role] || 0) + 1;
+  }
+  
+  Logger.log('=== 2026-06 日勤 assignedRole 全件分布 ===');
+  Object.keys(distAll).sort().forEach(function(r) {
+    Logger.log('  ' + r + ': ' + distAll[r] + '件');
+  });
+  Logger.log('');
+  Logger.log('=== うち固定配置(FIXED_)分 ===');
+  Object.keys(fixedRoleDist).sort().forEach(function(r) {
+    Logger.log('  ' + r + ': ' + fixedRoleDist[r] + '件');
+  });
+  Logger.log('');
+  Logger.log('=== 事業所×assignedRole ===');
+  Object.keys(distByJig).sort().forEach(function(jig) {
+    const inner = distByJig[jig];
+    const parts = Object.keys(inner).sort().map(function(r) { return r + ':' + inner[r]; });
+    Logger.log('  [' + jig + '] ' + parts.join(' / '));
+  });
+}
+
+// Day13: assignedRoleごとの workHours 合計を事業所別に集計
+function debug_role_hours_by_jig() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  const NIGHT = ['夜勤A','夜勤B','夜勤C'];
+  
+  const result = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const shiftId = String(data[i][0] || '');
+    if (shiftId.indexOf('2026-06') === -1 && shiftId.indexOf('FIXED_') !== 0) continue;
+    
+    const jig = String(data[i][3] || '').trim();
+    const shift = String(data[i][8] || '').trim();
+    const dayH = parseFloat(data[i][17]) || 0;
+    const role = String(data[i][18] || '').trim() || '(空)';
+    if (NIGHT.indexOf(shift) !== -1 && dayH === 0) continue;
+    
+    if (!result[jig]) result[jig] = {};
+    if (!result[jig][role]) result[jig][role] = { count: 0, hours: 0 };
+    result[jig][role].count++;
+    result[jig][role].hours += dayH;
+  }
+  
+  Logger.log('=== 事業所×assignedRole の hours合計 (シート直集計) ===');
+  Object.keys(result).sort().forEach(function(jig) {
+    Logger.log('');
+    Logger.log('▼ ' + jig);
+    Object.keys(result[jig]).sort().forEach(function(role) {
+      const r = result[jig][role];
+      Logger.log('  ' + role + ': ' + r.count + '件 / ' + r.hours.toFixed(1) + 'h');
+    });
+  });
+}
+
+// Day13: loadEngineContextV2 経由で ctx.staffAssignedDates にロードした結果を確認
+function debug_ctx_assigned_role() {
+  const ym = '2026-06';
+  if (typeof loadEngineContextV2 !== 'function') {
+    Logger.log('loadEngineContextV2 なし');
+    return;
+  }
+  const ctx = loadEngineContextV2(ym);
+  
+  const stats = {};  // jig → {role → count}
+  Object.keys(ctx.staffAssignedDates).forEach(function(sid) {
+    Object.keys(ctx.staffAssignedDates[sid]).forEach(function(d) {
+      ctx.staffAssignedDates[sid][d].forEach(function(a) {
+        if (a.isNight) return;
+        const jig = a.jigyosho;
+        const role = a.assignedRole || '(空)';
+        if (!stats[jig]) stats[jig] = {};
+        stats[jig][role] = (stats[jig][role] || 0) + 1;
+      });
+    });
+  });
+  
+  Logger.log('=== ctx.staffAssignedDates ロード後の assignedRole 分布 ===');
+  Object.keys(stats).sort().forEach(function(jig) {
+    Logger.log('');
+    Logger.log('▼ ' + jig);
+    Object.keys(stats[jig]).sort().forEach(function(role) {
+      Logger.log('  ' + role + ': ' + stats[jig][role] + '件');
+    });
+  });
+}
+
+// Day13: calcRoleHoursV2 を直接呼んで結果と中間状態を確認
+function debug_call_calcRoleHoursV2() {
+  const ym = '2026-06';
+  const ctx = loadEngineContextV2(ym);
+  
+  // 練馬の生活支援員レコードを直接走査して、何が起きてるか確認
+  Logger.log('=== 練馬の生活支援員レコード走査 ===');
+  let seikatsuCount = 0;
+  let seikatsuHours = 0;
+  
+  Object.keys(ctx.staffAssignedDates).forEach(function(sid) {
+    const staff = ctx.staffMap[sid];
+    if (!staff) {
+      // staff が見つからないと加算されない
+      Object.keys(ctx.staffAssignedDates[sid]).forEach(function(d) {
+        ctx.staffAssignedDates[sid][d].forEach(function(a) {
+          if (a.jigyosho === 'GHコノヒカラ練馬' && a.assignedRole === '生活支援員') {
+            Logger.log('  ⚠ sid=' + sid + ' (staffMap欠落) / d=' + d + ' / wh=' + a.workHours);
+          }
+        });
+      });
+      return;
+    }
+    Object.keys(ctx.staffAssignedDates[sid]).forEach(function(d) {
+      ctx.staffAssignedDates[sid][d].forEach(function(a) {
+        if (a.jigyosho !== 'GHコノヒカラ練馬') return;
+        if (a.assignedRole !== '生活支援員') return;
+        seikatsuCount++;
+        const h = a.workHours || 0;
+        const isNight = a.isNight || (['夜勤A','夜勤B','夜勤C'].indexOf(a.shift) !== -1);
+        let dayH = h;
+        if (isNight) dayH = 0;
+        seikatsuHours += dayH;
+        Logger.log('  sid=' + sid + ' d=' + d + ' shift=' + a.shift + ' wh=' + h + ' isNight=' + isNight + ' dayH=' + dayH);
+      });
+    });
+  });
+  
+  Logger.log('');
+  Logger.log('練馬 生活支援員: ' + seikatsuCount + '件 / ' + seikatsuHours + 'h');
+  Logger.log('');
+  
+  // calcRoleHoursV2 を呼んで返り値を確認
+  const result = calcRoleHoursV2(ctx);
+  Logger.log('=== calcRoleHoursV2 返り値 ===');
+  Logger.log('練馬: ' + JSON.stringify(result['GHコノヒカラ練馬']));
+}
+
+// Day13: V_日勤充足 シートの内容を確認
+function debug_v_fulfillment_sheet() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('V_日勤充足');
+  if (!sheet) {
+    Logger.log('V_日勤充足 シートなし');
+    return;
+  }
+  const data = sheet.getDataRange().getValues();
+  Logger.log('=== V_日勤充足 シート全行 ===');
+  Logger.log('総行数: ' + data.length);
+  Logger.log('');
+  for (let i = 0; i < Math.min(data.length, 15); i++) {
+    Logger.log('row ' + i + ': ' + JSON.stringify(data[i]));
+  }
+}
+
+function regen_v_fulfillment_2026_06() {
+  if (typeof generateDayShiftFulfillmentReportV2 !== 'function') {
+    Logger.log('generateDayShiftFulfillmentReportV2 なし');
+    return;
+  }
+  const result = generateDayShiftFulfillmentReportV2('2026-06');
+  Logger.log('=== 再生成完了 ===');
+  Logger.log(JSON.stringify(result));
+}
