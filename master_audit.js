@@ -2964,3 +2964,396 @@ function debug_check_fixed_in_kakutei() {
   Logger.log('  夜勤: ' + nightCount + '件');
   Logger.log('  日勤: ' + dayCount + '件');
 }
+
+// ============================================================
+// Day 12 テスト関数: サビ管持ちスタッフに週5日(早出8h)の希望を投入
+// 目的: pickAssignedRole の「サビ管無条件」仕様の検証
+// 期待: 全5事業所でサビ管充足率100%以上になる
+//
+// 動作: 既存の2026-06希望データのうち、サビ管持ちスタッフの分だけ削除し、
+//       週5日(月-金)の早出8h希望を1ヶ月分投入する。
+//       他職種(世話人/生活支援員のみ)のスタッフの希望は触らない。
+//
+// 施設配分: メイン:セカンド:サブ = 7:2:1 (既存パターン踏襲)
+// ============================================================
+function inject_sabikan_test_wishes_2026_06() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const wishSheet = ss.getSheetByName('T_希望提出');
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  
+  const TARGET_YM = '2026-06';
+  const TARGET_YEAR = 2026;
+  const TARGET_MONTH = 6;
+  const DAYS_IN_MONTH = 30;
+  const SHIFT = '早出8h';
+  
+  // 1. サビ管持ちスタッフ抽出 (T列に「サビ管」を含む)
+  const staffData = staffSheet.getDataRange().getValues();
+  const sabikanStaff = [];
+  for (let i = 1; i < staffData.length; i++) {
+    const r = staffData[i];
+    if (!r[0]) continue;
+    if (String(r[16]).toUpperCase() === 'TRUE') continue;  // 退職除外
+    
+    const mainRolesRaw = String(r[19] || '').trim();  // T列(0-indexed=19)
+    if (mainRolesRaw.indexOf('サビ管') === -1) continue;
+    
+    // 許可シフトに早出8hが含まれるかチェック
+    const allowedRaw = String(r[13] || '').trim();
+    const allowed = allowedRaw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    if (allowed.indexOf(SHIFT) === -1) {
+      Logger.log('  ⚠ ' + r[1] + ' (sid=' + r[0] + ') は早出8h許可なし、スキップ');
+      continue;
+    }
+    
+    const mainFac = String(r[9] || '').trim();
+    const secondFac = String(r[10] || '').trim();
+    const subFacs = String(r[11] || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
+    
+    sabikanStaff.push({
+      staff_id: r[0],
+      name: r[1],
+      email: r[2],
+      mainFac: mainFac,
+      secondFac: secondFac,
+      subFacs: subFacs,
+      mainRoles: mainRolesRaw
+    });
+  }
+  Logger.log('サビ管持ち稼働スタッフ: ' + sabikanStaff.length + '名');
+  if (sabikanStaff.length === 0) {
+    Logger.log('⚠ サビ管持ちスタッフ0名。マスタT列を確認してください。');
+    return;
+  }
+  
+  // 2. 既存2026-06希望のうちサビ管持ちスタッフの分のみ削除 (一括処理: clear→書き戻し)
+  const sabikanIdSet = {};
+  sabikanStaff.forEach(function(s) { sabikanIdSet[String(s.staff_id)] = true; });
+  
+  const wishData = wishSheet.getDataRange().getValues();
+  const header = wishData[0];
+  const keepRows = [];
+  let deletedCount = 0;
+  
+  for (let i = 1; i < wishData.length; i++) {
+    let ymVal = wishData[i][4];
+    let ymStr = '';
+    if (ymVal instanceof Date) {
+      ymStr = Utilities.formatDate(ymVal, 'Asia/Tokyo', 'yyyy-MM');
+    } else {
+      ymStr = String(ymVal || '').trim().substring(0, 7);
+    }
+    const sid = String(wishData[i][2] || '').trim();
+    
+    if (ymStr === TARGET_YM && sabikanIdSet[sid]) {
+      deletedCount++;
+      continue;
+    }
+    keepRows.push(wishData[i]);
+  }
+  
+  const lastCol = wishSheet.getLastColumn();
+  const lastRow = wishSheet.getLastRow();
+  if (lastRow > 1) {
+    wishSheet.getRange(2, 1, lastRow - 1, lastCol).setDataValidation(null);
+    wishSheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+  
+  if (keepRows.length > 0) {
+    wishSheet.getRange(2, 1, keepRows.length, header.length).setValues(keepRows);
+  }
+  
+  Logger.log('既存サビ管希望: ' + deletedCount + '件削除 / 残り: ' + keepRows.length + '件');
+  
+  // 3. 週5日(月-金)の希望日リスト生成
+  //    2026-06-01は月曜なので、月-金=平日5日 × 月内全週
+  const weekdayDates = [];  // 平日(月-金)のみ
+  for (let day = 1; day <= DAYS_IN_MONTH; day++) {
+    const d = new Date(TARGET_YEAR, TARGET_MONTH - 1, day);
+    const dow = d.getDay();  // 0=日, 1=月, ..., 6=土
+    if (dow >= 1 && dow <= 5) {  // 月-金
+      weekdayDates.push(day);
+    }
+  }
+  Logger.log('対象平日(月-金): ' + weekdayDates.length + '日');
+  
+  // 4. 各サビ管スタッフに週5日希望を投入
+  function pickFacilityForIndex(staff, idx) {
+    const slot = idx % 10;
+    if (slot <= 6) return staff.mainFac;
+    if (slot <= 8 && staff.secondFac) return staff.secondFac;
+    if (staff.subFacs.length > 0) return staff.subFacs[idx % staff.subFacs.length];
+    return staff.mainFac;
+  }
+  
+  const generatedRows = [];
+  let totalGenerated = 0;
+  const now = new Date();
+  
+  for (let s = 0; s < sabikanStaff.length; s++) {
+    const staff = sabikanStaff[s];
+    
+    for (let i = 0; i < weekdayDates.length; i++) {
+      const day = weekdayDates[i];
+      const date = new Date(TARGET_YEAR, TARGET_MONTH - 1, day);
+      const dateStr = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
+      
+      const facility = pickFacilityForIndex(staff, i);
+      
+      // 提出ID: staff_id_YYYY-MM_連番
+      const requestId = String(staff.staff_id) + '_' + TARGET_YM + '_SBK' + String(i + 1).padStart(3, '0');
+      
+      // T_希望提出 13列構造
+      // A:提出ID B:提出日時 C:staff_id D:氏名 E:対象年月
+      // F:希望日 G:シフト種別 H:メイン施設 I:セカンド施設 J:サブ施設
+      // K:コメント L:頻度タイプ M:頻度数
+      const row = [
+        requestId,        // A
+        now,              // B
+        staff.staff_id,   // C
+        staff.name,       // D
+        TARGET_YM,        // E
+        date,             // F
+        SHIFT,            // G
+        staff.mainFac,    // H (メイン)
+        staff.secondFac,  // I (セカンド)
+        staff.subFacs.join(','),  // J (サブ、カンマ区切り)
+        'Day12テスト: サビ管検証',  // K
+        '月次合計',        // L
+        weekdayDates.length  // M
+      ];
+      generatedRows.push(row);
+      totalGenerated++;
+    }
+  }
+  
+  // 5. 一括書き込み
+  if (generatedRows.length > 0) {
+    const startRow = wishSheet.getLastRow() + 1;
+    wishSheet.getRange(startRow, 1, generatedRows.length, 13).setValues(generatedRows);
+  }
+  
+  Logger.log('');
+  Logger.log('===== 完了 =====');
+  Logger.log('サビ管持ち: ' + sabikanStaff.length + '名');
+  Logger.log('1人あたり希望日数: ' + weekdayDates.length + '日');
+  Logger.log('総希望件数: ' + totalGenerated + '件');
+  Logger.log('');
+  Logger.log('次のステップ:');
+  Logger.log('1. ブラウザで「⚡自動割当実行」(2026-06)');
+  Logger.log('2. 全5事業所でサビ管充足率100%以上になるか確認');
+}
+
+// Day 12: サビ管8人のメイン/セカンド/サブの全展開
+function debug_check_sabikan_full() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const data = staffSheet.getDataRange().getValues();
+  
+  Logger.log('=== サビ管持ちスタッフ詳細 ===');
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    if (String(data[i][16]).toUpperCase() === 'TRUE') continue;
+    
+    const rolesRaw = String(data[i][19] || '').trim();
+    if (rolesRaw.indexOf('サビ管') === -1) continue;
+    count++;
+    
+    Logger.log('');
+    Logger.log('▼ ' + data[i][1] + ' (sid=' + data[i][0] + ')');
+    Logger.log('  T列: ' + rolesRaw);
+    Logger.log('  メイン(J): ' + (data[i][9] || '(空)'));
+    Logger.log('  セカンド(K): ' + (data[i][10] || '(空)'));
+    Logger.log('  サブ(L): ' + (data[i][11] || '(空)'));
+  }
+  Logger.log('');
+  Logger.log('合計: ' + count + '名');
+}
+
+// Day 12: サビ管8人にランダムで固定配置を投入(全事業所100%達成テスト用)
+// 施設指定方式: dates_shifts_map 新形式 {shift, facility, unit_id} を使う
+function inject_sabikan_fixed_test_2026_06() {
+  const TARGET_YM = '2026-06';
+  const SHIFT = '早出8h';
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  const fixedSheet = ss.getSheetByName('M_固定配置');
+  
+  if (!fixedSheet) {
+    Logger.log('⚠ M_固定配置シートが無い。initFixedAssignmentSheet() を先に実行');
+    return;
+  }
+  
+  // ユニットマップ(施設→代表unit_id)、E-stは特別扱い
+  const unitData = unitSheet.getDataRange().getValues();
+  const facUnitMap = {};  // 施設名 → {jigyosho別の代表unit_id}
+  for (let i = 1; i < unitData.length; i++) {
+    if (!unitData[i][0]) continue;
+    const unitId = String(unitData[i][0]);
+    const jig = String(unitData[i][1] || '').trim();
+    const fac = String(unitData[i][3] || '').trim();
+    if (!fac) continue;
+    if (!facUnitMap[fac]) facUnitMap[fac] = {};
+    if (!facUnitMap[fac][jig]) facUnitMap[fac][jig] = unitId;
+  }
+  
+  // サビ管8人取得
+  const staffData = staffSheet.getDataRange().getValues();
+  const sabikan = [];
+  for (let i = 1; i < staffData.length; i++) {
+    if (!staffData[i][0]) continue;
+    if (String(staffData[i][16]).toUpperCase() === 'TRUE') continue;
+    if (String(staffData[i][19] || '').indexOf('サビ管') === -1) continue;
+    sabikan.push({ sid: String(staffData[i][0]), name: staffData[i][1] });
+  }
+  Logger.log('サビ管: ' + sabikan.length + '名');
+  
+  // 既存FIXEDレコード全削除(Day12テスト用)
+  const fixedData = fixedSheet.getDataRange().getValues();
+  const lastRow = fixedSheet.getLastRow();
+  if (lastRow > 1) {
+    fixedSheet.getRange(2, 1, lastRow - 1, fixedSheet.getLastColumn()).clearContent();
+    Logger.log('既存固定配置: ' + (lastRow - 1) + '件削除');
+  }
+  
+  // 5事業所×施設マッピング(E-st除く)
+  // 注: E-stは事業所選択が必要なので今回除外、他の単一事業所施設のみ使う
+  const jigToFacs = {
+    'GHコノヒカラ': ['リフレ要町', 'ルーデンス中野富士見町', 'EST東長崎'],
+    'GHコノヒカラ品川': ['ルーデンス立会川II', 'ルーデンス梅屋敷'],
+    'GHコノヒカラ練馬': ['ルーデンス大泉学園前'],
+    'GHコノヒカラ板橋北区': ['ルーデンス新板橋II', 'ルーデンス東十条アネックス', 'ルーデンス東十条マキシブ'],
+    'GHコノヒカラ板橋北区セカンド': ['ルーデンス本蓮沼', 'ルーデンス板橋区役所前']
+  };
+  
+  // 各事業所の必要配置日数(必要h ÷ 8h、切り上げ)
+  const jigTargetDays = {
+    'GHコノヒカラ': 22,
+    'GHコノヒカラ品川': 17,
+    'GHコノヒカラ練馬': 8,
+    'GHコノヒカラ板橋北区': 22,
+    'GHコノヒカラ板橋北区セカンド': 18
+  };
+  
+  // 全配置プラン: [{sid, facility, jigyosho, date}, ...]
+  // 各事業所のtargetDaysを満たすよう、サビ管にラウンドロビンで割り振る
+  const plans = [];
+  const sabikanLoadCount = {};  // sid → 配置日数
+  sabikan.forEach(function(s) { sabikanLoadCount[s.sid] = 0; });
+  
+  // 日付セット(2026-06は30日)
+  const allDates = [];
+  for (let d = 1; d <= 30; d++) allDates.push(d);
+  
+  // 簡易乱数(再現性ありシード)
+  let seed = 42;
+  function rand() {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  }
+  
+  // staff×date×jigyoshoの衝突回避マップ
+  const usedSlot = {};  // "sid_date" → true
+  
+  Object.keys(jigToFacs).forEach(function(jig) {
+    const targetDays = jigTargetDays[jig];
+    const facs = jigToFacs[jig];
+    let assigned = 0;
+    let attempts = 0;
+    
+    while (assigned < targetDays && attempts < 200) {
+      attempts++;
+      // サビ管をランダムに選ぶ(配置数少ない順優先)
+      const sortedSabikan = sabikan.slice().sort(function(a, b) {
+        return sabikanLoadCount[a.sid] - sabikanLoadCount[b.sid];
+      });
+      const picked = sortedSabikan[Math.floor(rand() * Math.min(3, sortedSabikan.length))];
+      if (sabikanLoadCount[picked.sid] >= 20) continue;  // 月20日上限
+      
+      const day = allDates[Math.floor(rand() * allDates.length)];
+      const key = picked.sid + '_' + day;
+      if (usedSlot[key]) continue;  // 同日重複NG
+      
+      const fac = facs[Math.floor(rand() * facs.length)];
+      const unitId = facUnitMap[fac] && facUnitMap[fac][jig];
+      if (!unitId) continue;  // ユニットID見つからない
+      
+      plans.push({
+        sid: picked.sid, name: picked.name,
+        facility: fac, jigyosho: jig, date: day, unit_id: unitId
+      });
+      usedSlot[key] = true;
+      sabikanLoadCount[picked.sid]++;
+      assigned++;
+    }
+    Logger.log(jig + ': ' + assigned + '日割り当て(目標' + targetDays + '日)');
+  });
+  
+  // 各サビ管ごとに plan を集約 → addFixedAssignment 形式で書き込み
+  const bySid = {};
+  plans.forEach(function(p) {
+    if (!bySid[p.sid]) bySid[p.sid] = [];
+    bySid[p.sid].push(p);
+  });
+  
+  let fixedIdCounter = 1;
+  let totalWritten = 0;
+  const now = new Date();
+  
+  Object.keys(bySid).forEach(function(sid) {
+    // 施設+jigyoshoごとに固定配置レコード作成
+    const byFac = {};
+    bySid[sid].forEach(function(p) {
+      const key = p.facility + '|' + p.jigyosho;
+      if (!byFac[key]) byFac[key] = [];
+      byFac[key].push(p);
+    });
+    
+    Object.keys(byFac).forEach(function(facKey) {
+      const records = byFac[facKey];
+      const dates = records.map(function(r) { return r.date; }).sort(function(a, b) { return a - b; });
+      const fac = records[0].facility;
+      const unitId = records[0].unit_id;
+      
+      // dates_shifts_map: 各日付に施設情報埋め込み
+      const datesShiftsMap = {};
+      dates.forEach(function(d) {
+        datesShiftsMap[String(d)] = { shift: SHIFT, facility: fac, unit_id: unitId };
+      });
+      
+      const fixedId = 'FIXED_' + String(fixedIdCounter).padStart(3, '0');
+      fixedIdCounter++;
+      
+      const newRow = [
+        fixedId,
+        sid,
+        '日付指定',
+        TARGET_YM,
+        dates.join(','),
+        SHIFT,
+        unitId,
+        '2026-01',
+        '9999-12',
+        'TRUE',
+        'Day12テスト: ' + JSON.stringify(datesShiftsMap),
+        now
+      ];
+      fixedSheet.appendRow(newRow);
+      totalWritten++;
+    });
+  });
+  
+  Logger.log('');
+  Logger.log('===== 完了 =====');
+  Logger.log('固定配置レコード: ' + totalWritten + '件');
+  Logger.log('サビ管別配置日数:');
+  sabikan.forEach(function(s) {
+    Logger.log('  ' + s.name + ': ' + sabikanLoadCount[s.sid] + '日');
+  });
+  Logger.log('');
+  Logger.log('次のステップ:');
+  Logger.log('1. ブラウザで「⚡自動割当実行」(2026-06)');
+  Logger.log('2. 全5事業所でサビ管充足率100%以上か確認');
+}

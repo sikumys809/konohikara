@@ -245,21 +245,22 @@ function pickAssignedRole(staff, jigyoshoShortage) {
   if (!staff) return '';
   const shortage = jigyoshoShortage || {};
   
-  // ★Phase 6 修正: 不足判定ベース (サビ管も shortage 判定追加)
-  // 1. サビ管が不足してる + サビ管持ち → サビ管
-  if (shortage.sabikan && staff.isSabikan) return 'サビ管';
+  // ★Day 12 v2: 両方持ちの柔軟配置ロジック
+  // サビ管 > 世話人不足時のみ世話人 > 生活支援員へ自動切替 > 世話人のみ持ちは世話人
+  // 両方持ち(世話人+生活支援員)は、世話人不足中は世話人、充足したら生活支援員に回す
   
-  // 2. 世話人が不足してる + 世話人持ち → 世話人 (★優先)
+  // 1. サビ管持ち → 無条件サビ管
+  if (staff.isSabikan) return 'サビ管';
+  
+  // 2. 世話人不足 + 世話人持ち → 世話人
   if (shortage.sewa && staff.isSewa) return '世話人';
   
-  // 3. 生活支援員が不足してる + 生活支援員持ち → 生活支援員
-  if (shortage.seikatsu && staff.isSeikatsu) return '生活支援員';
-  
-  // 4. 全部充足してたら、サビ管 > 世話人 > 生活支援員 のヒエラルキー
-  //    (兼任者が余分に配置される場合、特定加配として世話人が優先される)
-  if (staff.isSabikan) return 'サビ管';
-  if (staff.isSewa) return '世話人';
+  // 3. 世話人充足後(or 世話人持ちでない) → 生活支援員持ちは生活支援員へ
+  //    両方持ちはここで生活支援員に流れる(柔軟配置の主目的)
   if (staff.isSeikatsu) return '生活支援員';
+  
+  // 4. 世話人のみ持ち(生活支援員兼任なし) → 世話人
+  if (staff.isSewa) return '世話人';
   
   // 5. フォールバック
   if (staff.mainRoles && staff.mainRoles.length > 0) {
