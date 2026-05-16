@@ -619,6 +619,28 @@ function checkH10_allowedFacility_dayShift(staff, slotJigyosho, facilityToJigyos
   return null;
 }
 
+// ★Day 14 (P1続き): H10 配置許可施設外NG (夜勤側ラッパー、a3完了用)
+// staff ベース判定、内部で engine_common.js の _facilityMatchesStaff を使う
+// E-st 仮想キー対応も自動継承
+function checkH10_allowedFacility_nightShift(staff, slotFacility) {
+  if (!staff) {
+    return { ruleId: 'H10', type: 'hard_exclude', message: 'H10判定エラー: staff未指定' };
+  }
+  if (typeof _facilityMatchesStaff !== 'function') {
+    return { ruleId: 'H10', type: 'hard_exclude', message: 'H10判定エラー: _facilityMatchesStaff関数なし' };
+  }
+  
+  const matchType = _facilityMatchesStaff(slotFacility, staff);
+  if (matchType === null) {
+    return {
+      ruleId: 'H10',
+      type: 'hard_exclude',
+      message: '配置許可施設外: ' + slotFacility + ' (許可: main=' + (staff.mainFac || '') + ', second=' + (staff.secondFac || '') + ', sub=[' + (staff.subFacs || []).join(',') + '])'
+    };
+  }
+  return null;
+}
+
 // H15: 同日2勤務NG (Day 14新規)
 // 同じ日付に既に何かのシフトがあれば配置不可
 // 旧RULE1/2/3/6 を包含
