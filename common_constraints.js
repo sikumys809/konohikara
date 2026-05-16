@@ -559,12 +559,73 @@ function testRoleCombinations() {
 // 戻り値:
 //   { valid: bool, violations: [{rule, dateKey, shift, conflictWith, message}, ...] }
 // ============================================================
-function validateWishSubmission(wishes) {
-  const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+// ============================================================
+// ★Day 14: ハード除外 H13 + H15 統合版
+// 旧RULE1-6 は H13 (前日夜勤<->翌日早出 双方向NG) + H15 (同日2勤務NG) に統合
+// 仕様: https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458
+// ============================================================
+
+// H15: 同日2勤務NG (Day 14新規)
+// 同じ日付に既に何かのシフトがあれば配置不可
+// 旧RULE1/2/3/6 を包含
+function checkH15(wish, sameDayWishes) {
+  if (sameDayWishes.length > 0) {
+    return {
+      rule: 'H15_SAME_DAY_DUPLICATE',
+      dateKey: wish.dateKey,
+      shift: wish.shift,
+      conflictWith: sameDayWishes[0].shift,
+      message: wish.dateKey + ': 同日に既に' + sameDayWishes[0].shift + 'が提出されています。シフトは1日1つまでです。'
+    };
+  }
+  return null;
+}
+
+// H13: 前日夜勤 <-> 翌日早出 双方向NG (Day 14: 双方向化)
+// 旧RULE4/5 を包含
+function checkH13(wish, byDate) {
   const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];
-  const LATE_SHIFTS = ['遅出8h', '遅出4h'];  // ★Day10新規
   
+  // 翌日早出 < - > 前日夜勤
+  if (EARLY_SHIFTS.indexOf(wish.shift) !== -1) {
+    const prevDay = _cc_addDays(wish.dateKey, -1);
+    const prevDayWishes = byDate[prevDay] || [];
+    const conflict = prevDayWishes.find(function(w) {
+      return NIGHT_SHIFTS.indexOf(w.shift) !== -1;
+    });
+    if (conflict) {
+      return {
+        rule: 'H13_NIGHT_TO_EARLY',
+        dateKey: wish.dateKey,
+        shift: wish.shift,
+        conflictWith: prevDay + ' ' + conflict.shift,
+        message: '前日(' + prevDay + ')に' + conflict.shift + 'が提出されています。夜勤の翌日に早出は提出できません。'
+      };
+    }
+  }
+  
+  if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
+    const nextDay = _cc_addDays(wish.dateKey, 1);
+    const nextDayWishes = byDate[nextDay] || [];
+    const conflict = nextDayWishes.find(function(w) {
+      return EARLY_SHIFTS.indexOf(w.shift) !== -1;
+    });
+    if (conflict) {
+      return {
+        rule: 'H13_NIGHT_TO_EARLY',
+        dateKey: wish.dateKey,
+        shift: wish.shift,
+        conflictWith: nextDay + ' ' + conflict.shift,
+        message: '翌日(' + nextDay + ')に' + conflict.shift + 'が提出されています。夜勤の翌日に早出は提出できません。'
+      };
+    }
+  }
+  
+  return null;
+}
+
+function validateWishSubmission(wishes) {
   // 日付別にインデックス化
   const byDate = {};
   for (const w of wishes) {
@@ -574,101 +635,19 @@ function validateWishSubmission(wishes) {
   
   const violations = [];
   
-  // 各希望をチェック
   for (let i = 0; i < wishes.length; i++) {
     const wish = wishes[i];
     const sameDayWishes = (byDate[wish.dateKey] || []).filter(function(w, j) {
-      // 自分以外
       return wishes.indexOf(w) !== i;
     });
     
-    // ルール1: 同日に日勤シフトは1つだけ
-    if (DAY_SHIFTS.indexOf(wish.shift) !== -1) {
-      const conflict = sameDayWishes.find(function(w) {
-        return DAY_SHIFTS.indexOf(w.shift) !== -1;
-      });
-      if (conflict) {
-        violations.push({
-          rule: 'RULE1_DUPLICATE_DAYSHIFT',
-          dateKey: wish.dateKey,
-          shift: wish.shift,
-          conflictWith: conflict.shift,
-          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。日勤シフトは1日1つまでです。'
-        });
-      }
-    }
+    // H15: 同日2勤務NG
+    const h15 = checkH15(wish, sameDayWishes);
+    if (h15) violations.push(h15);
     
-    // ルール2: 同日 日勤(早出8h/早出4h/遅出8h/遅出4h) + 夜勤A/B/C NG
-    // 労基法H14: 始業日帰属で1日8時間上限のため
-    // (Day10改修: 旧「遅出8h+夜勤NG, 遅出4h+夜勤OK」を労基法準拠に統一)
-    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
-      const conflict = sameDayWishes.find(function(w) {
-        return EARLY_SHIFTS.indexOf(w.shift) !== -1 || LATE_SHIFTS.indexOf(w.shift) !== -1;
-      });
-      if (conflict) {
-        violations.push({
-          rule: 'RULE2_DAY_TO_NIGHT',
-          dateKey: wish.dateKey,
-          shift: wish.shift,
-          conflictWith: conflict.shift,
-          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。日勤と夜勤の組み合わせは1日8時間上限のため不可です。'
-        });
-      }
-    }
-    
-    // ルール3: 同日 夜勤A/B/C + 日勤(早出8h/早出4h/遅出8h/遅出4h) NG (逆方向チェック)
-    // 労基法H14: 始業日帰属で1日8時間上限のため
-    // (Day10改修: 旧「夜勤+遅出8hのみNG」を全日勤シフトに拡張)
-    if (EARLY_SHIFTS.indexOf(wish.shift) !== -1 || LATE_SHIFTS.indexOf(wish.shift) !== -1) {
-      const conflict = sameDayWishes.find(function(w) {
-        return NIGHT_SHIFTS.indexOf(w.shift) !== -1;
-      });
-      if (conflict) {
-        violations.push({
-          rule: 'RULE3_NIGHT_TO_DAY',
-          dateKey: wish.dateKey,
-          shift: wish.shift,
-          conflictWith: conflict.shift,
-          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。夜勤と日勤の組み合わせは1日8時間上限のため不可です。'
-        });
-      }
-    }
-    
-    // ルール4: 前日夜勤A/B/C → 翌日早出8h/4h NG
-    if (EARLY_SHIFTS.indexOf(wish.shift) !== -1) {
-      const prevDay = _cc_addDays(wish.dateKey, -1);
-      const prevDayWishes = byDate[prevDay] || [];
-      const conflict = prevDayWishes.find(function(w) {
-        return NIGHT_SHIFTS.indexOf(w.shift) !== -1;
-      });
-      if (conflict) {
-        violations.push({
-          rule: 'RULE4_PREV_NIGHT_TO_EARLY',
-          dateKey: wish.dateKey,
-          shift: wish.shift,
-          conflictWith: prevDay + ' ' + conflict.shift,
-          message: '前日(' + prevDay + ')に' + conflict.shift + 'が提出されています。夜勤翌日の早出は提出できません。'
-        });
-      }
-    }
-    
-    // ルール5: (逆) 翌日早出8h/4h済み → 前日夜勤A/B/C NG
-    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
-      const nextDay = _cc_addDays(wish.dateKey, 1);
-      const nextDayWishes = byDate[nextDay] || [];
-      const conflict = nextDayWishes.find(function(w) {
-        return EARLY_SHIFTS.indexOf(w.shift) !== -1;
-      });
-      if (conflict) {
-        violations.push({
-          rule: 'RULE5_NEXT_EARLY_TO_NIGHT',
-          dateKey: wish.dateKey,
-          shift: wish.shift,
-          conflictWith: nextDay + ' ' + conflict.shift,
-          message: '翌日(' + nextDay + ')に' + conflict.shift + 'が提出されています。前日の夜勤は提出できません。'
-        });
-      }
-    }
+    // H13: 前日夜勤<->翌日早出 双方向NG
+    const h13 = checkH13(wish, byDate);
+    if (h13) violations.push(h13);
   }
   
   return {

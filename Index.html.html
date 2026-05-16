@@ -50,6 +50,7 @@
   .request-item { border: 1px solid #e5e5ea; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
   .shift-chip { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border: 1px solid #d2d2d7; border-radius: 18px; font-size: 12px; cursor: pointer; background: #fff; margin: 2px 3px; white-space: nowrap; }
   .shift-chip.checked { background: #6366f1; color: #fff; border-color: #6366f1; }
+  .shift-chip.disabled { background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed; opacity: 0.6; }
   .shift-chip input { display: none; }
   .shift-time { font-size: 10px; opacity: 0.85; }
   .small { font-size: 12px; color: #6b7280; }
@@ -174,6 +175,11 @@
         <div style="background: #fef2f2; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
           <div style="font-weight: 600; color: #b91c1c;">❌ 同じ日に「日勤」を2つ</div>
           <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">早出8h・早出4h・遅出8h・遅出4hは1日1つまでです</div>
+        </div>
+        
+        <div style="background: #fef2f2; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
+          <div style="font-weight: 600; color: #b91c1c;">❌ 同じ日に「夜勤」を2つ</div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">夜勤A・夜勤B・夜勤Cは1日1つまでです (時間帯が重複するため)</div>
         </div>
         
         <div style="background: #fef2f2; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;">
@@ -662,14 +668,17 @@ function renderBulkShifts() {
 }
 
 function toggleBulkShift(shift) {
-  const i = bulkShiftSelection.indexOf(shift);
-  if (i >= 0) bulkShiftSelection.splice(i, 1);
-  else bulkShiftSelection.push(shift);
+  // ★Day 14: 単一選択化
+  if (bulkShiftSelection.length === 1 && bulkShiftSelection[0] === shift) {
+    bulkShiftSelection = [];
+  } else {
+    bulkShiftSelection = [shift];
+  }
   renderBulkShifts();
 }
 
 function applyBulkShifts() {
-  if (bulkShiftSelection.length === 0) return alert('一括適用するシフトを1つ以上選択してください');
+  if (bulkShiftSelection.length === 0) return alert('一括適用するシフトを選択してください');
   if (requests.length === 0) return alert('カレンダーから日付を1つ以上選択してください');
   requests.forEach(r => { r.shifts = [...bulkShiftSelection]; });
   renderRequests();
@@ -742,15 +751,54 @@ function removeRequest(idx) {
 }
 
 function toggleRequestShift(idx, shift) {
+  // ★Day 14: 単一選択化 - シフトは1日1つだけ (ルール1+ルール6)
   const r = requests[idx];
-  const i = r.shifts.indexOf(shift);
-  if (i >= 0) r.shifts.splice(i, 1);
-  else r.shifts.push(shift);
+  // 既に選択中のシフトをもう一度押した場合は解除
+  if (r.shifts.length === 1 && r.shifts[0] === shift) {
+    r.shifts = [];
+  } else {
+    // それ以外は他をクリアして新規セット
+    r.shifts = [shift];
+  }
   renderRequests();
 }
 
 function updateField(idx, field, value) {
   requests[idx][field] = value;
+}
+
+// ★Day 14: H13 グレーアウト判定 (前日夜勤<->翌日早出)
+function isShiftBlockedByH13(targetDate, targetShift, allRequests) {
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const EARLY_SHIFTS = ['早出8h', '早出4h'];
+  
+  function _addDaysLocal(dateKey, delta) {
+    const d = new Date(dateKey + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  
+  // 早出を選ぼうとしてる → 前日夜勤があるか
+  if (EARLY_SHIFTS.indexOf(targetShift) !== -1) {
+    const prevDay = _addDaysLocal(targetDate, -1);
+    const prevReq = allRequests.find(function(r) { return r.date === prevDay; });
+    if (prevReq && prevReq.shifts.some(function(s) { return NIGHT_SHIFTS.indexOf(s) !== -1; })) {
+      const nightShift = prevReq.shifts.find(function(s) { return NIGHT_SHIFTS.indexOf(s) !== -1; });
+      return { blocked: true, reason: '前日(' + prevDay + ')に' + nightShift + 'があるため' };
+    }
+  }
+  
+  // 夜勤を選ぼうとしてる → 翌日早出があるか
+  if (NIGHT_SHIFTS.indexOf(targetShift) !== -1) {
+    const nextDay = _addDaysLocal(targetDate, 1);
+    const nextReq = allRequests.find(function(r) { return r.date === nextDay; });
+    if (nextReq && nextReq.shifts.some(function(s) { return EARLY_SHIFTS.indexOf(s) !== -1; })) {
+      const earlyShift = nextReq.shifts.find(function(s) { return EARLY_SHIFTS.indexOf(s) !== -1; });
+      return { blocked: true, reason: '翌日(' + nextDay + ')に' + earlyShift + 'があるため' };
+    }
+  }
+  
+  return { blocked: false };
 }
 
 function renderRequests() {
@@ -763,8 +811,16 @@ function renderRequests() {
     const shiftChips = currentUser.allowedShifts.map(s => {
       const isChecked = r.shifts.includes(s);
       const time = (currentUser.shiftTimes[s] && currentUser.shiftTimes[s].label) || '';
+      // ★Day 14: H13 グレーアウト判定
+      const blockInfo = isShiftBlockedByH13(r.date, s, requests);
+      const isBlocked = blockInfo.blocked && !isChecked;  // 既に選択中ならブロックしない
+      const cls = isChecked ? 'checked' : (isBlocked ? 'disabled' : '');
+      const onclickStr = isBlocked
+        ? `event.preventDefault();`
+        : `event.preventDefault(); toggleRequestShift(${idx}, '${s}')`;
+      const titleAttr = isBlocked ? ` title="${blockInfo.reason}で選択できません"` : '';
       return `
-        <label class="shift-chip ${isChecked ? 'checked' : ''}" onclick="event.preventDefault(); toggleRequestShift(${idx}, '${s}')">
+        <label class="shift-chip ${cls}" onclick="${onclickStr}"${titleAttr}>
           <input type="checkbox" ${isChecked ? 'checked' : ''} readonly>
           ${s}<span class="shift-time">(${time})</span>
         </label>
@@ -777,7 +833,7 @@ function renderRequests() {
           <strong>${dateFormatted}</strong>
           <button class="btn btn-danger btn-small" onclick="removeRequest(${idx})">削除</button>
         </div>
-        <div class="small" style="margin-bottom: 4px;">シフト種別(複数選択可)</div>
+        <div class="small" style="margin-bottom: 4px;">シフト種別</div>
         <div style="margin-bottom: 8px;">${shiftChips}</div>
         <input type="text" placeholder="コメント(任意)" value="${(r.comment || '').replace(/"/g, '&quot;')}" oninput="updateField(${idx}, 'comment', this.value)">
       </div>
@@ -797,11 +853,10 @@ function formatDateJP(dateStr) {
 // バックエンドの validateWishSubmission と同じロジック
 // ============================================================
 function validateWishesFront(requests) {
-  const DAY_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
+  // ★Day 14: H13 + H15 統合版 (旧RULE1-6を統合)
   const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];
   
-  // requests を flat な wishes 配列に展開
   const wishes = [];
   for (const r of requests) {
     for (const shift of r.shifts) {
@@ -809,7 +864,6 @@ function validateWishesFront(requests) {
     }
   }
   
-  // 日付別にインデックス化
   const byDate = {};
   for (const w of wishes) {
     if (!byDate[w.dateKey]) byDate[w.dateKey] = [];
@@ -830,54 +884,31 @@ function validateWishesFront(requests) {
       return wishes.indexOf(w) !== i;
     });
     
-    // ルール1: 同日に日勤シフトは1つだけ
-    if (DAY_SHIFTS.indexOf(wish.shift) !== -1) {
-      const conflict = sameDayWishes.find(function(w) { return DAY_SHIFTS.indexOf(w.shift) !== -1; });
-      if (conflict) {
-        violations.push({ rule: 'RULE1', dateKey: wish.dateKey, shift: wish.shift,
-          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。日勤シフトは1日1つまでです。'
-        });
-      }
+    // H15: 同日2勤務NG
+    if (sameDayWishes.length > 0) {
+      violations.push({ rule: 'H15', dateKey: wish.dateKey, shift: wish.shift,
+        message: wish.dateKey + ': 同日に既に' + sameDayWishes[0].shift + 'が提出されています。シフトは1日1つまでです。'
+      });
     }
     
-    // ルール2: 同日 遅出8h → 夜勤A/B/C NG
-    if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
-      const conflict = sameDayWishes.find(function(w) { return w.shift === '遅出8h'; });
-      if (conflict) {
-        violations.push({ rule: 'RULE2', dateKey: wish.dateKey, shift: wish.shift,
-          message: wish.dateKey + 'は既に遅出8hが提出されています。遅出8h(〜22時)と夜勤の組み合わせは不可です。'
-        });
-      }
-    }
-    
-    // ルール3: 同日 夜勤A/B/C → 遅出8h NG (遅出4hはOK)
-    if (wish.shift === '遅出8h') {
-      const conflict = sameDayWishes.find(function(w) { return NIGHT_SHIFTS.indexOf(w.shift) !== -1; });
-      if (conflict) {
-        violations.push({ rule: 'RULE3', dateKey: wish.dateKey, shift: wish.shift,
-          message: wish.dateKey + 'は既に' + conflict.shift + 'が提出されています。同日の遅出8h(〜22時)は不可です。'
-        });
-      }
-    }
-    
-    // ルール4: 前日夜勤A/B/C → 翌日早出 NG
+    // H13: 早出 → 前日夜勤チェック
     if (EARLY_SHIFTS.indexOf(wish.shift) !== -1) {
       const prevDay = _addDays(wish.dateKey, -1);
       const conflict = (byDate[prevDay] || []).find(function(w) { return NIGHT_SHIFTS.indexOf(w.shift) !== -1; });
       if (conflict) {
-        violations.push({ rule: 'RULE4', dateKey: wish.dateKey, shift: wish.shift,
-          message: '前日(' + prevDay + ')に' + conflict.shift + 'が提出されています。夜勤翌日の早出は提出できません。'
+        violations.push({ rule: 'H13', dateKey: wish.dateKey, shift: wish.shift,
+          message: '前日(' + prevDay + ')に' + conflict.shift + 'が提出されています。夜勤の翌日に早出は提出できません。'
         });
       }
     }
     
-    // ルール5: 翌日早出済み → 前日夜勤 NG
+    // H13: 夜勤 → 翌日早出チェック
     if (NIGHT_SHIFTS.indexOf(wish.shift) !== -1) {
       const nextDay = _addDays(wish.dateKey, 1);
       const conflict = (byDate[nextDay] || []).find(function(w) { return EARLY_SHIFTS.indexOf(w.shift) !== -1; });
       if (conflict) {
-        violations.push({ rule: 'RULE5', dateKey: wish.dateKey, shift: wish.shift,
-          message: '翌日(' + nextDay + ')に' + conflict.shift + 'が提出されています。前日の夜勤は提出できません。'
+        violations.push({ rule: 'H13', dateKey: wish.dateKey, shift: wish.shift,
+          message: '翌日(' + nextDay + ')に' + conflict.shift + 'が提出されています。夜勤の翌日に早出は提出できません。'
         });
       }
     }
