@@ -565,6 +565,60 @@ function testRoleCombinations() {
 // 仕様: https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458
 // ============================================================
 
+// ★Day 14 (P1): H9 許可シフト外NG (共通関数化、日勤側のみ)
+// staff.allowedShifts に shift が含まれてなければ違反
+function checkH9_allowedShift(staff, shift) {
+  if (!staff || !staff.allowedShifts || staff.allowedShifts.indexOf(shift) === -1) {
+    return {
+      ruleId: 'H9',
+      type: 'hard_exclude',
+      message: '許可シフト外: ' + shift + ' (許可: [' + (staff && staff.allowedShifts ? staff.allowedShifts.join(',') : '') + '])'
+    };
+  }
+  return null;
+}
+
+// ★Day 14 (P1): H10 配置許可施設外NG (共通関数化、日勤側のみ)
+// staff.mainFac/secondFac/subFacs から slotJigyosho との関係を facilityToJigyoshos で確認
+// priorityLevel: 1=main only / 2=second only / 3=sub only / 0/undefined=全部マージ
+function checkH10_allowedFacility_dayShift(staff, slotJigyosho, facilityToJigyoshos, priorityLevel) {
+  if (!staff || !facilityToJigyoshos) {
+    return { ruleId: 'H10', type: 'hard_exclude', message: 'H10判定エラー: 引数不足' };
+  }
+  
+  let allowedFacs;
+  if (priorityLevel === 1) {
+    allowedFacs = [staff.mainFac].filter(Boolean);
+  } else if (priorityLevel === 2) {
+    allowedFacs = [staff.secondFac].filter(Boolean);
+  } else if (priorityLevel === 3) {
+    allowedFacs = (staff.subFacs || []).filter(Boolean);
+  } else {
+    allowedFacs = [staff.mainFac, staff.secondFac].concat(staff.subFacs || []).filter(Boolean);
+  }
+  
+  if (allowedFacs.length === 0) {
+    return {
+      ruleId: 'H10',
+      type: 'hard_exclude',
+      message: 'スタッフに許可施設が設定されていません (priorityLevel=' + (priorityLevel || 'any') + ')'
+    };
+  }
+  
+  const matched = allowedFacs.some(function(f) {
+    return (facilityToJigyoshos[f] || []).indexOf(slotJigyosho) !== -1;
+  });
+  
+  if (!matched) {
+    return {
+      ruleId: 'H10',
+      type: 'hard_exclude',
+      message: '配置許可施設外: ' + slotJigyosho + ' (許可: [' + allowedFacs.join(',') + '])'
+    };
+  }
+  return null;
+}
+
 // H15: 同日2勤務NG (Day 14新規)
 // 同じ日付に既に何かのシフトがあれば配置不可
 // 旧RULE1/2/3/6 を包含

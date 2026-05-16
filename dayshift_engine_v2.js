@@ -574,30 +574,21 @@ function findCandidatesV2(ctx, slot, priorityLevel) {
     const staff = ctx.staffMap[wish.staff_id];
     if (!staff) continue;
     
-    // H9: 許可シフト外NG
-    if (staff.allowedShifts.indexOf(slot.shift) === -1) continue;
-    
-    // 当該事業所と希望事業所の一致確認 (priorityLevel に応じてフィルタ変更)
-    // priorityLevel=1: wish.mainFac が slot.jigyosho 配下のみ
-    // priorityLevel=2: wish.secondFac が slot.jigyosho 配下のみ
-    // priorityLevel=3: wish.subFacs のいずれかが slot.jigyosho 配下のみ
-    // priorityLevel=0/未指定: メイン/セカンド/サブいずれか (旧ロジック後方互換)
-    let _wishFacs;
-    if (priorityLevel === 1) {
-      _wishFacs = [wish.mainFac].filter(Boolean);
-    } else if (priorityLevel === 2) {
-      _wishFacs = [wish.secondFac].filter(Boolean);
-    } else if (priorityLevel === 3) {
-      _wishFacs = (wish.subFacs || []).filter(Boolean);
-    } else {
-      // 後方互換: 全部マージ
-      _wishFacs = [wish.mainFac, wish.secondFac].concat(wish.subFacs || []).filter(Boolean);
+    // ★Day 14: H9 許可シフト外NG (共通関数化)
+    if (typeof checkH9_allowedShift === 'function') {
+      if (checkH9_allowedShift(staff, slot.shift) !== null) continue;
     }
-    if (_wishFacs.length === 0) continue;
-    const _matched = _wishFacs.some(function(f) {
-      return (ctx.facilityToJigyoshos[f] || []).indexOf(slot.jigyosho) !== -1;
-    });
-    if (!_matched) continue;
+    
+    // ★Day 14: H10 配置許可施設外NG (共通関数化)
+    // wish.mainFac/secondFac/subFacs を staff 形式に組み立て、priorityLevel を渡す
+    if (typeof checkH10_allowedFacility_dayShift === 'function') {
+      const _staffForCheck = {
+        mainFac: wish.mainFac,
+        secondFac: wish.secondFac,
+        subFacs: wish.subFacs || []
+      };
+      if (checkH10_allowedFacility_dayShift(_staffForCheck, slot.jigyosho, ctx.facilityToJigyoshos, priorityLevel) !== null) continue;
+    }
     
     // 同日同スタッフ既配置 (1日1配置のみ)
     const sameDayAssigns = ctx.staffAssignedDates[staff.staff_id][slot.dateKey] || [];
