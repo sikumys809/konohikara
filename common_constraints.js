@@ -816,3 +816,318 @@ function debug_test_validate_detail() {
   Logger.log('valid: ' + r5.valid);
   r5.violations.forEach(function(v) { Logger.log('  ' + v.rule + ': ' + v.message); });
 }
+
+
+// ============ ★Day14 P1 (runAllChecks): 統合違反チェック ============
+// 既存の checkH9, checkH10, checkDailyHours, checkConsecutiveDays, checkWeeklyHours,
+// hasOtherFacilityAssignment, hasNextDayConflict などを 1 つの API で呼び出せる統合関数。
+//
+// 戻り値: { violations: [{ ruleId, level, message }], hasBlock: bool, hasOnly: bool }
+//   level: 'block' = ハード除外 / 'only' = 警告のみ
+//
+// ctx 構造:
+//   {
+//     allPlacements: {date: [{ staff_id, shift, jigyosho, facility, hours }]},  // すべての配置 (M_スタッフID単位)
+//     facilityToJigyoshos: {facility: [jigyosho, ...]}                          // 施設→事業所マップ
+//   }
+function runAllChecks(staff, slot, ctx) {
+  const violations = [];
+  
+  // slot = { date, shift, facility, jigyosho, hours }
+  // staff = { staff_id, allowedShifts, mainFac, secFac, subFac, kubun, ... }
+  
+  // H9: 許可シフト外 (戻り値: null = OK, オブジェクト = 違反)
+  const h9 = checkH9_allowedShift(staff, slot.shift);
+  if (h9) {
+    violations.push({ ruleId: 'H9', level: 'block', message: h9.message });
+  }
+  
+  // H10: 許可施設外
+  if (slot.shift.indexOf('夜勤') === -1) {
+    // 日勤
+    const h10 = checkH10_allowedFacility_dayShift(staff, slot.jigyosho, ctx.facilityToJigyoshos || {}, null);
+    if (h10) {
+      violations.push({ ruleId: 'H10', level: 'block', message: h10.message });
+    }
+  } else {
+    // 夜勤
+    const h10n = checkH10_allowedFacility_nightShift(staff, slot.facility);
+    if (h10n) {
+      violations.push({ ruleId: 'H10', level: 'block', message: h10n.message });
+    }
+  }
+  
+  // H14: 1日8h上限 (戻り値: {exceeded, currentH, willBeH})
+  const h14 = checkDailyHours(staff.staff_id, slot.date, slot.hours || 0, ctx);
+  if (h14 && h14.exceeded) {
+    violations.push({ 
+      ruleId: 'H14', 
+      level: 'block', 
+      message: '1日8h超過: ' + h14.currentH + 'h + ' + (slot.hours || 0) + 'h = ' + h14.willBeH + 'h' 
+    });
+  }
+  
+  // H6: 連続7日以上NG (戻り値: {exceeded, count})
+  const h6 = checkConsecutiveDays(staff.staff_id, slot.date, ctx);
+  if (h6 && h6.exceeded) {
+    violations.push({ 
+      ruleId: 'H6', 
+      level: 'block', 
+      message: '連続' + h6.count + '日勤務 (7日以上NG)' 
+    });
+  }
+  
+  // H7: 週40h超NG (戻り値: {exceeded, currentH, willBeH, weekStart})
+  const h7 = checkWeeklyHours(staff.staff_id, slot.date, slot.hours || 0, ctx);
+  if (h7 && h7.exceeded) {
+    violations.push({ 
+      ruleId: 'H7', 
+      level: 'block', 
+      message: '週40h超過(週起算' + h7.weekStart + '): ' + h7.currentH + 'h + ' + (slot.hours || 0) + 'h = ' + h7.willBeH + 'h' 
+    });
+  }
+  
+  // H11: 同日 事業所跨ぎNG (戻り値: {exists, conflicts:[{jigyosho,...}]})
+  const otherFac = hasOtherFacilityAssignment(staff.staff_id, slot.date, slot.jigyosho, ctx);
+  if (otherFac && otherFac.exists) {
+    const otherJigs = otherFac.conflicts.map(c => c.jigyosho).join(', ');
+    violations.push({ 
+      ruleId: 'H11', 
+      level: 'block', 
+      message: '同日(' + slot.date + ')に他事業所(' + otherJigs + ')配置あり' 
+    });
+  }
+  
+  // H13: 前日夜勤 → 翌日早出NG (staffAssignedDates ベース)
+  function _yesterday(dateKey) {
+    const d = new Date(dateKey + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  const _staffDates = (ctx.staffAssignedDates && ctx.staffAssignedDates[staff.staff_id]) || {};
+  const _yKey = _yesterday(slot.date);
+  const _yAssigns = _staffDates[_yKey] || [];
+  for (const yp of _yAssigns) {
+    if (hasNextDayConflict(yp.shift, slot.shift)) {
+      violations.push({ 
+        ruleId: 'H13', 
+        level: 'block', 
+        message: '前日(' + _yKey + ')の' + yp.shift + '→翌日' + slot.shift + 'は連続勤務NG' 
+      });
+      break;
+    }
+  }
+  
+  // 同日内のシフト時間重複 (H1)
+  const _sameDayAssigns = _staffDates[slot.date] || [];
+  for (const sp of _sameDayAssigns) {
+    if (hasTimeOverlap(sp.shift, slot.shift)) {
+      violations.push({ 
+        ruleId: 'H1', 
+        level: 'block', 
+        message: '同日(' + slot.date + ')に' + sp.shift + '配置あり、時間重複NG' 
+      });
+    }
+  }
+  
+  return {
+    violations: violations,
+    hasBlock: violations.some(v => v.level === 'block'),
+    hasOnly: violations.some(v => v.level === 'only'),
+  };
+}
+
+
+// ============ ★Day14 P4: runFinalValidation 確定前最終検証 ============
+// T_シフト確定 全行に対して runAllChecks を実行し、違反一覧を生成。
+// 確定ボタン押下前に管理者へ「N件の違反があります」と提示するために使う。
+//
+// 引数: targetYM ('2026-06' 形式)
+// 戻り値: { success, totalChecked, violations: [{ shift_id, date, staff_name, ruleId, level, message }], blockCount, onlyCount }
+function runFinalValidation(targetYM) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('T_シフト確定');
+    if (!sheet) {
+      return { success: false, message: 'T_シフト確定が見つからない' };
+    }
+    
+    const last = sheet.getLastRow();
+    if (last < 2) {
+      return { success: true, totalChecked: 0, violations: [], blockCount: 0, onlyCount: 0 };
+    }
+    
+    const data = sheet.getRange(2, 1, last - 1, 19).getValues();
+    
+    // M_スタッフ読込
+    const staffSheet = ss.getSheetByName('M_スタッフ');
+    const staffData = staffSheet.getDataRange().getValues();
+    const staffMap = {};
+    for (let i = 1; i < staffData.length; i++) {
+      const sid = String(staffData[i][0] || '').trim();
+      if (!sid) continue;
+      const allowedRaw = String(staffData[i][13] || '').trim();
+      // ★既存check関数群が見るプロパティ名に合わせる: secondFac, subFacs(配列)
+      const _subRaw = String(staffData[i][11] || '').trim();
+      staffMap[sid] = {
+        staff_id: sid,
+        name: staffData[i][1],
+        mainFac: String(staffData[i][9] || '').trim(),
+        secondFac: String(staffData[i][10] || '').trim(),
+        subFacs: _subRaw ? _subRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+        allowedShifts: allowedRaw ? allowedRaw.split(',').map(s => s.trim()) : [],
+        kubun: String(staffData[i][8] || '').trim(),
+      };
+    }
+    
+    // 対象月のレコードを抽出
+    const target = [];
+    const allPlacements = {};
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const date = row[1];
+      if (!(date instanceof Date)) continue;
+      const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+      if (ym !== targetYM) continue;
+      
+      const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
+      const sid = String(row[6] || '').trim();
+      if (!sid) continue;
+      const staff = staffMap[sid];
+      if (!staff) continue;
+      
+      const placement = {
+        shift_id: String(row[0]),
+        date: dateKey,
+        staff_id: sid,
+        staff_name: String(row[7]),
+        shift: String(row[8]),
+        jigyosho: String(row[3]),
+        facility: String(row[4]),
+        hours: (parseFloat(row[17]) || 0) + (parseFloat(row[16]) || 0),  // day + night
+        kubun: staff.kubun,
+      };
+      target.push(placement);
+      
+      if (!allPlacements[dateKey]) allPlacements[dateKey] = [];
+      allPlacements[dateKey].push(placement);
+    }
+    
+    // 施設→事業所マップ構築
+    const unitSheet = ss.getSheetByName('M_ユニット');
+    const unitData = unitSheet.getDataRange().getValues();
+    const facilityToJigyoshos = {};
+    for (let i = 1; i < unitData.length; i++) {
+      const jig = String(unitData[i][1] || '').trim();
+      const fac = String(unitData[i][3] || '').trim();
+      if (jig && fac) {
+        if (!facilityToJigyoshos[fac]) facilityToJigyoshos[fac] = [];
+        if (facilityToJigyoshos[fac].indexOf(jig) === -1) {
+          facilityToJigyoshos[fac].push(jig);
+        }
+      }
+    }
+    
+    // ★ctx.staffAssignedDates 構築 (既存check関数群が参照する正規構造)
+    // staffAssignedDates[staff_id][dateKey] = [{ shift, jigyosho, workHours, ... }, ...]
+    const staffAssignedDates = {};
+    target.forEach(p => {
+      if (!staffAssignedDates[p.staff_id]) staffAssignedDates[p.staff_id] = {};
+      if (!staffAssignedDates[p.staff_id][p.date]) staffAssignedDates[p.staff_id][p.date] = [];
+      staffAssignedDates[p.staff_id][p.date].push({
+        shift_id: p.shift_id,
+        shift: p.shift,
+        jigyosho: p.jigyosho,
+        facility: p.facility,
+        workHours: p.hours,
+      });
+    });
+    
+    // 各配置に対して runAllChecks
+    // ※ 既存配置を「ある状態」として検証するため、addedHours=0, 自身を含む allPlacements で判定
+    const violations = [];
+    let blockCount = 0;
+    let onlyCount = 0;
+    
+    target.forEach(p => {
+      const staff = staffMap[p.staff_id];
+      if (!staff) return;
+      
+      // ★ 自身を一時的に除外した staffAssignedDates を作って、「もし自身を追加するなら違反か?」を判定
+      // 既存配置の自身を除外、追加分として渡す
+      const dates = staffAssignedDates[p.staff_id] || {};
+      const otherAssigns = (dates[p.date] || []).filter(a => a.shift_id !== p.shift_id);
+      const tmpCtx = {
+        staffAssignedDates: Object.assign({}, staffAssignedDates, {
+          [p.staff_id]: Object.assign({}, dates, { [p.date]: otherAssigns })
+        }),
+        facilityToJigyoshos: facilityToJigyoshos,
+      };
+      
+      const slot = {
+        date: p.date,
+        shift: p.shift,
+        jigyosho: p.jigyosho,
+        facility: p.facility,
+        hours: p.hours,
+      };
+      
+      const result = runAllChecks(staff, slot, tmpCtx);
+      result.violations.forEach(v => {
+        violations.push({
+          shift_id: p.shift_id,
+          date: p.date,
+          staff_id: p.staff_id,
+          staff_name: p.staff_name,
+          jigyosho: p.jigyosho,
+          facility: p.facility,
+          shift: p.shift,
+          ruleId: v.ruleId,
+          level: v.level,
+          message: v.message,
+        });
+        if (v.level === 'block') blockCount++;
+        else onlyCount++;
+      });
+    });
+    
+    return {
+      success: true,
+      targetYM: targetYM,
+      totalChecked: target.length,
+      violations: violations,
+      blockCount: blockCount,
+      onlyCount: onlyCount,
+    };
+  } catch (e) {
+    Logger.log('runFinalValidation エラー: ' + e.message);
+    return { success: false, message: e.message };
+  }
+}
+
+
+// テスト関数
+function debug_test_runFinalValidation() {
+  const res = runFinalValidation('2026-06');
+  if (!res.success) {
+    Logger.log('FAILED: ' + res.message);
+    return;
+  }
+  Logger.log('=== runFinalValidation 2026-06 ===');
+  Logger.log('  対象配置数: ' + res.totalChecked);
+  Logger.log('  違反数: ' + res.violations.length + ' (ブロック=' + res.blockCount + ', 警告=' + res.onlyCount + ')');
+  
+  // 違反タイプ別集計
+  const byRule = {};
+  res.violations.forEach(v => {
+    byRule[v.ruleId] = (byRule[v.ruleId] || 0) + 1;
+  });
+  Logger.log('  違反タイプ別:');
+  Object.keys(byRule).forEach(r => Logger.log('    ' + r + ': ' + byRule[r]));
+  
+  // 先頭10件サンプル
+  Logger.log('  サンプル(先頭10件):');
+  res.violations.slice(0, 10).forEach(v => {
+    Logger.log('    [' + v.ruleId + '] ' + v.date + ' ' + v.staff_name + ' ' + v.shift + '@' + v.facility + ': ' + v.message);
+  });
+}
