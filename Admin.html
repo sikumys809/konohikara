@@ -2763,7 +2763,11 @@ function updateShiftEngineButton(lockRes) {
 
 function renderShiftSummary(data) {
   const s = data.summary;
-  const rateColor = s.rate >= 95 ? '#059669' : s.rate >= 80 ? '#ca8a04' : '#dc2626';
+  // ★Day 15: KPI 5カード化 (総枠/固定/自動/未配置/重複)
+  // 自動配置率(autoRate)で色判定: 90%以上=緑, 80%以上=黄, それ未満=赤
+  const autoColor = (s.autoRate || 0) >= 90 ? '#059669' : (s.autoRate || 0) >= 80 ? '#ca8a04' : '#dc2626';
+  const unassignedColor = s.unassigned > 0 ? '#dc2626' : '#6b7280';
+  const dupColor = s.duplicates > 0 ? '#dc2626' : '#059669';
   
   document.getElementById('shiftSummary').innerHTML = `
     <div class="stat-card">
@@ -2772,18 +2776,23 @@ function renderShiftSummary(data) {
       <div class="stat-sub">枠</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">配置済</div>
-      <div class="stat-value" style="color: ${rateColor};">${s.assigned}</div>
-      <div class="stat-sub">${s.rate}%</div>
+      <div class="stat-label">🔒 固定配置</div>
+      <div class="stat-value" style="color: #059669;">${s.fixed || 0}</div>
+      <div class="stat-sub">${s.fixedRate || 0}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">⚡ 自動配置</div>
+      <div class="stat-value" style="color: ${autoColor};">${s.auto || 0}</div>
+      <div class="stat-sub">${s.autoRate || 0}%</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">未配置</div>
-      <div class="stat-value" style="color: ${s.unassigned > 0 ? '#dc2626' : '#6b7280'};">${s.unassigned}</div>
+      <div class="stat-value" style="color: ${unassignedColor};">${s.unassigned}</div>
       <div class="stat-sub">枠</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">重複</div>
-      <div class="stat-value" style="color: ${s.duplicates > 0 ? '#dc2626' : '#059669'};">${s.duplicates}</div>
+      <div class="stat-value" style="color: ${dupColor};">${s.duplicates}</div>
       <div class="stat-sub">件</div>
     </div>
   `;

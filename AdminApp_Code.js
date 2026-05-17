@@ -1061,6 +1061,19 @@ function getShiftCalendar(adminStaffId, targetYM) {
   const totalSlots = units.length * daysInMonth;
   const assignedCount = Object.keys(shifts).length;
   
+  // ★Day 15: 固定配置と自動配置を分離カウント (将来の夜勤固定運用に備える)
+  // 現状の夜勤は固定配置運用なし、将来追加された場合も自動的に集計される
+  let fixedCount = 0;
+  let autoCount = 0;
+  for (const key of Object.keys(shifts)) {
+    const s = shifts[key];
+    if (s.shift_id && String(s.shift_id).indexOf('FIXED_') === 0) {
+      fixedCount++;
+    } else {
+      autoCount++;
+    }
+  }
+  
   const staffDateMap = {};
   const duplicates = [];
   for (const key of Object.keys(shifts)) {
@@ -1083,8 +1096,12 @@ function getShiftCalendar(adminStaffId, targetYM) {
     summary: {
       totalSlots: totalSlots,
       assigned: assignedCount,
+      fixed: fixedCount,      // ★Day 15: 夜勤の固定配置数
+      auto: autoCount,        // ★Day 15: 夜勤の自動配置数
       unassigned: totalSlots - assignedCount,
       rate: totalSlots > 0 ? Math.round(assignedCount / totalSlots * 100) : 0,
+      fixedRate: totalSlots > 0 ? Math.round(fixedCount / totalSlots * 100) : 0,
+      autoRate: totalSlots > 0 ? Math.round(autoCount / totalSlots * 100) : 0,
       duplicates: duplicates.length,
     },
     canEdit: admin.roles.indexOf('シフト作成') >= 0,
