@@ -4828,6 +4828,7 @@ function renderDayShiftFulfillmentCards() {
     return `
       <div class="ds-ff-card">
         <div class="ds-ff-name">${escapeHtml(f.facility)} <span style="font-size: 11px; color: #9ca3af; font-weight: 400;">定員${f.capacity}</span></div>
+        ${renderRoleRow('管理者★', f.kanrishaActual, f.kanrishaNeed, f.kanrishaRate, getColor)}
         ${renderRoleRow('特定加配', f.tokuteiActual, f.tokuteiNeed, f.tokuteiRate, getColor)}
        ${renderRoleRow('生活支援員', f.seikatsuActual, f.seikatsuNeed, f.seikatsuRate, getColor)}
         ${renderRoleRow('世話人', f.sewaActual, f.sewaNeed, f.sewaRate, getColor)}
