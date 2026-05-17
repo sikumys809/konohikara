@@ -1082,6 +1082,14 @@
 /* セル横幅を狭めに */
 .ds-cal-table.ds-cal-v2 thead th { min-width: 130px; }
 
+/* ★Day15: 日勤モーダル V2 強制スタイル */
+#dsCellBody > div { box-sizing: border-box; }
+.ds-v2-card { display: flex !important; align-items: center; gap: 10px; box-sizing: border-box; }
+.ds-v2-card > div:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.ds-v2-card .ds-v2-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 500; }
+.ds-v2-card .ds-v2-badges { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+.ds-v2-card .ds-v2-badges span { white-space: nowrap; }
+
 .ds-ff-card { background: #fff; border-radius: 10px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 4px solid #f59e0b; }
 .ds-ff-name { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 .ds-ff-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
@@ -4852,10 +4860,277 @@ function renderDayShiftFulfillmentCards() {
   }).join('');
 }
 
+// ★Day15: 日勤統一配置モーダル V2 (役割編集+夜勤加算参考+希望ありバッジ)
+let _dsV2State = {
+  facility: null,
+  dateKey: null,
+  placements: [],
+  candidates: [],
+  selectedShiftType: '早出8h',  // 候補抽出用の初期シフト種別
+};
+
+function openDsCellEditorV2(facility, dateKey) {
+  if (dsViewState.lockStatus && dsViewState.lockStatus.locked) {
+    alert('🔒 ' + dsViewState.targetYM + ' はロック中です。\n「シフト確定」画面でロック解除してから編集してください。');
+    return;
+  }
+  
+  // 既存セルから配置データ取得
+  let placements = [];
+  for (const row of dsViewState.calendar.calendar) {
+    if (row.buildings && Array.isArray(row.buildings)) {
+      for (const b of row.buildings) {
+        if (b.facility === facility) {
+          for (const c of b.cells) {
+            if (c.dateKey === dateKey) {
+              placements = c.placements;
+              break;
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  
+  _dsV2State.facility = facility;
+  _dsV2State.dateKey = dateKey;
+  _dsV2State.placements = placements;
+  _dsV2State.candidates = [];
+  _dsV2State.selectedShiftType = '早出8h';
+  
+  // 既存モーダル要素を再利用
+  const modal = document.getElementById('dsCellEditModal');
+  modal.style.display = 'flex';
+  modal.classList.remove('hidden');
+  
+  // 配置済み人数の内訳
+  const eC = placements.filter(p => !p.isFromNight && p.shiftType.indexOf('早出') !== -1).length;
+  const lC = placements.filter(p => !p.isFromNight && p.shiftType.indexOf('遅出') !== -1).length;
+  const nC = placements.filter(p => p.isFromNight === true).length;
+  document.getElementById('dsCellTitle').innerText = 
+    `${dateKey} ${facility} (早${eC} 遅${lC} 夜勤加算${nC})`;
+  
+  _renderDsV2Body();
+  _loadDsV2Candidates();
+}
+
+function _loadDsV2Candidates() {
+  if (!dsViewState.targetYM) return;
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      _dsV2State.candidates = [];
+    } else {
+      _dsV2State.candidates = res.candidates || [];
+    }
+    _renderDsV2Body();
+  }).getDayShiftCandidateStaff(
+    currentAdmin.staff_id, 
+    dsViewState.targetYM, 
+    _dsV2State.dateKey, 
+    _dsV2State.facility, 
+    _dsV2State.selectedShiftType
+  );
+}
+
+
+function _renderDsV2Body() {
+  const placements = _dsV2State.placements || [];
+  const candidates = _dsV2State.candidates || [];
+  const dayPlacements = placements.filter(p => !p.isFromNight);
+  const nightPlacements = placements.filter(p => p.isFromNight);
+  
+  let html = '';
+  html += `<div style="font-size:12px;color:#6b7280;margin-bottom:8px;font-weight:500;">日勤配置 (この画面で追加/削除/役割変更)</div>`;
+  if (dayPlacements.length === 0) {
+    html += `<div style="padding:12px;background:#f9fafb;border-radius:6px;color:#9ca3af;text-align:center;font-size:13px;margin-bottom:14px;">日勤配置なし</div>`;
+  } else {
+    dayPlacements.forEach(p => { html += _dsV2PlacementCard(p, false); });
+  }
+  
+  if (nightPlacements.length > 0) {
+    html += `<div style="font-size:12px;color:#6b7280;margin:14px 0 8px 0;font-weight:500;">🌙 夜勤からの加算 (参考表示・配置削除は夜勤画面で。役割のみ編集可)</div>`;
+    nightPlacements.forEach(p => { html += _dsV2PlacementCard(p, true); });
+  }
+  
+  html += `<div style="border-top:1px dashed #d1d5db;margin-top:14px;padding-top:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-size:12px;color:#6b7280;font-weight:500;">スタッフを追加 (希望者を最上部に表示)</div>
+      <select id="dsV2ShiftSelect" onchange="_dsV2ChangeShift(this.value)" style="font-size:12px;padding:2px 6px;">
+        <option value="早出8h"${_dsV2State.selectedShiftType==='早出8h'?' selected':''}>早出8h を追加</option>
+        <option value="早出4h"${_dsV2State.selectedShiftType==='早出4h'?' selected':''}>早出4h を追加</option>
+        <option value="遅出8h"${_dsV2State.selectedShiftType==='遅出8h'?' selected':''}>遅出8h を追加</option>
+        <option value="遅出4h"${_dsV2State.selectedShiftType==='遅出4h'?' selected':''}>遅出4h を追加</option>
+      </select>
+    </div>
+    <div id="dsV2CandidatesList">
+      ${candidates.length === 0 ? '<div style="padding:12px;color:#9ca3af;text-align:center;font-size:13px;">候補読込中...</div>' : candidates.map(c => _dsV2CandidateRow(c)).join('')}
+    </div>
+  </div>`;
+  
+  document.getElementById('dsCellBody').innerHTML = html;
+}
+
+
+function _dsV2PlacementCard(p, isNightAddon) {
+  const bgColor = isNightAddon ? '#F7F5F0' : '#ffffff';
+  const shortShiftMap = {'早出8h':'早8','早出4h':'早4','遅出8h':'遅8','遅出4h':'遅4','夜勤A':'夜A加算(+2h)','夜勤B':'夜B加算(+2h)','夜勤C':'夜C加算(+2h)'};
+  const shortShift = shortShiftMap[p.shiftType] || p.shiftType;
+  let shiftBg, shiftCol;
+  if (p.isFromNight) { shiftBg='#EEEDFE'; shiftCol='#3C3489'; }
+  else if (p.shiftType.indexOf('早出') !== -1) { shiftBg='#FAEEDA'; shiftCol='#633806'; }
+  else { shiftBg='#FAECE7'; shiftCol='#4A1B0C'; }
+  
+  const expBadge = (p.experienceCategory === '新人1ヶ月') ? '<span style="background:#fed7aa;color:#9a3412;padding:1px 6px;border-radius:3px;font-size:10px;">新人1ヶ月</span>'
+    : (p.experienceCategory === '新人2ヶ月') ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:3px;font-size:10px;">新人2ヶ月</span>'
+    : '';
+  const kanBadge = p.isKanrisha ? '<span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:10px;">管理者★</span>' : '';
+  
+  const mainRoles = p.mainRoles || [];
+  const roleOpts = [];
+  if (mainRoles.indexOf('サビ管') !== -1) roleOpts.push('サビ管');
+  if (mainRoles.indexOf('世話人') !== -1) roleOpts.push('世話人');
+  if (mainRoles.indexOf('生活支援員') !== -1) roleOpts.push('生活支援員');
+  
+  let roleSelectHtml;
+  if (roleOpts.length === 0) {
+    roleSelectHtml = '<span style="font-size:11px;color:#9ca3af;padding:5px 7px;">' + (p.assignedRole || '-') + '</span>';
+  } else {
+    roleSelectHtml = '<select onchange="_dsV2ChangeRole(' + p.rowIndex + ', this.value)" style="min-width:110px;font-size:13px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;">'
+      + roleOpts.map(r => '<option value="' + r + '"' + (p.assignedRole===r?' selected':'') + '>' + r + '</option>').join('')
+      + '</select>';
+  }
+  
+  const actionBtn = isNightAddon 
+    ? '<span title="夜勤からの加算。配置削除は夜勤画面で。" style="font-size:14px;color:#9ca3af;padding:5px 7px;">🔒</span>'
+    : '<button onclick="_dsV2DeletePlacement(' + p.rowIndex + ')" title="削除" style="background:transparent;border:1px solid #d1d5db;padding:5px 9px;border-radius:6px;cursor:pointer;color:#6b7280;font-size:13px;">🗑</button>';
+  
+  return '<div class="ds-v2-card" style="border:1px solid #e5e7eb;background:' + bgColor + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">'
+    + '<div>'
+    + '<div style="font-size:14px;font-weight:500;">' + escapeHtml(p.staff_name) + ' <span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:4px;">ID:' + p.staff_id + '</span></div>'
+    + '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">'
+    + '<span style="background:' + shiftBg + ';color:' + shiftCol + ';padding:2px 7px;border-radius:10px;font-size:11px;">' + shortShift + '</span>'
+    + kanBadge + expBadge
+    + '</div></div>'
+    + roleSelectHtml + actionBtn
+    + '</div>';
+}
+
+
+function _dsV2CandidateRow(c) {
+  const wishBadge = c.hasWish 
+    ? '<span style="background:#EAF3DE;color:#173404;padding:2px 7px;border-radius:10px;font-size:11px;">希望あり</span>'
+    : '<span style="background:#f3f4f6;color:#6b7280;padding:2px 7px;border-radius:10px;font-size:11px;">希望なし</span>';
+  const facBadge = c.isFacilityMatch 
+    ? '<span style="background:#E6F1FB;color:#0C447C;padding:2px 7px;border-radius:10px;font-size:11px;">メイン</span>'
+    : '';
+  const expBadge = (c.kubun === '新人1ヶ月') ? '<span style="background:#fed7aa;color:#9a3412;padding:2px 7px;border-radius:10px;font-size:11px;">新人1ヶ月</span>'
+    : (c.kubun === '新人2ヶ月') ? '<span style="background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:10px;font-size:11px;">新人2ヶ月</span>'
+    : '';
+  
+  let warnBadges = '';
+  (c.warnings || []).forEach(w => {
+    const wBg = w.level === 'warning_block' ? '#FCEBEB;color:#501313' : '#fef3c7;color:#92400e';
+    const wLabel = w.ruleId === 'W2' ? '⚠遅出8h+夜勤同日' : w.ruleId === 'N2' ? 'ℹ新人のみ' : '⚠' + w.ruleId;
+    warnBadges += '<span style="background:' + wBg + ';padding:2px 7px;border-radius:10px;font-size:11px;" title="' + escapeHtml(w.message) + '">' + wLabel + '</span>';
+  });
+  
+  const isDisabled = c.alreadyAssigned || c.hasBlockWarning;
+  const opacity = isDisabled ? '0.5' : '1';
+  const disabledMsg = c.alreadyAssigned ? '<span style="background:#FCEBEB;color:#501313;padding:2px 7px;border-radius:10px;font-size:11px;">⚠同日既配置</span>' : '';
+  const btnAttr = isDisabled ? 'disabled' : '';
+  const btnBg = isDisabled ? '#e5e7eb' : '#f59e0b';
+  const btnCol = isDisabled ? '#9ca3af' : 'white';
+  const btnCursor = isDisabled ? 'not-allowed' : 'pointer';
+  
+  return '<div class="ds-v2-card" style="border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;margin-bottom:5px;opacity:' + opacity + ';">'
+    + '<div>'
+    + '<div style="font-size:14px;">' + escapeHtml(c.name) + ' <span style="font-size:11px;color:#6b7280;margin-left:4px;">ID:' + c.staff_id + '</span></div>'
+    + '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">'
+    + wishBadge + facBadge + expBadge + warnBadges + disabledMsg
+    + '</div></div>'
+    + '<button onclick="_dsV2AddCandidate(\'' + c.staff_id + '\')" ' + btnAttr + ' style="font-size:13px;padding:5px 14px;background:' + btnBg + ';color:' + btnCol + ';border:none;border-radius:6px;cursor:' + btnCursor + ';font-weight:500;">＋ 配置</button>'
+    + '</div>';
+}
+
+
+function _dsV2ChangeShift(newShift) {
+  _dsV2State.selectedShiftType = newShift;
+  _loadDsV2Candidates();
+}
+
+
+// ★Day15: 役割変更 (即時保存)
+function _dsV2ChangeRole(rowIndex, newRole) {
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      alert('役割変更失敗: ' + (res ? res.message : '不明'));
+      return;
+    }
+    // ローカル状態も更新
+    for (const p of _dsV2State.placements) {
+      if (p.rowIndex === rowIndex) {
+        p.assignedRole = newRole;
+        break;
+      }
+    }
+    // カレンダー再読込で充足率も更新
+    loadDayShiftCalendar();
+  }).withFailureHandler(function(e) {
+    alert('役割変更エラー: ' + e.message);
+  }).updateDayShiftAssignedRole(currentAdmin.staff_id, {
+    rowIndex: rowIndex,
+    newRole: newRole
+  });
+}
+
+
+// ★Day15: 配置削除
+function _dsV2DeletePlacement(rowIndex) {
+  if (!confirm('この配置を削除しますか?')) return;
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      alert('削除失敗: ' + (res ? res.message : '不明'));
+      return;
+    }
+    // モーダルを閉じてカレンダー再読込
+    closeDsCellEditor();
+    loadDayShiftCalendar();
+  }).withFailureHandler(function(e) {
+    alert('削除エラー: ' + e.message);
+  }).updateDayShiftSlot(currentAdmin.staff_id, {
+    action: 'delete',
+    rowIndex: rowIndex
+  });
+}
+
+
+// ★Day15: 候補から配置追加
+function _dsV2AddCandidate(staff_id) {
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      alert('追加失敗: ' + (res ? res.message : '不明'));
+      return;
+    }
+    // モーダルを閉じてカレンダー再読込
+    closeDsCellEditor();
+    loadDayShiftCalendar();
+  }).withFailureHandler(function(e) {
+    alert('追加エラー: ' + e.message);
+  }).updateDayShiftSlot(currentAdmin.staff_id, {
+    action: 'add',
+    staff_id: staff_id,
+    date: _dsV2State.dateKey,
+    facility: _dsV2State.facility,
+    shiftType: _dsV2State.selectedShiftType
+  });
+}
+
+
 // ★Day15: 日勤カレンダーセル描画 v2 (氏名チップ表示版)
 function _renderDsCellV2(cell, jigyosho, facility, wmarkFn) {
   const facEsc = facility.replace(/'/g, "\\'");
-  const onclickAttr = `onclick="openDsCellEditor('${facEsc}', '${cell.dateKey}')"`;
+  const onclickAttr = `onclick="openDsCellEditorV2('${facEsc}', '${cell.dateKey}')"`;
   
   // 空セル(配置なし)
   if (cell.count === 0) {
