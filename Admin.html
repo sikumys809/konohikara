@@ -1033,7 +1033,10 @@
     </div>
     
     <!-- カレンダー -->
-    <h3 style="margin: 16px 0 8px;">日勤カレンダー</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 8px;">
+      <h3 style="margin: 0;">日勤カレンダー</h3>
+      <button onclick="toggleDsLegendModal()" style="padding: 6px 12px; background: white; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-size: 13px; color: #374151;">📖 凡例</button>
+    </div>
     <div id="dsCalendarWrapper" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;">
       <div id="dsCalendar" style="padding: 20px; color: #6b7280;">対象月を選択してください</div>
     </div>
@@ -5124,6 +5127,162 @@ function _dsV2AddCandidate(staff_id) {
     facility: _dsV2State.facility,
     shiftType: _dsV2State.selectedShiftType
   });
+}
+
+
+// ★Day15: 日勤シフト作成画面 凡例モーダル
+function toggleDsLegendModal() {
+  let modal = document.getElementById('dsLegendModal');
+  if (modal) {
+    modal.remove();
+    return;
+  }
+  
+  modal = document.createElement('div');
+  modal.id = 'dsLegendModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  
+  modal.innerHTML = `
+    <div style="background:white;border-radius:8px;max-width:820px;width:100%;max-height:90vh;overflow-y:auto;padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #e5e7eb;padding-bottom:12px;">
+        <h2 style="margin:0;font-size:18px;">📖 日勤シフト作成画面 凡例</h2>
+        <button onclick="document.getElementById('dsLegendModal').remove()" style="padding:4px 12px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;">閉じる</button>
+      </div>
+      
+      <h3 style="margin-top:0;font-size:14px;color:#374151;">📊 事業所別充足率カード</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;width:140px;"><strong>管理者★</strong></td><td style="padding:6px 8px;">事業所ごと常勤1人必須。世話人/生活/サビ管と兼任で時間二重計上(時間が両方に加算)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>特定加配</strong></td><td style="padding:6px 8px;">世話人h+生活支援員h の合算。定員に応じた必要時間が変動</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>生活支援員 / 世話人</strong></td><td style="padding:6px 8px;">各役割の必要時間 vs 実績h。常勤換算1人=172h基準</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>サビ管</strong></td><td style="padding:6px 8px;">事業所ごと常勤0.83〜1.0人。固定配置運用で対応(自動配置では希望待ち)</td></tr>
+        <tr><td style="padding:6px 8px;"><strong>看護師</strong></td><td style="padding:6px 8px;">人数判定(時間ではない)。事業所ごと必要人数あり</td></tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">⏰ シフトパターン (日勤換算時間 = 5:00〜22:00の範囲)</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+          <td style="padding:6px 8px;width:80px;"><strong>シフト</strong></td>
+          <td style="padding:6px 8px;width:140px;"><strong>時間帯</strong></td>
+          <td style="padding:6px 8px;width:80px;"><strong>日勤換算</strong></td>
+          <td style="padding:6px 8px;"><strong>備考</strong></td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#FAEEDA;color:#633806;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">早8</span></td>
+          <td style="padding:6px 8px;">07-16 (休憩11-12)</td>
+          <td style="padding:6px 8px;">8h</td>
+          <td style="padding:6px 8px;">早出8時間</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#FAEEDA;color:#633806;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">早4</span></td>
+          <td style="padding:6px 8px;">07-11</td>
+          <td style="padding:6px 8px;">4h</td>
+          <td style="padding:6px 8px;">早出4時間</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#FAECE7;color:#4A1B0C;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">遅8</span></td>
+          <td style="padding:6px 8px;">13-22 (休憩18-19)</td>
+          <td style="padding:6px 8px;">8h</td>
+          <td style="padding:6px 8px;">遅出8時間</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#FAECE7;color:#4A1B0C;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">遅4</span></td>
+          <td style="padding:6px 8px;">13-17</td>
+          <td style="padding:6px 8px;">4h</td>
+          <td style="padding:6px 8px;">遅出4時間</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜A</span></td>
+          <td style="padding:6px 8px;">20-翌05</td>
+          <td style="padding:6px 8px;">+2h</td>
+          <td style="padding:6px 8px;">夜勤Aから日勤帯(20-22)へ2h加算</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜B</span></td>
+          <td style="padding:6px 8px;">22-翌07</td>
+          <td style="padding:6px 8px;">+2h</td>
+          <td style="padding:6px 8px;">夜勤Bから翌朝の日勤帯(05-07)へ2h加算</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜C</span></td>
+          <td style="padding:6px 8px;">22-翌08</td>
+          <td style="padding:6px 8px;">+2h</td>
+          <td style="padding:6px 8px;">夜勤Cから翌朝の日勤帯(06-08)へ2h加算</td>
+        </tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">🗓️ カレンダーセルの見方</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+          <td style="padding:6px 8px;width:140px;"><strong>表示</strong></td>
+          <td style="padding:6px 8px;"><strong>意味</strong></td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;background:#EAF3DE;text-align:center;color:#173404;">充足 (緑)</td>
+          <td style="padding:6px 8px;">早出1人+遅出1人 以上配置 (X4最低ライン充足)</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;background:#FAEEDA;text-align:center;color:#633806;">準充足 (橙)</td>
+          <td style="padding:6px 8px;">早出 or 遅出 の片方のみ配置</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;background:#FCEBEB;text-align:center;color:#501313;">不足/未配置 (赤)</td>
+          <td style="padding:6px 8px;">早出も遅出も0人</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><strong>早N 遅N ✓/⚠/✗</strong></td>
+          <td style="padding:6px 8px;">セル下部の充足ステータス。✓充足 / ⚠準充足 / ✗不足</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;"><strong>🌙+N</strong></td>
+          <td style="padding:6px 8px;">夜勤からの加算人数(夜A/B/Cから日勤帯に+2hずつ寄与)</td>
+        </tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">🏷️ スタッフバッジ</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;width:200px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;">管</span> 管理者★</td>
+          <td style="padding:6px 8px;">主職種に「管理者」を含むスタッフ。配置時間が二重計上される</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#fed7aa;color:#9a3412;padding:1px 6px;border-radius:3px;font-size:11px;">新人1ヶ月</span> <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:3px;font-size:11px;">新人2ヶ月</span></td>
+          <td style="padding:6px 8px;">経験区分(通常は表示なし、新人のみハイライト)</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#EAF3DE;color:#173404;padding:1px 6px;border-radius:3px;font-size:11px;">希望あり</span></td>
+          <td style="padding:6px 8px;">この施設・このシフト種別・この日に希望提出済(モーダル内候補)</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#E6F1FB;color:#0C447C;padding:1px 6px;border-radius:3px;font-size:11px;">メイン</span></td>
+          <td style="padding:6px 8px;">スタッフのメイン施設にマッチ</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;"><span style="background:#FCEBEB;color:#501313;padding:1px 6px;border-radius:3px;font-size:11px;">⚠同日既配置</span></td>
+          <td style="padding:6px 8px;">同日に既に他施設で配置済(配置ボタン無効化)</td>
+        </tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">⚙️ モーダル操作</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;width:140px;"><strong>日勤配置</strong></td>
+          <td style="padding:6px 8px;">追加 / 削除 / 役割変更 すべて可能。役割変更は即時保存</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><strong>🌙 夜勤からの加算</strong></td>
+          <td style="padding:6px 8px;">参考表示 + 役割のみ変更可能。配置削除/シフト種別変更は夜勤画面で</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;"><strong>スタッフを追加</strong></td>
+          <td style="padding:6px 8px;">希望提出者を最上部にソート。シフト種別切替で動的に候補再計算</td>
+        </tr>
+      </table>
+      
+      <p style="font-size:11px;color:#6b7280;margin:0;border-top:1px solid #e5e7eb;padding-top:12px;">詳細仕様: <a href="https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458" target="_blank">配置経路の制約ルール統合仕様 (Notion)</a></p>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 
