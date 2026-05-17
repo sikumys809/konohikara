@@ -674,6 +674,8 @@
     
     <!-- エンジン実行状態 -->
     <div id="engineStatus" style="margin-bottom: 20px;"></div>
+    <!-- ★Day 15: 未配置一覧パネル -->
+    <div id="unassignedPanel" style="margin-bottom: 20px; display: none;"></div>
     
     <!-- カレンダー -->
     <div id="shiftCalendarWrapper" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;">
@@ -2716,6 +2718,7 @@ function loadShiftCalendar() {
     shiftViewState.canEdit = res.canEdit;
     renderShiftSummary(res);
     renderShiftCalendar(res);
+    renderUnassignedPanel(res);  // ★Day 15追加
   }).getShiftCalendar(currentAdmin.staff_id, ym);
   
   // ロック状態取得 + UIガード
@@ -2799,6 +2802,107 @@ function renderShiftSummary(data) {
 }
 
 
+// ★Day 15: 未配置枠の一覧パネル (折りたたみ式、施設別グルーピング、日付クリックで配置候補モーダル)
+function renderUnassignedPanel(data) {
+  const panel = document.getElementById('unassignedPanel');
+  if (!panel) return;
+  if (!data.calendar || !data.summary || data.summary.unassigned === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  
+  // 未配置セルを施設別に集約
+  const unassignedByUnit = {};
+  for (const row of data.calendar) {
+    const u = row.unit;
+    const unitKey = u.unit_id;
+    for (const d of row.days) {
+      if (!d.shift) {
+        if (!unassignedByUnit[unitKey]) {
+          unassignedByUnit[unitKey] = {
+            unit_name: u.unit_name,
+            facility: u.facility,
+            unit_id: u.unit_id,
+            dates: [],
+          };
+        }
+        unassignedByUnit[unitKey].dates.push({
+          dateKey: d.dateKey,
+          day: d.day,
+          dow: d.dow,
+        });
+      }
+    }
+  }
+  
+  // 枠数の多い順にソート
+  const units = Object.values(unassignedByUnit).sort(function(a, b) {
+    return b.dates.length - a.dates.length;
+  });
+  const dowChars = ['日','月','火','水','木','金','土'];
+  
+  let html = `
+    <div style="background: white; border: 1px solid #fecaca; border-radius: 8px; overflow: hidden;">
+      <div style="padding: 12px 16px; background: #fef2f2; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleUnassignedPanel()">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">🚨</span>
+          <strong style="color: #991b1b;">未配置 ${data.summary.unassigned} 枠の内訳</strong>
+          <span style="font-size: 11px; color: #6b7280;">（日付をクリックで配置候補を表示）</span>
+        </div>
+        <span id="unassignedToggleIcon" style="color: #6b7280;">▼</span>
+      </div>
+      <div id="unassignedPanelBody" style="border-top: 1px solid #fee2e2;">
+  `;
+  
+  for (const u of units) {
+    html += `
+      <div style="padding: 10px 16px; border-bottom: 1px solid #f3f4f6;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+          <div>
+            <strong style="font-size: 13px;">${u.unit_name}</strong>
+            <span style="font-size: 11px; color: #6b7280; margin-left: 6px;">${u.facility}</span>
+          </div>
+          <div style="font-size: 12px;">
+            <span style="color: #dc2626; font-weight: 600;">${u.dates.length}</span>
+            <span style="color: #6b7280;"> 枠</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+    `;
+    for (const d of u.dates) {
+      const dowChar = dowChars[d.dow];
+      const dowColor = d.dow === 0 ? '#dc2626' : d.dow === 6 ? '#2563eb' : '#374151';
+      html += `<button onclick="openSlotEditor('${d.dateKey}', '${u.unit_id}', '${u.unit_name.replace(/'/g, "\\'")}', '${u.facility.replace(/'/g, "\\'")}')" style="padding: 4px 8px; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 12px; color: ${dowColor};" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='#fff'">${d.day}日(${dowChar})</button>`;
+    }
+    html += `
+        </div>
+      </div>
+    `;
+  }
+  
+  html += `
+      </div>
+    </div>
+  `;
+  
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+}
+
+function toggleUnassignedPanel() {
+  const body = document.getElementById('unassignedPanelBody');
+  const icon = document.getElementById('unassignedToggleIcon');
+  if (!body) return;
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    if (icon) icon.textContent = '▼';
+  } else {
+    body.style.display = 'none';
+    if (icon) icon.textContent = '▶';
+  }
+}
+
+
 function renderShiftCalendar(data) {
   if (!data.calendar || data.calendar.length === 0) {
     document.getElementById('shiftCalendar').innerHTML = '<div style="padding: 40px; text-align: center;">データなし。自動割当を実行してください。</div>';
@@ -2879,7 +2983,10 @@ function executeEngine() {
     
     document.getElementById('engineStatus').innerHTML = `
       <div style="padding: 12px; background: #d1fae5; border-radius: 6px; color: #065f46;">
-        ✓ 完了: ${res.assigned}/${res.total}枠配置 (${res.rate}%) / 重複${res.duplicates}件 / 実行時間${res.elapsed}秒
+        ✓ <strong>自動割当完了:</strong> ${res.assigned}枠を新規配置 / 重複${res.duplicates}件 / 実行時間${res.elapsed}秒
+        <div style="font-size: 11px; color: #047857; margin-top: 4px;">
+          ※ KPIカードの「⚡自動配置」と「🔒固定配置」の合計が現在の配置済枠数
+        </div>
       </div>
     `;
     loadShiftCalendar();
