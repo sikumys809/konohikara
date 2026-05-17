@@ -1071,6 +1071,16 @@
 .ds-cell-warn { background: #fee2e2; }
 .ds-cell-ok { background: #fef9c3; }
 .ds-cell-good { background: #d1fae5; }
+/* ★Day15: 氏名チップ表示版セル */
+.ds-cell-v2 { vertical-align: top; min-width: 130px; padding: 3px !important; }
+.ds-cell-v2.ds-cell-good { background: #EAF3DE; }
+.ds-cell-v2.ds-cell-ok { background: #FAEEDA; }
+.ds-cell-v2.ds-cell-warn { background: #FCEBEB; }
+.ds-cell-v2.ds-cell-empty { background: #FCEBEB; }
+.ds-cell-v2:hover { filter: brightness(0.96); }
+.ds-cell-short { min-width: 130px; }
+/* セル横幅を狭めに */
+.ds-cal-table.ds-cal-v2 thead th { min-width: 130px; }
 
 .ds-ff-card { background: #fff; border-radius: 10px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 4px solid #f59e0b; }
 .ds-ff-name { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
@@ -4842,6 +4852,108 @@ function renderDayShiftFulfillmentCards() {
   }).join('');
 }
 
+// ★Day15: 日勤カレンダーセル描画 v2 (氏名チップ表示版)
+function _renderDsCellV2(cell, jigyosho, facility, wmarkFn) {
+  const facEsc = facility.replace(/'/g, "\\'");
+  const onclickAttr = `onclick="openDsCellEditor('${facEsc}', '${cell.dateKey}')"`;
+  
+  // 空セル(配置なし)
+  if (cell.count === 0) {
+    return `<td class="ds-cell ds-cell-empty ds-cell-v2 ds-cell-short" ${onclickAttr} title="${cell.dateKey} (未配置)">
+      <div style="font-size:11px;color:#A32D2D;font-weight:500;text-align:center;padding:8px 0;">未配置</div>
+      ${wmarkFn(jigyosho, cell.dateKey)}
+    </td>`;
+  }
+  
+  // 充足レベル別の背景色クラス
+  const lvCls = cell.fulfillmentLevel === 'good' ? 'ds-cell-good' 
+              : cell.fulfillmentLevel === 'partial' ? 'ds-cell-ok' 
+              : 'ds-cell-warn';
+  
+  // 配置スタッフを並び替え: 早出→遅出→夜勤加算
+  const earlyList = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('早出') !== -1);
+  const lateList = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('遅出') !== -1);
+  const nightList = cell.placements.filter(p => p.isFromNight === true);
+  
+  // 氏名の略称生成 (姓+名1文字)
+  function _shortName(name) {
+    if (!name) return '';
+    const s = String(name).replace(/\s+/g, '');
+    if (s.length <= 3) return s;
+    return s.substring(0, 3);
+  }
+  
+  // シフト種別の略号
+  function _shortShift(shiftType, isFromNight) {
+    if (isFromNight) {
+      // 夜勤A=夜A、夜勤B=夜B、夜勤C=夜C
+      const m = shiftType.match(/夜勤([A-C])/);
+      return m ? '夜' + m[1] : '夜';
+    }
+    if (shiftType === '早出8h') return '早8';
+    if (shiftType === '早出4h') return '早4';
+    if (shiftType === '遅出8h') return '遅8';
+    if (shiftType === '遅出4h') return '遅4';
+    return shiftType;
+  }
+  
+  // スタッフチップ生成
+  function _staffChip(p) {
+    const shortShift = _shortShift(p.shiftType, p.isFromNight);
+    let shiftBg, shiftCol;
+    if (p.isFromNight) {
+      shiftBg = '#EEEDFE'; shiftCol = '#3C3489';
+    } else if (p.shiftType.indexOf('早出') !== -1) {
+      shiftBg = '#FAEEDA'; shiftCol = '#633806';
+    } else {
+      shiftBg = '#FAECE7'; shiftCol = '#4A1B0C';
+    }
+    const kanBadge = p.isKanrisha 
+      ? '<span style="background:#EEEDFE;color:#3C3489;padding:0 3px;border-radius:2px;font-size:9px;margin-left:2px;">管</span>' 
+      : '';
+    return `<div style="display:flex;align-items:center;gap:3px;font-size:10px;line-height:1.4;">
+      <span style="background:${shiftBg};color:${shiftCol};padding:0 4px;border-radius:3px;font-size:9px;font-weight:500;min-width:18px;text-align:center;flex-shrink:0;">${shortShift}</span>
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(_shortName(p.staff_name))}</span>
+      ${kanBadge}
+    </div>`;
+  }
+  
+  let chipsHtml = '';
+  earlyList.forEach(p => { chipsHtml += _staffChip(p); });
+  lateList.forEach(p => { chipsHtml += _staffChip(p); });
+  if (nightList.length > 0) {
+    chipsHtml += '<div style="margin-top:3px;padding-top:3px;border-top:0.5px dashed rgba(0,0,0,0.15);"></div>';
+    nightList.forEach(p => { chipsHtml += _staffChip(p); });
+  }
+  
+  // 充足表示 (早出+遅出ベース、夜勤加算は別表示)
+  const dayCount = cell.morningCount + cell.eveningCount;
+  let statusMark;
+  if (cell.fulfillmentLevel === 'good') statusMark = '<span style="color:#3B6D11;">✓</span>';
+  else if (cell.fulfillmentLevel === 'partial') statusMark = '<span style="color:#854F0B;">⚠</span>';
+  else statusMark = '<span style="color:#A32D2D;">✗</span>';
+  
+  const footer = `<div style="margin-top:3px;padding-top:3px;border-top:0.5px dashed rgba(0,0,0,0.15);font-size:9px;font-weight:500;display:flex;justify-content:space-between;">
+    <span>早${cell.morningCount} 遅${cell.eveningCount} ${statusMark}</span>
+    ${cell.nightAddonCount > 0 ? `<span style="color:#3C3489;">🌙+${cell.nightAddonCount}</span>` : ''}
+  </div>`;
+  
+  // ツールチップ(全員のフル氏名)
+  const tooltipNames = cell.placements.map(p => 
+    p.staff_name + '(' + p.shiftType + (p.assignedRole ? '/' + p.assignedRole : '') + ')'
+  ).join(', ');
+  const tipEsc = (cell.dateKey + ' ' + facility + '\n' + tooltipNames).replace(/"/g, '&quot;');
+  
+  return `<td class="ds-cell ds-cell-v2 ${lvCls}" ${onclickAttr} title="${tipEsc}">
+    <div style="display:flex;flex-direction:column;gap:2px;padding:3px;text-align:left;">
+      ${chipsHtml}
+      ${footer}
+    </div>
+    ${wmarkFn(jigyosho, cell.dateKey)}
+  </td>`;
+}
+
+
 function renderDayShiftCalendar() {
   const data = dsViewState.calendar;
   if (!data || !data.calendar || data.calendar.length === 0) {
@@ -4873,7 +4985,7 @@ function renderDayShiftCalendar() {
     return '<span class="ds-warn-mark ' + cls + '" title="' + tip + '">' + icon + '</span>';
   }
 
-  let html = '<table class="ds-cal-table"><thead><tr>';
+  let html = '<table class="ds-cal-table ds-cal-v2"><thead><tr>';
   html += '<th class="ds-fac-col">事業所 / 施設</th>';
   for (const d of data.days) {
     const cls = d.dow === 0 ? 'ds-day-sun' : d.dow === 6 ? 'ds-day-sat' : '';
@@ -4890,18 +5002,7 @@ function renderDayShiftCalendar() {
         html += '<tr>';
         html += `<td class="ds-fac-col" style="padding-left: 20px;"><span style="font-size: 12px;">📍 ${escapeHtml(b.facility)}</span></td>`;
         for (const cell of b.cells) {
-          if (cell.count === 0) {
-            html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.jigyosho, cell.dateKey)}</td>`;
-          } else {
-            const early = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('早出') !== -1).length;
-            const late = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('遅出') !== -1).length;
-            const night = cell.placements.filter(p => p.isFromNight === true).length;  // ★Day13: 夜勤からの日勤カウント貢献
-            const subParts = [];
-            if (early > 0) subParts.push(`🌅${early}`);
-            if (late > 0) subParts.push(`🌆${late}`);
-            if (night > 0) subParts.push(`🌙${night}`);  // 夜勤分は別マーク
-            html += `<td class="ds-cell" onclick="openDsCellEditor('${b.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} ${b.facility}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.jigyosho, cell.dateKey)}</td>`;
-          }
+          html += _renderDsCellV2(cell, row.jigyosho, b.facility, _wmark);
         }
         html += '</tr>';
       }

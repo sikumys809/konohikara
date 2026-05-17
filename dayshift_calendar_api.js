@@ -44,10 +44,26 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       }
     });
 
-    // T_シフト確定 日勤レコード (18列)
+    // ★Day15機能拡張: M_スタッフ読込 (氏名・主職種・経験区分・管理者フラグ)
+    const staffSheet = ss.getSheetByName('M_スタッフ');
+    const staffData = staffSheet.getDataRange().getValues();
+    const staffMap = {};
+    for (let i = 1; i < staffData.length; i++) {
+      const sid = String(staffData[i][0] || '').trim();
+      if (!sid) continue;
+      const mainRolesRaw = String(staffData[i][19] || '').trim();
+      const mainRoles = mainRolesRaw ? mainRolesRaw.split(',').map(s => s.trim()).filter(s => s) : [];
+      staffMap[sid] = {
+        experienceCategory: String(staffData[i][8] || '通常').trim() || '通常',
+        mainRoles: mainRoles,
+        isKanrisha: mainRoles.indexOf('管理者') !== -1,
+      };
+    }
+
+    // T_シフト確定 日勤レコード (19列)
     const cfSheet = ss.getSheetByName('T_シフト確定');
     const cfLast = cfSheet.getLastRow();
-    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
+    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 19).getValues() : [];
 
     const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
     const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);  // ★Day13: 夜勤も日勤カレンダーに表示
@@ -86,6 +102,8 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
         matrix[jigyosho][facility][dateKey] = [];
       }
 
+      const _sid = String(row[6]);
+      const _staffMeta = staffMap[_sid] || { experienceCategory: '通常', mainRoles: [], isKanrisha: false };
       matrix[jigyosho][facility][dateKey].push({
         rowIndex: idx + 2,
         shift_id: String(row[0]),
@@ -93,14 +111,19 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
         jigyosho: jigyosho,
         facility: facility,
         unitName: String(row[5] || ''),
-        staff_id: String(row[6]),
+        staff_id: _sid,
         staff_name: String(row[7]),
         shiftType: shift,
         startTime: _formatTimeCell(row[9]),
         endTime: _formatTimeCell(row[10]),
         status: String(row[12] || '仮'),
         dayHours: parseFloat(row[17]) || 0,
-        isFromNight: isNight  // ★Day13: 夜勤からの日勤カウント貢献分なら true
+        isFromNight: isNight,
+        // ★Day15機能拡張
+        assignedRole: String(row[18] || ''),  // T_シフト確定 19列目
+        experienceCategory: _staffMeta.experienceCategory,
+        mainRoles: _staffMeta.mainRoles,
+        isKanrisha: _staffMeta.isKanrisha,
       });
     });
 
@@ -116,12 +139,39 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
       const buildingRows = buildings.map(b => {
         const cells = days.map(d => {
           const placements = (matrix[f.name][b] && matrix[f.name][b][d.dateKey]) || [];
+          // ★Day15: 時間帯別集計 (X4 = 各施設早出1+遅出1の最低2人を充足ライン)
+          let morningCount = 0;
+          let eveningCount = 0;
+          let nightAddonCount = 0;
+          placements.forEach(p => {
+            if (p.isFromNight) {
+              nightAddonCount++;
+            } else if (p.shiftType === '早出8h' || p.shiftType === '早出4h') {
+              morningCount++;
+            } else if (p.shiftType === '遅出8h' || p.shiftType === '遅出4h') {
+              eveningCount++;
+            }
+          });
+          // 充足判定 (日勤の早出/遅出を主に判定。夜勤加算は補足)
+          let fulfillmentLevel;
+          if (morningCount >= 1 && eveningCount >= 1) {
+            fulfillmentLevel = 'good';      // 早出+遅出 揃ってる
+          } else if (morningCount + eveningCount >= 1) {
+            fulfillmentLevel = 'partial';   // 片方のみ
+          } else {
+            fulfillmentLevel = 'short';     // 両方欠け
+          }
           return {
             day: d.day,
             dateKey: d.dateKey,
             dow: d.dow,
             count: placements.length,
-            placements: placements
+            placements: placements,
+            // ★Day15追加
+            morningCount: morningCount,
+            eveningCount: eveningCount,
+            nightAddonCount: nightAddonCount,
+            fulfillmentLevel: fulfillmentLevel,
           };
         });
         return {
@@ -186,6 +236,83 @@ function _formatTimeCell(val) {
   const m = s.match(/\d{2}:\d{2}/);
   return m ? m[0] : s;
 }
+
+/**
+ * ★Day15機能: 役割(assignedRole)変更
+ * params: { rowIndex: number, newRole: 'サビ管' | '世話人' | '生活支援員' }
+ * 制約: スタッフの主職種(M_スタッフT列)に含まれる役割のみに変更可能
+ */
+function updateDayShiftAssignedRole(adminStaffId, params) {
+  try {
+    const auth = _checkDayShiftExecPermission(adminStaffId);
+    if (!auth.ok) return { success: false, message: auth.message };
+    
+    const rowIndex = parseInt(params.rowIndex);
+    const newRole = String(params.newRole || '').trim();
+    
+    if (!rowIndex || rowIndex < 2) {
+      return { success: false, message: '行番号が不正' };
+    }
+    if (['サビ管', '世話人', '生活支援員'].indexOf(newRole) === -1) {
+      return { success: false, message: '役割が不正(サビ管/世話人/生活支援員のみ可)' };
+    }
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const cfSheet = ss.getSheetByName('T_シフト確定');
+    
+    // 行データ取得 (staff_id を取得して主職種チェック)
+    const rowData = cfSheet.getRange(rowIndex, 1, 1, 19).getValues()[0];
+    const staffId = String(rowData[6] || '').trim();
+    if (!staffId) {
+      return { success: false, message: '対象行のstaff_idが空' };
+    }
+    
+    // スタッフの主職種チェック
+    const staffSheet = ss.getSheetByName('M_スタッフ');
+    const staffData = staffSheet.getDataRange().getValues();
+    let staffRoles = null;
+    for (let i = 1; i < staffData.length; i++) {
+      if (String(staffData[i][0]).trim() === staffId) {
+        const t = String(staffData[i][19] || '').trim();
+        staffRoles = t ? t.split(',').map(s => s.trim()) : [];
+        break;
+      }
+    }
+    if (!staffRoles) {
+      return { success: false, message: 'staff_id=' + staffId + ' がM_スタッフに見つからない' };
+    }
+    
+    // 許可チェック (主職種に含まれてる役割のみOK)
+    const allowedRoles = [];
+    if (staffRoles.indexOf('サビ管') !== -1) allowedRoles.push('サビ管');
+    if (staffRoles.indexOf('世話人') !== -1) allowedRoles.push('世話人');
+    if (staffRoles.indexOf('生活支援員') !== -1) allowedRoles.push('生活支援員');
+    
+    if (allowedRoles.indexOf(newRole) === -1) {
+      return { 
+        success: false, 
+        message: 'このスタッフは「' + newRole + '」を持っていない。許可: ' + allowedRoles.join(',')
+      };
+    }
+    
+    // 更新 (19列目 = column 19)
+    cfSheet.getRange(rowIndex, 19).setValue(newRole);
+    SpreadsheetApp.flush();
+    
+    Logger.log('updateDayShiftAssignedRole: rowIndex=' + rowIndex + ' staff_id=' + staffId + ' newRole=' + newRole);
+    
+    return {
+      success: true,
+      message: '役割を「' + newRole + '」に変更しました',
+      staff_id: staffId,
+      newRole: newRole,
+    };
+  } catch (e) {
+    Logger.log('updateDayShiftAssignedRole エラー: ' + e.message);
+    return { success: false, message: e.message };
+  }
+}
+
 
 /**
  * 日勤セル編集 (18列構造)
@@ -426,7 +553,7 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
 
     const cfSheet = ss.getSheetByName('T_シフト確定');
     const cfLast = cfSheet.getLastRow();
-    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 18).getValues() : [];
+    const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 19).getValues() : [];
 
     // ★ Phase 5.1.2: スタッフID → kubun (新人判定用) のマップを先に作る
     const staffKubunMap = {};
