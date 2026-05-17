@@ -593,6 +593,38 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
 
     const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
 
+    // ★Day15: T_希望提出から この施設+このシフト種別+この日付 の希望者を取得 (A1判定用)
+    const reqYM = dateKey.substring(0, 7);
+    const reqSheet = ss.getSheetByName('T_希望提出');
+    const wishedSids = {};  // {sid: true} = この施設・このシフト・この日に希望ありのスタッフ
+    if (reqSheet) {
+      const reqLast = reqSheet.getLastRow();
+      if (reqLast > 1) {
+        const reqAll = reqSheet.getRange(2, 1, reqLast - 1, 10).getValues();
+        for (let i = 0; i < reqAll.length; i++) {
+          const r = reqAll[i];
+          const rYm = (r[4] instanceof Date)
+            ? Utilities.formatDate(r[4], 'Asia/Tokyo', 'yyyy-MM')
+            : String(r[4] || '').substring(0, 7);
+          if (rYm !== reqYM) continue;
+          const rsid = String(r[2] || '').trim();
+          if (!rsid) continue;
+          const rDateKey = (r[5] instanceof Date)
+            ? Utilities.formatDate(r[5], 'Asia/Tokyo', 'yyyy-MM-dd')
+            : String(r[5] || '');
+          if (rDateKey !== dateKey) continue;
+          const rShift = String(r[6] || '').trim();
+          if (rShift !== shiftType) continue;
+          const rMain = String(r[7] || '').trim();
+          const rSec = String(r[8] || '').trim();
+          const rSub = String(r[9] || '').trim();
+          if (rMain === facility || rSec === facility || rSub === facility) {
+            wishedSids[rsid] = true;
+          }
+        }
+      }
+    }
+
     const candidates = staffData
       .filter(row => {
         const retired = String(row[16] || '').toUpperCase() === 'TRUE';
@@ -646,15 +678,19 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
           alreadyAssigned: existingPlacements.length > 0,
           existingPlacements: existingPlacements,
           isFacilityMatch: mainFac === facility,
+          hasWish: wishedSids[sid] === true,
           warnings: warnings,
           hasBlockWarning: warnings.some(w => w.level === 'warning_block'),
           hasOnlyWarning: warnings.some(w => w.level === 'warning_only')
         };
       })
       .sort((a, b) => {
-        // block警告ありを末尾に
+        // ★Day15: block警告ありを末尾に
         if (a.hasBlockWarning && !b.hasBlockWarning) return 1;
         if (!a.hasBlockWarning && b.hasBlockWarning) return -1;
+        // ★Day15: 希望提出してる人を最上部に
+        if (a.hasWish && !b.hasWish) return -1;
+        if (!a.hasWish && b.hasWish) return 1;
         // メイン施設マッチ優先
         if (a.isFacilityMatch && !b.isFacilityMatch) return -1;
         if (!a.isFacilityMatch && b.isFacilityMatch) return 1;
