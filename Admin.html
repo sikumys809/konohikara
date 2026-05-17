@@ -5021,9 +5021,20 @@ function _dsV2PlacementCard(p, isNightAddon) {
 
 
 function _dsV2CandidateRow(c) {
-  const wishBadge = c.hasWish 
-    ? '<span style="background:#EAF3DE;color:#173404;padding:2px 7px;border-radius:10px;font-size:11px;">希望あり</span>'
-    : '<span style="background:#f3f4f6;color:#6b7280;padding:2px 7px;border-radius:10px;font-size:11px;">希望なし</span>';
+  // ★Day15: 5段階バッジ A1〜B
+  let wishBadge;
+  const cat = c.wishCategory || (c.hasWish ? 'A1' : 'B');
+  if (cat === 'A1') {
+    wishBadge = '<span style="background:#EAF3DE;color:#173404;padding:2px 7px;border-radius:10px;font-size:11px;">希望あり</span>';
+  } else if (cat === 'A2') {
+    wishBadge = '<span style="background:#E6F1FB;color:#0C447C;padding:2px 7px;border-radius:10px;font-size:11px;">💡他施設で' + escapeHtml(c.wishMsg || '') + 'を希望</span>';
+  } else if (cat === 'A3') {
+    wishBadge = '<span style="background:#FEF3C7;color:#854D0E;padding:2px 7px;border-radius:10px;font-size:11px;">💡他種別希望: ' + escapeHtml(c.wishMsg || '') + '</span>';
+  } else if (cat === 'A4') {
+    wishBadge = '<span style="background:#F3F4F6;color:#6B7280;padding:2px 7px;border-radius:10px;font-size:11px;">💡他施設・他種別希望: ' + escapeHtml(c.wishMsg || '') + '</span>';
+  } else {
+    wishBadge = '<span style="background:#f3f4f6;color:#6b7280;padding:2px 7px;border-radius:10px;font-size:11px;">希望なし</span>';
+  }
   const facBadge = c.isFacilityMatch 
     ? '<span style="background:#E6F1FB;color:#0C447C;padding:2px 7px;border-radius:10px;font-size:11px;">メイン</span>'
     : '';

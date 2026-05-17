@@ -593,10 +593,11 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
 
     const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
 
-    // ★Day15: T_希望提出から この施設+このシフト種別+この日付 の希望者を取得 (A1判定用)
+    // ★Day15: T_希望提出から このdateKey の全希望情報を取得 (A1〜A4判定用)
     const reqYM = dateKey.substring(0, 7);
     const reqSheet = ss.getSheetByName('T_希望提出');
-    const wishedSids = {};  // {sid: true} = この施設・このシフト・この日に希望ありのスタッフ
+    // wishesForDate[sid] = [{shift, facilities:[]}, ...] その日のスタッフごとの希望全件
+    const wishesForDate = {};
     if (reqSheet) {
       const reqLast = reqSheet.getLastRow();
       if (reqLast > 1) {
@@ -614,13 +615,16 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
             : String(r[5] || '');
           if (rDateKey !== dateKey) continue;
           const rShift = String(r[6] || '').trim();
-          if (rShift !== shiftType) continue;
+          if (!rShift) continue;
+          const rFacs = [];
           const rMain = String(r[7] || '').trim();
           const rSec = String(r[8] || '').trim();
           const rSub = String(r[9] || '').trim();
-          if (rMain === facility || rSec === facility || rSub === facility) {
-            wishedSids[rsid] = true;
-          }
+          if (rMain) rFacs.push(rMain);
+          if (rSec) rFacs.push(rSec);
+          if (rSub) rFacs.push(rSub);
+          if (!wishesForDate[rsid]) wishesForDate[rsid] = [];
+          wishesForDate[rsid].push({ shift: rShift, facilities: rFacs });
         }
       }
     }
@@ -668,6 +672,37 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
           });
         }
 
+        // ★Day15: 5段階希望判定 (A1〜B)
+        const _wishes = wishesForDate[sid] || [];
+        let _wishCategory = 'B';  // デフォルト: 希望なし
+        let _wishMsg = '';
+        if (_wishes.length === 0) {
+          _wishCategory = 'B';
+        } else {
+          // A1: この施設・このシフト種別
+          const a1 = _wishes.some(w => w.shift === shiftType && w.facilities.indexOf(facility) !== -1);
+          if (a1) {
+            _wishCategory = 'A1';
+          } else {
+            // A2: 他施設で同じシフト種別
+            const a2 = _wishes.find(w => w.shift === shiftType);
+            if (a2) {
+              _wishCategory = 'A2';
+              _wishMsg = a2.facilities[0] || '';
+            } else {
+              // A3: この施設で他シフト種別
+              const a3 = _wishes.find(w => w.facilities.indexOf(facility) !== -1);
+              if (a3) {
+                _wishCategory = 'A3';
+                _wishMsg = a3.shift;
+              } else {
+                // A4: 他施設で他シフト種別
+                _wishCategory = 'A4';
+                _wishMsg = _wishes[0].shift + ' @ ' + (_wishes[0].facilities[0] || '');
+              }
+            }
+          }
+        }
         return {
           staff_id: sid,
           name: name,
@@ -678,7 +713,9 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
           alreadyAssigned: existingPlacements.length > 0,
           existingPlacements: existingPlacements,
           isFacilityMatch: mainFac === facility,
-          hasWish: wishedSids[sid] === true,
+          hasWish: _wishCategory === 'A1',  // 互換: A1のみtrue
+          wishCategory: _wishCategory,  // ★Day15: A1/A2/A3/A4/B
+          wishMsg: _wishMsg,
           warnings: warnings,
           hasBlockWarning: warnings.some(w => w.level === 'warning_block'),
           hasOnlyWarning: warnings.some(w => w.level === 'warning_only')
@@ -688,9 +725,14 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
         // ★Day15: block警告ありを末尾に
         if (a.hasBlockWarning && !b.hasBlockWarning) return 1;
         if (!a.hasBlockWarning && b.hasBlockWarning) return -1;
-        // ★Day15: 希望提出してる人を最上部に
-        if (a.hasWish && !b.hasWish) return -1;
-        if (!a.hasWish && b.hasWish) return 1;
+        // ★Day15: 同日既配置(C相当)を末尾に
+        if (a.alreadyAssigned && !b.alreadyAssigned) return 1;
+        if (!a.alreadyAssigned && b.alreadyAssigned) return -1;
+        // ★Day15: 5段階希望判定 A1>A2>A3>A4>B
+        const rank = { 'A1': 1, 'A2': 2, 'A3': 3, 'A4': 4, 'B': 5 };
+        const ar = rank[a.wishCategory] || 5;
+        const br = rank[b.wishCategory] || 5;
+        if (ar !== br) return ar - br;
         // メイン施設マッチ優先
         if (a.isFacilityMatch && !b.isFacilityMatch) return -1;
         if (!a.isFacilityMatch && b.isFacilityMatch) return 1;
