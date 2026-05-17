@@ -5008,15 +5008,51 @@ function _dsV2PlacementCard(p, isNightAddon) {
     ? '<span title="夜勤からの加算。配置削除は夜勤画面で。" style="font-size:14px;color:#9ca3af;padding:5px 7px;">🔒</span>'
     : '<button onclick="_dsV2DeletePlacement(' + p.rowIndex + ')" title="削除" style="background:transparent;border:1px solid #d1d5db;padding:5px 9px;border-radius:6px;cursor:pointer;color:#6b7280;font-size:13px;">🗑</button>';
   
+  // ★Day15: E-st事業所切替 (ルーデンス上板橋E-st(板橋北区) ⇔ (板橋北区セカンド))
+  const isEstRealFac = p.facility && p.facility.indexOf('ルーデンス上板橋E-st') === 0 && p.facility !== 'ルーデンス上板橋E-st';
+  let estSwitchHtml = '';
+  if (isEstRealFac && !isNightAddon) {
+    const optItabashi = (p.jigyosho === 'GHコノヒカラ板橋北区') ? ' selected' : '';
+    const optSecond = (p.jigyosho === 'GHコノヒカラ板橋北区セカンド') ? ' selected' : '';
+    estSwitchHtml = '<div style="font-size:10px;color:#6b7280;margin-top:6px;display:flex;align-items:center;gap:4px;">'
+      + '<span>事業所:</span>'
+      + '<select onchange="_dsV2ChangeJigyosho(' + p.rowIndex + ', this.value)" style="font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid #d1d5db;">'
+      + '<option value="GHコノヒカラ板橋北区"' + optItabashi + '>板橋北区</option>'
+      + '<option value="GHコノヒカラ板橋北区セカンド"' + optSecond + '>板橋北区セカンド</option>'
+      + '</select></div>';
+  }
+  
   return '<div class="ds-v2-card" style="border:1px solid #e5e7eb;background:' + bgColor + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">'
     + '<div>'
     + '<div style="font-size:14px;font-weight:500;">' + escapeHtml(p.staff_name) + ' <span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:4px;">ID:' + p.staff_id + '</span></div>'
     + '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">'
     + '<span style="background:' + shiftBg + ';color:' + shiftCol + ';padding:2px 7px;border-radius:10px;font-size:11px;">' + shortShift + '</span>'
     + kanBadge + expBadge
-    + '</div></div>'
+    + '</div>'
+    + estSwitchHtml
+    + '</div>'
     + roleSelectHtml + actionBtn
     + '</div>';
+}
+
+
+// ★Day15: E-st事業所切替 (既存changeDsJigyosho を内部利用)
+function _dsV2ChangeJigyosho(rowIndex, newJigyosho) {
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      alert('事業所切替失敗: ' + (res ? res.message : '不明'));
+      return;
+    }
+    // モーダル閉じてカレンダー再読込 (V2モーダル内のローカル状態も再構築される)
+    closeDsCellEditor();
+    loadDayShiftCalendar();
+  }).withFailureHandler(function(e) {
+    alert('事業所切替エラー: ' + e.message);
+  }).updateDayShiftSlot(currentAdmin.staff_id, {
+    action: 'changeJigyosho',
+    rowIndex: rowIndex,
+    newJigyosho: newJigyosho
+  });
 }
 
 
@@ -5457,7 +5493,7 @@ function renderDayShiftCalendar() {
       html += `<td class="ds-fac-col">${escapeHtml(row.facility)}<div style="font-size: 10px; color: #6b7280;">定員${row.capacity}</div></td>`;
       for (const cell of row.cells) {
         if (cell.count === 0) {
-          html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.facility, cell.dateKey)}</td>`;
+          html += `<td class="ds-cell ds-cell-empty" onclick="openDsCellEditorV2('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey} (未配置)">－${_wmark(row.facility, cell.dateKey)}</td>`;
         } else {
           const early = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('早出') !== -1).length;
           const late = cell.placements.filter(p => !p.isFromNight && p.shiftType.indexOf('遅出') !== -1).length;
@@ -5466,7 +5502,7 @@ function renderDayShiftCalendar() {
           if (early > 0) subParts.push(`🌅${early}`);
           if (late > 0) subParts.push(`🌆${late}`);
           if (night > 0) subParts.push(`🌙${night}`);  // 夜勤分は別マーク
-          html += `<td class="ds-cell" onclick="openDsCellEditor('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.facility, cell.dateKey)}</td>`;
+          html += `<td class="ds-cell" onclick="openDsCellEditorV2('${row.facility.replace(/'/g, "\\'")}', '${cell.dateKey}')" title="${cell.dateKey}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div>${_wmark(row.facility, cell.dateKey)}</td>`;
         }
       }
       html += '</tr>';
@@ -5477,297 +5513,16 @@ function renderDayShiftCalendar() {
   document.getElementById('dsCalendar').innerHTML = html;
 }
 
-function openDsCellEditor(facility, dateKey) {
-  if (dsViewState.lockStatus && dsViewState.lockStatus.locked) {
-    alert('🔒 ' + dsViewState.targetYM + ' はロック中です。\n「シフト確定」画面でロック解除してから編集してください。');
-    return;
-  }
-  
-  const modal = document.getElementById('dsCellEditModal');
-  modal.style.display = 'flex';
-  modal.classList.remove('hidden');
-
-  // 該当セルの配置を取得(新旧両構造に対応)
-  let placements = [];
-  for (const row of dsViewState.calendar.calendar) {
-    if (row.buildings && Array.isArray(row.buildings)) {
-      for (const b of row.buildings) {
-        if (b.facility === facility) {
-          for (const c of b.cells) {
-            if (c.dateKey === dateKey) {
-              placements = c.placements;
-              break;
-            }
-          }
-          break;
-        }
-      }
-    } else if (row.facility === facility) {
-      for (const c of row.cells) {
-        if (c.dateKey === dateKey) {
-          placements = c.placements;
-          break;
-        }
-      }
-      break;
-    }
-  }
-
-  dsViewState.editingCell = { facility, dateKey, placements };
-
-  document.getElementById('dsCellTitle').innerText = `${dateKey} ${facility} (${placements.length}人配置)`;
-  renderDsCellBody();
-}
-
-function renderDsCellBody() {
-  const cell = dsViewState.editingCell;
-  
-  let html = '<div style="margin-bottom: 12px; font-size: 13px; color: #6b7280;">現在の配置:</div>';
-  
-  if (cell.placements.length === 0) {
-    html += '<div style="padding: 12px; background: #f9fafb; border-radius: 6px; color: #9ca3af; text-align: center;">配置なし</div>';
-  } else {
-    // ★Day11 Phase4: E-st施設の場合は事業所切替ドロップダウンを表示
-    // ★Day11 Phase4 修正: 実体施設(カッコ付き)に前方一致
-    const isEst = cell.facility && cell.facility.indexOf('ルーデンス上板橋E-st') === 0
-                  && cell.facility !== 'ルーデンス上板橋E-st';
-    html += cell.placements.map(p => {
-      let estSwitchHtml = '';
-      if (isEst) {
-        const optItabashi = (p.jigyosho === 'GHコノヒカラ板橋北区') ? 'selected' : '';
-        const optSecond = (p.jigyosho === 'GHコノヒカラ板橋北区セカンド') ? 'selected' : '';
-        estSwitchHtml = `
-          <div class="ds-p-jigyosho" style="margin-top: 6px; font-size: 11px; color: #6b7280;">
-            事業所:
-            <select onchange="changeDsJigyosho(${p.rowIndex}, this.value)" style="font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid #d1d5db;">
-              <option value="GHコノヒカラ板橋北区" ${optItabashi}>板橋北区</option>
-              <option value="GHコノヒカラ板橋北区セカンド" ${optSecond}>板橋北区セカンド</option>
-            </select>
-          </div>
-        `;
-      }
-      return `
-      <div class="ds-placement-item">
-        <div class="ds-p-info">
-          <div class="ds-p-name">${escapeHtml(p.staff_name)}</div>
-          <div class="ds-p-shift">${escapeHtml(p.shiftType)} (${escapeHtml(p.startTime)}〜${escapeHtml(p.endTime)})</div>
-          ${estSwitchHtml}
-        </div>
-        <div class="ds-p-actions">
-          <button class="btn btn-small btn-danger" onclick="deleteDsPlacement(${p.rowIndex})">削除</button>
-        </div>
-      </div>
-    `;
-    }).join('');
-  }
-  
-  html += `<button class="ds-add-btn" onclick="showDsAddForm()">+ 配置を追加</button>`;
-  html += `<div id="dsAddFormArea"></div>`;
-  
-  document.getElementById('dsCellBody').innerHTML = html;
-}
-
-function showDsAddForm() {
-  const cell = dsViewState.editingCell;
-  document.getElementById('dsAddFormArea').innerHTML = `
-    <div style="margin-top: 16px; padding: 16px; border: 1px solid #f59e0b; border-radius: 8px; background: #fef9c3;">
-      <h4 style="margin: 0 0 12px;">新規配置</h4>
-      <div class="ds-form-row">
-        <div>
-          <label style="font-size: 12px;">シフト種別</label>
-          <select id="dsAddShiftType" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #d1d5db;">
-            <option value="早出8h">早出8h (07:00-16:00)</option>
-            <option value="早出4h">早出4h (07:00-11:00)</option>
-            <option value="遅出8h">遅出8h (13:00-22:00)</option>
-            <option value="遅出4h">遅出4h (13:00-17:00)</option>
-          </select>
-        </div>
-      </div>
-      <label style="font-size: 12px;">スタッフ検索</label>
-      <input type="text" id="dsCandidateSearch" placeholder="氏名で絞り込み" oninput="filterDsCandidates()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #d1d5db; margin-bottom: 8px;">
-      <div id="dsCandidateList" class="ds-candidate-list">候補読込中...</div>
-      <div style="margin-top: 12px; display: flex; gap: 8px;">
-        <button onclick="cancelDsAdd()" style="flex: 1; padding: 8px; background: #e5e7eb; border: none; border-radius: 6px; cursor: pointer;">キャンセル</button>
-        <button onclick="confirmDsAdd()" style="flex: 1; padding: 8px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer;">配置を追加</button>
-      </div>
-    </div>
-  `;
-
-  // 候補取得
-  google.script.run.withSuccessHandler(res => {
-    if (!res.success) {
-      document.getElementById('dsCandidateList').innerHTML = `<div style="color: #dc2626; padding: 12px;">エラー: ${res.message}</div>`;
-      return;
-    }
-    dsViewState.candidates = res.candidates;
-    dsViewState.selectedCandidate = null;
-    renderDsCandidates();
-  }).getDayShiftCandidateStaff(currentAdmin.staff_id, dsViewState.targetYM, cell.dateKey, cell.facility);
-}
-
-function renderDsCandidates() {
-  const list = dsViewState.candidates;
-  if (!list || list.length === 0) {
-    document.getElementById('dsCandidateList').innerHTML = '<div style="color: #6b7280; padding: 12px;">配置可能な候補者なし</div>';
-    return;
-  }
-  document.getElementById('dsCandidateList').innerHTML = list.map(c => {
-    const matchBadge = c.isFacilityMatch ? '<span class="ds-match-badge">メイン施設</span>' : '';
-    const assignedBadge = c.alreadyAssigned ? '<span class="ds-match-badge ds-warn-badge">⚠既配置</span>' : '';
-    const existing = c.alreadyAssigned
-      ? c.existingPlacements.map(e => `${e.shift}@${e.facility}`).join(', ')
-      : '';
-    const selected = dsViewState.selectedCandidate === c.staff_id ? 'selected' : '';
-    
-    // ★ Phase 5.4: 警告バッジ + メッセージ表示
-    let warnHtml = '';
-    let extraClass = '';
-    if (c.warnings && c.warnings.length > 0) {
-      if (c.hasBlockWarning) {
-        extraClass = ' ds-cand-block';
-        const blockMsgs = c.warnings.filter(w => w.level === 'warning_block').map(w => '[' + w.ruleId + '] ' + w.message);
-        warnHtml = '<div class="ds-cand-warn ds-cand-warn-block">⚠️ ' + escapeHtml(blockMsgs.join(' / ')) + '</div>';
-      } else if (c.hasOnlyWarning) {
-        extraClass = ' ds-cand-only';
-        const onlyMsgs = c.warnings.filter(w => w.level === 'warning_only').map(w => '[' + w.ruleId + '] ' + w.message);
-        warnHtml = '<div class="ds-cand-warn ds-cand-warn-only">ℹ️ ' + escapeHtml(onlyMsgs.join(' / ')) + '</div>';
-      }
-    }
-    
-    return `
-      <div class="ds-candidate ${selected}${extraClass}" data-sid="${c.staff_id}" data-name="${escapeAttr(c.name)}" onclick="selectDsCandidate('${c.staff_id}')">
-        <div class="ds-cand-name">${matchBadge}${assignedBadge}${escapeHtml(c.name)}</div>
-        <div class="ds-cand-sub">メイン:${escapeHtml(c.mainFacility || '-')} / 職種:${escapeHtml(c.mainRoles)}${existing ? ' / 当日:' + escapeHtml(existing) : ''}</div>
-        ${warnHtml}
-      </div>
-    `;
-  }).join('');
-}
-
-function filterDsCandidates() {
-  const kw = document.getElementById('dsCandidateSearch').value.toLowerCase();
-  document.querySelectorAll('#dsCandidateList .ds-candidate').forEach(el => {
-    const name = (el.dataset.name || '').toLowerCase();
-    el.style.display = name.includes(kw) ? 'block' : 'none';
-  });
-}
-
-function selectDsCandidate(sid) {
-  dsViewState.selectedCandidate = sid;
-  document.querySelectorAll('#dsCandidateList .ds-candidate').forEach(el => {
-    el.classList.toggle('selected', el.dataset.sid === sid);
-  });
-}
-
-function cancelDsAdd() {
-  document.getElementById('dsAddFormArea').innerHTML = '';
-  dsViewState.selectedCandidate = null;
-}
-
-function confirmDsAdd() {
-  if (!dsViewState.selectedCandidate) {
-    alert('スタッフを選択してください');
-    return;
-  }
-  const shiftType = document.getElementById('dsAddShiftType').value;
-  const cell = dsViewState.editingCell;
-
-  // ★ Phase 5.4: 配置前にblock警告ありなら確認ダイアログ
-  const cand = (dsViewState.candidates || []).find(c => c.staff_id === dsViewState.selectedCandidate);
-  if (cand && cand.hasBlockWarning) {
-    const blockMsgs = cand.warnings
-      .filter(w => w.level === 'warning_block')
-      .map(w => '・[' + w.ruleId + '] ' + w.message)
-      .join('\n');
-    if (!confirm('⚠️ block警告があります\n\n' + blockMsgs + '\n\n配置すると承認待ち状態になります。続行しますか?')) {
-      return;
-    }
-  }
-
-  const btns = document.querySelectorAll('#dsAddFormArea button');
-  btns.forEach(b => b.disabled = true);
-
-  google.script.run.withSuccessHandler(res => {
-    btns.forEach(b => b.disabled = false);
-    if (!res.success) {
-      alert('エラー: ' + res.message);
-      return;
-    }
-    // ★ Phase 5.4: 配置成功時の警告通知
-    if (res.warnings && res.warnings.length > 0) {
-      const msgs = res.warnings.map(w => '[' + w.ruleId + '/' + (w.level === 'warning_block' ? 'block' : 'only') + '] ' + w.message).join('\n');
-      if (res.hasBlockWarning) {
-        alert('✓ 配置完了 (block警告ありで承認待ち)\n\n' + msgs + '\n\n→ 警告承認画面で承認してください');
-      } else {
-        alert('✓ 配置完了 (only警告あり、配置はそのまま)\n\n' + msgs);
-      }
-    }
-    closeDsCellEditor();
-    loadDayShiftCalendar();
-  }).withFailureHandler(err => {
-    btns.forEach(b => b.disabled = false);
-    alert('通信エラー: ' + err);
-  }).updateDayShiftSlot(currentAdmin.staff_id, {
-    action: 'add',
-    date: cell.dateKey,
-    facility: cell.facility,
-    staff_id: dsViewState.selectedCandidate,
-    shiftType: shiftType
-  });
-}
-
-// ★Day11 Phase4: E-st配置の事業所切替
-function changeDsJigyosho(rowIndex, newJigyosho) {
-  if (!rowIndex || !newJigyosho) return;
-  
-  const ALLOWED = ['GHコノヒカラ板橋北区', 'GHコノヒカラ板橋北区セカンド'];
-  if (ALLOWED.indexOf(newJigyosho) === -1) {
-    alert('不正な事業所: ' + newJigyosho);
-    return;
-  }
-  
-  const label = (newJigyosho === 'GHコノヒカラ板橋北区') ? '板橋北区' : '板橋北区セカンド';
-  
-  google.script.run
-    .withSuccessHandler(res => {
-      if (!res.success) {
-        alert('事業所切替失敗: ' + res.message);
-        return;
-      }
-      // 成功 → カレンダー再読み込み + モーダル閉じる
-      closeDsCellEditor();
-      loadDayShiftCalendar();
-    })
-    .withFailureHandler(err => {
-      alert('事業所切替エラー: ' + (err && err.message ? err.message : err));
-    })
-    .updateDayShiftSlot(currentAdmin.staff_id, {
-      action: 'changeJigyosho',
-      rowIndex: rowIndex,
-      newJigyosho: newJigyosho
-    });
-}
-
-function deleteDsPlacement(rowIndex) {
-  if (!confirm('この配置を削除しますか？')) return;
-  google.script.run.withSuccessHandler(res => {
-    if (!res.success) {
-      alert('エラー: ' + res.message);
-      return;
-    }
-    closeDsCellEditor();
-    loadDayShiftCalendar();
-  }).updateDayShiftSlot(currentAdmin.staff_id, {
-    action: 'delete',
-    rowIndex: rowIndex
-  });
-}
-
 function closeDsCellEditor() {
   document.getElementById('dsCellEditModal').style.display = 'none';
   document.getElementById('dsCellEditModal').classList.add('hidden');
-  dsViewState.editingCell = null;
-  dsViewState.selectedCandidate = null;
+  // ★Day15: V2モーダル状態クリア (旧 editingCell/selectedCandidate は廃止済)
+  if (typeof _dsV2State !== 'undefined') {
+    _dsV2State.facility = null;
+    _dsV2State.dateKey = null;
+    _dsV2State.placements = [];
+    _dsV2State.candidates = [];
+  }
 }
 
 function execDayShiftEngineFromView() {
