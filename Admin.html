@@ -3052,10 +3052,51 @@ function openSlotEditor(dateKey, unitId, unitName, facility) {
 
 
 function renderSlotEditor(candidates) {
+  // ★Day 15 P5 Phase D-2: シフト種別変更時の再描画用にキャッシュ
+  shiftViewState.candidatesCache = candidates;
+  
+  // ★Day 15 P5 確定: 5段階優先順位 + 配置不可は最下部
+  // A1 > A2 > A3 > A4 > B > 配置不可(同日既配置/許可シフト外/許可施設外)
+  const _currentShiftForSort = shiftViewState.selectedShiftType || '夜勤B';
+  const _targetFacilityForSort = shiftViewState.editingSlot ? shiftViewState.editingSlot.facility : '';
+  
+  function _calcWishRank(c) {
+    const w = c.wishes || [];
+    if (w.length === 0) return 5; // B
+    if (w.find(function(x){return x.shift===_currentShiftForSort && x.facilities.indexOf(_targetFacilityForSort)>=0;})) return 1; // A1
+    if (w.find(function(x){return x.shift===_currentShiftForSort;})) return 2; // A2
+    if (w.find(function(x){return x.facilities.indexOf(_targetFacilityForSort)>=0;})) return 3; // A3
+    return 4; // A4
+  }
+  
+  function _isDisabledForSort(c) {
+    const isShiftNG = !(c.allowedShifts && c.allowedShifts.indexOf(_currentShiftForSort) >= 0);
+    const isFacNG = c.facilityMatch === 'none';
+    return c.alreadyAssignedToday || isShiftNG || isFacNG;
+  }
+  
+  candidates.sort(function(a, b) {
+    const aDis = _isDisabledForSort(a) ? 1 : 0;
+    const bDis = _isDisabledForSort(b) ? 1 : 0;
+    if (aDis !== bDis) return aDis - bDis;  // 配置可を上、不可を下
+    
+    const aRank = _calcWishRank(a);
+    const bRank = _calcWishRank(b);
+    if (aRank !== bRank) return aRank - bRank;  // 1(A1) → 5(B)
+    
+    // 同ランク内: メイン > セカンド > サブ > none
+    const facRank = {main:1, second:2, sub:3, none:4};
+    const aFR = facRank[a.facilityMatch] || 5;
+    const bFR = facRank[b.facilityMatch] || 5;
+    if (aFR !== bFR) return aFR - bFR;
+    
+    // 氏名
+    return (a.name || '').localeCompare(b.name || '');
+  });
   let html = `
     <div style="margin-bottom: 12px;">
       <label style="display: block; font-weight: 600; margin-bottom: 6px;">シフト種別</label>
-      <select id="slotEditShiftType" onchange="shiftViewState.selectedShiftType = this.value;" style="padding: 6px; border-radius: 6px; border: 1px solid #d1d5db; width: 150px;">
+      <select id="slotEditShiftType" onchange="shiftViewState.selectedShiftType = this.value; rerenderCandidateList();" style="padding: 6px; border-radius: 6px; border: 1px solid #d1d5db; width: 150px;">
         <option value="夜勤A" ${shiftViewState.selectedShiftType === '夜勤A' ? 'selected' : ''}>夜勤A (20-05)</option>
         <option value="夜勤B" ${shiftViewState.selectedShiftType === '夜勤B' ? 'selected' : ''}>夜勤B (22-07)</option>
         <option value="夜勤C" ${shiftViewState.selectedShiftType === '夜勤C' ? 'selected' : ''}>夜勤C (22-08)</option>
@@ -3072,10 +3113,84 @@ function renderSlotEditor(candidates) {
   
   html += candidates.map(c => {
     let badges = '';
-    if (c.hasWishForDate) badges += '<span class="candidate-badge badge-wish">希望あり</span>';
+    // ★Day 15 P5 確定仕様: 5段階の希望状態判定
+    //   A1: この施設・このシフト希望 → [希望あり]
+    //   A2: 他施設で同じシフト希望 → [💡他施設で◯◯希望:施設名]
+    //   A3: この施設で他シフト希望 → [💡他種別希望:◯◯]
+    //   A4: 他施設で他シフト希望 → [💡他施設・他種別希望:施設名で◯◯]
+    //   B : 完全に希望なし → [希望なし](薄灰)
+    const _currentShift = shiftViewState.selectedShiftType || '夜勤B';
+    const _targetFacility = shiftViewState.editingSlot ? shiftViewState.editingSlot.facility : '';
+    const _wishes = c.wishes || [];
+    
+    // 5段階判定
+    let _wishCategory = 'B'; // デフォルト: 完全希望なし
+    let _wishHint = '';
+    
+    if (_wishes.length === 0) {
+      _wishCategory = 'B';
+    } else {
+      // A1: この施設・このシフト
+      const _a1 = _wishes.find(function(w) {
+        return w.shift === _currentShift && w.facilities.indexOf(_targetFacility) >= 0;
+      });
+      if (_a1) {
+        _wishCategory = 'A1';
+      } else {
+        // A2: 他施設で同じシフト
+        const _a2 = _wishes.find(function(w) {
+          return w.shift === _currentShift && w.facilities.indexOf(_targetFacility) < 0;
+        });
+        if (_a2) {
+          _wishCategory = 'A2';
+          _wishHint = _currentShift + '希望: ' + _a2.facilities.join(',');
+        } else {
+          // A3: この施設で他シフト
+          const _a3 = _wishes.find(function(w) {
+            return w.shift !== _currentShift && w.facilities.indexOf(_targetFacility) >= 0;
+          });
+          if (_a3) {
+            _wishCategory = 'A3';
+            _wishHint = '他種別希望: ' + _a3.shift;
+          } else {
+            // A4: 他施設・他シフト
+            _wishCategory = 'A4';
+            const _a4 = _wishes[0];
+            _wishHint = _a4.facilities.join(',') + 'で' + _a4.shift + '希望';
+          }
+        }
+      }
+    }
+    
+    // バッジ生成
+    if (_wishCategory === 'A1') {
+      badges += '<span class="candidate-badge badge-wish">希望あり</span>';
+    } else if (_wishCategory === 'A2') {
+      badges += '<span class="candidate-badge" style="background:#dbeafe;color:#1e40af;">💡他施設で' + _wishHint + '</span>';
+    } else if (_wishCategory === 'A3') {
+      badges += '<span class="candidate-badge" style="background:#fef3c7;color:#854d0e;">💡' + _wishHint + '</span>';
+    } else if (_wishCategory === 'A4') {
+      badges += '<span class="candidate-badge" style="background:#f3f4f6;color:#6b7280;">💡' + _wishHint + '</span>';
+    } else {
+      badges += '<span class="candidate-badge" style="background:#f3f4f6;color:#6b7280;">希望なし</span>';
+    }
+    // 後続のソートで使うため staff オブジェクトに付与
+    c._wishCategory = _wishCategory;
     if (c.facilityMatch === 'main') badges += '<span class="candidate-badge badge-main">メイン</span>';
     else if (c.facilityMatch === 'second') badges += '<span class="candidate-badge badge-second">セカンド</span>';
     else if (c.facilityMatch === 'sub') badges += '<span class="candidate-badge badge-sub">サブ</span>';
+    // 主職種 (M_スタッフ T列)
+    if (c.mainRoles && c.mainRoles.length > 0) {
+      c.mainRoles.forEach(function(role) {
+        badges += '<span class="candidate-badge" style="background:#e0e7ff;color:#3730a3;">' + role + '</span>';
+      });
+    }
+    // 経験区分 (新人のみ表示)
+    if (c.experienceCategory === '新人1ヶ月') {
+      badges += '<span class="candidate-badge" style="background:#fed7aa;color:#9a3412;">新人1ヶ月</span>';
+    } else if (c.experienceCategory === '新人2ヶ月') {
+      badges += '<span class="candidate-badge" style="background:#fef3c7;color:#92400e;">新人2ヶ月</span>';
+    }
     if (c.isProtected) badges += '<span class="candidate-badge badge-protect">保護</span>';
     if (c.qualification) badges += `<span class="candidate-badge badge-qual">${c.qualification}</span>`;
     if (c.alreadyAssignedToday) badges += '<span class="candidate-badge badge-assigned">⚠同日既配置</span>';
@@ -3084,23 +3199,61 @@ function renderSlotEditor(candidates) {
     const selected = shiftViewState.selectedCandidate === c.staff_id ? 'selected' : '';
     const safeName = (c.name || '').replace(/'/g, "\\'");
     
+    // ★Day 15 P5 Phase D-2: 3条件でクリック不可+グレーアウト
+    //  1) 同日既配置
+    //  2) 許可シフト外 (H9相当): allowedShifts に現在のシフト種別が含まれない
+    //  3) 許可施設外 (H10相当): facilityMatch が 'none'
+    const currentShift = shiftViewState.selectedShiftType || '夜勤B';
+    const isShiftNotAllowed = !(c.allowedShifts && c.allowedShifts.indexOf(currentShift) >= 0);
+    const isFacilityNotAllowed = c.facilityMatch === 'none';
+    const isDisabled = c.alreadyAssignedToday || isShiftNotAllowed || isFacilityNotAllowed;
+    
+    // 不可理由のメッセージ
+    let disabledReasons = [];
+    if (c.alreadyAssignedToday) disabledReasons.push('同日に既に他施設で配置されてます');
+    if (isShiftNotAllowed) disabledReasons.push(currentShift + 'は許可シフトに含まれてません');
+    if (isFacilityNotAllowed) disabledReasons.push('この施設は許可施設(メイン/セカンド/サブ)に含まれてません');
+    const disabledMessage = disabledReasons.length > 0 ? '※' + disabledReasons.join(' / ') : '';
+    
+    // 許可外バッジ追加
+    if (isShiftNotAllowed) badges += '<span class="candidate-badge" style="background:#fee2e2;color:#991b1b;">⚠許可シフト外</span>';
+    if (isFacilityNotAllowed) badges += '<span class="candidate-badge" style="background:#fee2e2;color:#991b1b;">⚠許可施設外</span>';
+    
+    const disabledStyle = isDisabled ? 'opacity: 0.5; cursor: not-allowed; pointer-events: none; background: #f9fafb;' : '';
+    const clickHandler = isDisabled ? '' : `onclick="selectCandidate('${c.staff_id}', '${safeName}')"`;
+    
     return `
       <div class="candidate-item ${selected}" 
            data-staff-id="${c.staff_id}" 
            data-name="${c.name}"
-           onclick="selectCandidate('${c.staff_id}', '${safeName}')">
+           style="${disabledStyle}"
+           ${clickHandler}>
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="font-weight: 600;">${c.name}</div>
           <div style="font-size: 11px; color: #6b7280;">ID:${c.staff_id}</div>
         </div>
         <div style="margin-top: 4px;">${badges}</div>
         ${wishShiftStr ? `<div style="font-size: 11px; color: #6b7280; margin-top: 4px;">${wishShiftStr}</div>` : ''}
+        ${disabledMessage ? '<div style="font-size: 11px; color: #dc2626; margin-top: 4px;">' + disabledMessage + '</div>' : ''}
       </div>
     `;
   }).join('');
   
   html += '</div>';
   document.getElementById('slotEditBody').innerHTML = html;
+}
+
+
+// ★Day 15 P5 Phase D-2: シフト種別変更時にリストを再描画 (グレーアウト/許可バッジを更新)
+function rerenderCandidateList() {
+  if (shiftViewState.candidatesCache) {
+    renderSlotEditor(shiftViewState.candidatesCache);
+    // 検索キーワードが入ってたら再適用
+    const searchInput = document.getElementById('candidateSearch');
+    if (searchInput && searchInput.value) {
+      filterCandidates();
+    }
+  }
 }
 
 

@@ -1133,6 +1133,8 @@ function getCandidateStaffForSlot(adminStaffId, targetYM, dateKey, unitId) {
   
   const reqSheet = ss.getSheetByName('T_希望提出');
   const reqData = reqSheet.getDataRange().getValues();
+  // ★Day 15 P5 確定: その日の全希望を保持 (施設フィルタはフロント側で5段階判定に使う)
+  // wishesForDate[sid] = [ {shift: '夜勤B', facilities: ['練馬','東十条マキシブ']}, ... ]
   const wishesForDate = {};
   for (let i = 1; i < reqData.length; i++) {
     const d = reqData[i][5];
@@ -1141,9 +1143,21 @@ function getCandidateStaffForSlot(adminStaffId, targetYM, dateKey, unitId) {
     if (dKey !== dateKey) continue;
     const ym = normalizeYM(reqData[i][4]);
     if (ym !== targetYM) continue;
+    
+    const wishShift = String(reqData[i][6] || '').trim();
+    const wishMain = String(reqData[i][7] || '').trim();
+    const wishSecond = String(reqData[i][8] || '').trim();
+    const wishSubRaw = String(reqData[i][9] || '').trim();
+    const wishSubs = wishSubRaw ? wishSubRaw.split(',').map(s => s.trim()).filter(s => s) : [];
+    
+    const wishFacilities = [];
+    if (wishMain) wishFacilities.push(wishMain);
+    if (wishSecond) wishFacilities.push(wishSecond);
+    wishSubs.forEach(function(s) { if (wishFacilities.indexOf(s) < 0) wishFacilities.push(s); });
+    
     const sid = String(reqData[i][2]).trim();
     if (!wishesForDate[sid]) wishesForDate[sid] = [];
-    wishesForDate[sid].push(reqData[i][6]);
+    wishesForDate[sid].push({ shift: wishShift, facilities: wishFacilities });
   }
   
   const shiftSheet = ss.getSheetByName('T_シフト確定');
@@ -1177,8 +1191,14 @@ function getCandidateStaffForSlot(adminStaffId, targetYM, dateKey, unitId) {
     const isSubMatch = subs.indexOf(facility) >= 0;
     const facMatch = isMainMatch || isSecondMatch || isSubMatch;
     
-    const hasWish = !!wishesForDate[sid];
+    const wishesArr = wishesForDate[sid] || [];  // [{shift, facilities[]}, ...]
+    const hasWish = wishesArr.length > 0;
     const alreadyAssigned = !!assignedToday[sid];
+    
+    // ★Day 15 P5 Phase A: 主職種(T列19)と経験区分(I列8)を追加
+    const mainRolesRaw = String(row[19] || '').trim();
+    const mainRoles = mainRolesRaw ? mainRolesRaw.split(',').map(s => s.trim()).filter(s => s) : [];
+    const experienceCategory = String(row[8] || '通常').trim() || '通常';
     
     candidates.push({
       staff_id: sid,
@@ -1192,8 +1212,11 @@ function getCandidateStaffForSlot(adminStaffId, targetYM, dateKey, unitId) {
       hireMonths: row[7] || 0,
       facilityMatch: facMatch ? (isMainMatch ? 'main' : isSecondMatch ? 'second' : 'sub') : 'none',
       hasWishForDate: hasWish,
-      wishShifts: wishesForDate[sid] || [],
+      wishes: wishesArr,                        // ★Day 15 P5確定: 全希望 [{shift,facilities[]}]
+      wishShifts: wishesArr.map(function(w){ return w.shift; }),  // 互換用: シフト種別のみ
       alreadyAssignedToday: alreadyAssigned,
+      mainRoles: mainRoles,
+      experienceCategory: experienceCategory,
     });
   }
   
