@@ -650,7 +650,10 @@
 <div id="view-shift" class="hidden" style="padding: 0;">
   <div style="padding: 20px;">
     <button class="back-btn" onclick="showView('dashboard')">← ダッシュボードへ戻る</button>
-    <h2 style="margin-top: 16px;">🌙 夜勤自動割当</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+      <h2 style="margin: 0;">🌙 夜勤自動割当</h2>
+      <button onclick="toggleLegendModal()" style="padding: 6px 12px; background: white; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-size: 13px; color: #374151;">📖 凡例</button>
+    </div>
     
     <!-- コントロール -->
     <div style="display: flex; gap: 12px; align-items: center; margin: 20px 0; flex-wrap: wrap;">
@@ -3241,6 +3244,132 @@ function renderSlotEditor(candidates) {
   
   html += '</div>';
   document.getElementById('slotEditBody').innerHTML = html;
+}
+
+
+// ★Day 15 P5: 凡例モーダル トグル
+function toggleLegendModal() {
+  let modal = document.getElementById('legendModal');
+  if (modal) {
+    // 既に開いてる場合は閉じる
+    modal.remove();
+    return;
+  }
+  
+  modal = document.createElement('div');
+  modal.id = 'legendModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  
+  modal.innerHTML = `
+    <div style="background:white;border-radius:8px;max-width:800px;width:100%;max-height:90vh;overflow-y:auto;padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #e5e7eb;padding-bottom:12px;">
+        <h2 style="margin:0;font-size:18px;">📖 シフト作成画面 凡例</h2>
+        <button onclick="document.getElementById('legendModal').remove()" style="padding:4px 12px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;">閉じる</button>
+      </div>
+      
+      <h3 style="margin-top:0;font-size:14px;color:#374151;">📊 KPIカード</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;width:140px;"><strong>総枠数</strong></td><td style="padding:6px 8px;">配置すべき枠の合計(ユニット数×月日数)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>🔒 固定配置</strong></td><td style="padding:6px 8px;">M_固定配置から事前配置された枠数(社員等の毎月固定)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>⚡ 自動配置</strong></td><td style="padding:6px 8px;">エンジンが希望提出からスコア順に配置した枠数</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>未配置</strong></td><td style="padding:6px 8px;">まだスタッフが入ってない枠数(手動配置の対象)</td></tr>
+        <tr><td style="padding:6px 8px;"><strong>重複</strong></td><td style="padding:6px 8px;">同日に同じスタッフが複数の夜勤に配置されてるケース(0であるべき)</td></tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">🗓️ カレンダーセル</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="padding:8px 12px;background:#dbeafe;border-radius:4px;font-size:12px;">配置済(仮)</div>
+        <div style="padding:8px 12px;background:#dcfce7;border-radius:4px;font-size:12px;">配置済(確定)</div>
+        <div style="padding:8px 12px;background:#fef2f2;border-radius:4px;font-size:12px;">未配置(ー)</div>
+      </div>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:20px;">セルをクリックすると配置候補モーダルが開く。日付の色: 土曜=青、日曜=赤</p>
+      
+      <h3 style="font-size:14px;color:#374151;">🎯 配置候補モーダルのバッジ(5段階希望判定)</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+          <td style="padding:6px 8px;width:80px;"><strong>ランク</strong></td>
+          <td style="padding:6px 8px;width:200px;"><strong>バッジ</strong></td>
+          <td style="padding:6px 8px;"><strong>意味</strong></td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;">A1</td>
+          <td style="padding:6px 8px;"><span class="candidate-badge badge-wish">希望あり</span></td>
+          <td style="padding:6px 8px;">この施設・このシフト種別を希望提出済(最優先)</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;">A2</td>
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#dbeafe;color:#1e40af;">💡他施設で○○希望</span></td>
+          <td style="padding:6px 8px;">他施設で同じシフト種別を希望、施設変更を打診</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;">A3</td>
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#fef3c7;color:#854d0e;">💡他種別希望</span></td>
+          <td style="padding:6px 8px;">この施設で他シフト種別を希望、シフト変更を打診</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;">A4</td>
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#f3f4f6;color:#6b7280;">💡他施設・他種別希望</span></td>
+          <td style="padding:6px 8px;">他施設で他シフト種別を希望、両方変更で打診</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;">B</td>
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#f3f4f6;color:#6b7280;">希望なし</span></td>
+          <td style="padding:6px 8px;">希望未提出(許可シフト/施設は持ってる)、お願いベース</td>
+        </tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">🚫 配置不可バッジ(グレーアウト)</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;width:200px;"><span class="candidate-badge" style="background:#fee2e2;color:#991b1b;">⚠許可シフト外</span></td>
+          <td style="padding:6px 8px;">このシフト種別はマスタの許可シフトに含まれてない</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#fee2e2;color:#991b1b;">⚠許可施設外</span></td>
+          <td style="padding:6px 8px;">この施設はメイン/セカンド/サブのいずれにも登録されてない</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;"><span class="candidate-badge badge-assigned">⚠同日既配置</span></td>
+          <td style="padding:6px 8px;">同日に既に他施設で配置済(削除してから再配置)</td>
+        </tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">🏷️ その他のバッジ</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;width:140px;"><span class="candidate-badge badge-main">メイン</span> <span class="candidate-badge badge-second">セカンド</span> <span class="candidate-badge badge-sub">サブ</span></td>
+          <td style="padding:6px 8px;">スタッフのメイン/セカンド/サブ施設での該当を示す</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#e0e7ff;color:#3730a3;">世話人</span> <span class="candidate-badge" style="background:#e0e7ff;color:#3730a3;">生活支援員</span></td>
+          <td style="padding:6px 8px;">主職種(M_スタッフT列)。複数持つ場合は複数表示。配置換算時間集計に使用</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span class="candidate-badge" style="background:#fed7aa;color:#9a3412;">新人1ヶ月</span> <span class="candidate-badge" style="background:#fef3c7;color:#92400e;">新人2ヶ月</span></td>
+          <td style="padding:6px 8px;">経験区分(M_スタッフI列)。通常は表示なし、新人のみハイライト</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span class="candidate-badge badge-protect">保護</span></td>
+          <td style="padding:6px 8px;">M_スタッフO列の保護フラグ。月最低N回の配置を保証する対象</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 8px;"><span class="candidate-badge badge-qual">看護師</span></td>
+          <td style="padding:6px 8px;">国家資格保有者</td>
+        </tr>
+      </table>
+      
+      <h3 style="font-size:14px;color:#374151;">⏰ シフト種別</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;width:100px;"><strong>夜勤A</strong></td><td style="padding:6px 8px;">20:00 - 翌05:00(朝5時で終了、朝サポートなし)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤B</strong></td><td style="padding:6px 8px;">22:00 - 翌07:00(朝7時で終了)</td></tr>
+        <tr><td style="padding:6px 8px;"><strong>夜勤C</strong></td><td style="padding:6px 8px;">22:00 - 翌08:00(朝8時で終了、朝の忙しい時間をカバー)</td></tr>
+      </table>
+      
+      <p style="font-size:11px;color:#6b7280;margin:0;border-top:1px solid #e5e7eb;padding-top:12px;">詳細仕様: <a href="https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458" target="_blank">配置経路の制約ルール統合仕様 (Notion)</a></p>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 
