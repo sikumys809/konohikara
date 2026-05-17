@@ -1006,11 +1006,24 @@ function getShiftCalendar(adminStaffId, targetYM) {
   const shiftSheet = ss.getSheetByName('T_シフト確定');
   const shiftData = shiftSheet.getDataRange().getValues();
   const shifts = {};
+  
+  // ★Day 15: 夜勤画面の契約 - 夜勤レコードのみ集計 (日勤の固定配置は別画面の責務)
+  // 詳細: https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458
+  const NIGHT_SHIFTS_FOR_CALENDAR = ['夜勤A', '夜勤B', '夜勤C'];
+  
   for (let i = 1; i < shiftData.length; i++) {
     const row = shiftData[i];
     const date = row[1];
     if (!(date instanceof Date)) continue;
     if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
+    
+    // ★Day 15: 夜勤シフトのみに絞る
+    const shiftType = String(row[8] || '');
+    if (NIGHT_SHIFTS_FOR_CALENDAR.indexOf(shiftType) === -1) continue;
+    
+    // ★Day 15: staff_id 空のレコードは集計対象外
+    const staffId = row[6] ? String(row[6]).trim() : '';
+    if (!staffId) continue;
     
     const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
     const key = dateKey + '_' + row[2];
@@ -1018,9 +1031,9 @@ function getShiftCalendar(adminStaffId, targetYM) {
       shift_id: row[0],
       dateKey: dateKey,
       unit_id: row[2],
-      staff_id: row[6] ? String(row[6]).trim() : '',
+      staff_id: staffId,
       staff_name: row[7] || '',
-      shift_type: row[8] || '',
+      shift_type: shiftType,
       status: row[12] || '仮',
     };
   }
