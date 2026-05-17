@@ -679,6 +679,8 @@
     <div id="engineStatus" style="margin-bottom: 20px;"></div>
     <!-- ★Day 15: 未配置一覧パネル -->
     <div id="unassignedPanel" style="margin-bottom: 20px; display: none;"></div>
+    <!-- ★Day 15 機能5: スタッフ別月内サマリーパネル -->
+    <div id="staffSummaryPanel" style="margin-bottom: 20px; display: none;"></div>
     
     <!-- カレンダー -->
     <div id="shiftCalendarWrapper" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;">
@@ -2722,6 +2724,7 @@ function loadShiftCalendar() {
     renderShiftSummary(res);
     renderShiftCalendar(res);
     renderUnassignedPanel(res);  // ★Day 15追加
+    loadStaffSummary();  // ★Day 15 機能5追加
   }).getShiftCalendar(currentAdmin.staff_id, ym);
   
   // ロック状態取得 + UIガード
@@ -2895,6 +2898,105 @@ function renderUnassignedPanel(data) {
 function toggleUnassignedPanel() {
   const body = document.getElementById('unassignedPanelBody');
   const icon = document.getElementById('unassignedToggleIcon');
+  if (!body) return;
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    if (icon) icon.textContent = '▼';
+  } else {
+    body.style.display = 'none';
+    if (icon) icon.textContent = '▶';
+  }
+}
+
+
+// ★Day 15 機能5: スタッフ別月内サマリー
+function loadStaffSummary() {
+  if (!shiftViewState.targetYM) return;
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) return;
+    renderStaffSummary(res);
+  }).getStaffMonthlySummary(currentAdmin.staff_id, shiftViewState.targetYM);
+}
+
+
+function renderStaffSummary(data) {
+  const panel = document.getElementById('staffSummaryPanel');
+  if (!panel || !data.staffList || data.staffList.length === 0) return;
+  
+  const list = data.staffList;
+  // 未配置希望>0 の人数(対応必要)
+  const needAttention = list.filter(function(s){ return s.wishUnassigned > 0; }).length;
+  
+  let html = `
+    <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+      <div style="padding: 12px 16px; background: #f9fafb; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleStaffSummary()">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">👥</span>
+          <strong>スタッフ別 月内サマリー</strong>
+          <span style="font-size: 12px; color: #6b7280;">(${list.length}名、対応必要 ${needAttention}名)</span>
+          <span style="font-size: 11px; color: #6b7280;">※希望出してて未配置の人が上、その後配置数の多い順</span>
+        </div>
+        <span id="staffSummaryToggleIcon" style="color: #6b7280;">▶</span>
+      </div>
+      <div id="staffSummaryBody" style="border-top: 1px solid #e5e7eb; display: none;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+          <thead style="background: #f9fafb; position: sticky; top: 0;">
+            <tr>
+              <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">氏名</th>
+              <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e5e7eb;">配置/希望</th>
+              <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e5e7eb;">未配置希望</th>
+              <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">内訳(夜勤A/B/C)</th>
+              <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">配置先</th>
+            </tr>
+          </thead>
+          <tbody>
+  `;
+  
+  for (const s of list) {
+    const expBadge = s.experienceCategory === '新人1ヶ月' ? '<span style="background:#fed7aa;color:#9a3412;padding:1px 4px;border-radius:3px;font-size:10px;margin-left:4px;">新人1ヶ月</span>'
+      : s.experienceCategory === '新人2ヶ月' ? '<span style="background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:3px;font-size:10px;margin-left:4px;">新人2ヶ月</span>'
+      : '';
+    
+    const unassignedColor = s.wishUnassigned > 0 ? '#dc2626' : '#6b7280';
+    const facList = Object.keys(s.placedByFacility).map(function(f){
+      return f + '(' + s.placedByFacility[f] + ')';
+    }).join(', ') || '-';
+    
+    html += `
+      <tr style="border-bottom: 1px solid #f3f4f6;">
+        <td style="padding: 6px 8px;">
+          <strong>${s.name}</strong>${expBadge}
+          <div style="font-size: 10px; color: #9ca3af;">${s.mainFac || '-'}</div>
+        </td>
+        <td style="padding: 6px 8px; text-align: center;">
+          <strong>${s.placedCount}</strong> / ${s.wishCount}
+        </td>
+        <td style="padding: 6px 8px; text-align: center; color: ${unassignedColor}; font-weight: ${s.wishUnassigned > 0 ? '700' : '400'};">
+          ${s.wishUnassigned}
+        </td>
+        <td style="padding: 6px 8px;">
+          A:${s.placedByShift['夜勤A']} / B:${s.placedByShift['夜勤B']} / C:${s.placedByShift['夜勤C']}
+        </td>
+        <td style="padding: 6px 8px; color: #6b7280;">${facList}</td>
+      </tr>
+    `;
+  }
+  
+  html += `
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+}
+
+
+function toggleStaffSummary() {
+  const body = document.getElementById('staffSummaryBody');
+  const icon = document.getElementById('staffSummaryToggleIcon');
   if (!body) return;
   if (body.style.display === 'none') {
     body.style.display = 'block';

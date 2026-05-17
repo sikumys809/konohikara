@@ -1110,6 +1110,120 @@ function getShiftCalendar(adminStaffId, targetYM) {
 }
 
 
+// ★Day 15 機能5: スタッフ別月内サマリー (希望未配置の多い順)
+// 用途: 「お願いしたい人」「対応必要な人」を可視化
+function getStaffMonthlySummary(adminStaffId, targetYM) {
+  const admin = checkAdminAuth(adminStaffId, null);
+  if (!admin.authorized) {
+    return { success: false, message: admin.message };
+  }
+  
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const [year, month] = targetYM.split('-').map(Number);
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  
+  // M_スタッフ読込
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  const staffMap = {};
+  for (let i = 1; i < staffData.length; i++) {
+    const row = staffData[i];
+    if (!row[0]) continue;
+    if (String(row[16]).toUpperCase() === 'TRUE') continue;  // 退職者除外
+    
+    const allowedRaw = String(row[13] || '').trim();
+    const allowed = allowedRaw ? allowedRaw.split(',').map(s => s.trim()) : [];
+    // 夜勤シフト許可がない人は対象外
+    const hasNightAllowed = allowed.some(s => NIGHT_SHIFTS.indexOf(s) >= 0);
+    if (!hasNightAllowed) continue;
+    
+    const sid = String(row[0]).trim();
+    staffMap[sid] = {
+      staff_id: sid,
+      name: row[1],
+      mainFac: String(row[9] || '').trim(),
+      experienceCategory: String(row[8] || '通常').trim() || '通常',
+      placedCount: 0,
+      placedByShift: { '夜勤A': 0, '夜勤B': 0, '夜勤C': 0 },
+      placedByFacility: {},
+      wishCount: 0,
+      wishUnassigned: 0,
+    };
+  }
+  
+  // T_シフト確定で配置数集計 (対象月の夜勤のみ)
+  const shiftSheet = ss.getSheetByName('T_シフト確定');
+  const shiftData = shiftSheet.getDataRange().getValues();
+  const placedKeys = {};  // staff_id + dateKey + shift → true (希望と突合用)
+  for (let i = 1; i < shiftData.length; i++) {
+    const row = shiftData[i];
+    const date = row[1];
+    if (!(date instanceof Date)) continue;
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
+    
+    const shiftType = String(row[8] || '');
+    if (NIGHT_SHIFTS.indexOf(shiftType) === -1) continue;
+    
+    const sid = String(row[6] || '').trim();
+    if (!sid) continue;
+    if (!staffMap[sid]) continue;
+    
+    staffMap[sid].placedCount++;
+    if (staffMap[sid].placedByShift[shiftType] !== undefined) {
+      staffMap[sid].placedByShift[shiftType]++;
+    }
+    const fac = String(row[4] || '');
+    if (fac) {
+      staffMap[sid].placedByFacility[fac] = (staffMap[sid].placedByFacility[fac] || 0) + 1;
+    }
+    
+    const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
+    placedKeys[sid + '_' + dateKey + '_' + shiftType] = true;
+  }
+  
+  // T_希望提出で希望集計 (対象月の夜勤のみ)
+  const reqSheet = ss.getSheetByName('T_希望提出');
+  const reqData = reqSheet.getDataRange().getValues();
+  for (let i = 1; i < reqData.length; i++) {
+    const row = reqData[i];
+    const ym = normalizeYM(row[4]);
+    if (ym !== targetYM) continue;
+    
+    const shiftType = String(row[6] || '');
+    if (NIGHT_SHIFTS.indexOf(shiftType) === -1) continue;
+    
+    const sid = String(row[2]).trim();
+    if (!staffMap[sid]) continue;
+    
+    staffMap[sid].wishCount++;
+    
+    // 希望日でその種別が配置されてるか
+    const date = row[5];
+    if (date instanceof Date) {
+      const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
+      if (!placedKeys[sid + '_' + dateKey + '_' + shiftType]) {
+        staffMap[sid].wishUnassigned++;
+      }
+    }
+  }
+  
+  // 配列化 + ソート (未配置希望数 → 配置数 → 氏名)
+  const list = Object.values(staffMap);
+  list.sort(function(a, b) {
+    if (a.wishUnassigned !== b.wishUnassigned) return b.wishUnassigned - a.wishUnassigned;
+    if (a.placedCount !== b.placedCount) return b.placedCount - a.placedCount;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  
+  return {
+    success: true,
+    targetYM: targetYM,
+    staffList: list,
+    totalStaff: list.length,
+  };
+}
+
+
 function getCandidateStaffForSlot(adminStaffId, targetYM, dateKey, unitId) {
   const admin = checkAdminAuth(adminStaffId, 'シフト作成');
   if (!admin.authorized) {
