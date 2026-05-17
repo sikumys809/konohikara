@@ -228,3 +228,22 @@ function getDayShiftFulfillmentSummary(adminStaffId, yearMonth) {
     throw e;  // withFailureHandler で拾う
   }
 }
+
+// ============ ★Day14 P4: runFinalValidation Webラッパー ============
+// フロントから呼び出して最終検証結果を返す
+function runFinalValidationFromAdmin(adminStaffId, yearMonth) {
+  try {
+    // 権限チェック
+    const permCheck = _checkDayShiftExecPermission(adminStaffId);
+    if (!permCheck.ok) {
+      return { success: false, message: permCheck.message };
+    }
+    
+    // common_constraints.js の runFinalValidation を呼び出し
+    const result = runFinalValidation(yearMonth);
+    return result;
+  } catch (e) {
+    Logger.log('runFinalValidationFromAdmin エラー: ' + e.message);
+    return { success: false, message: e.message };
+  }
+}
