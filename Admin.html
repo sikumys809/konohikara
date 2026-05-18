@@ -972,9 +972,17 @@
       </div>
     </div>
     
-    <!-- 最終チェック結果パネル -->
-    <div id="finalCheckResultPanel" style="margin: 16px 0; padding: 0; display: none;">
-      <div style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #3b82f6; border-radius: 12px; padding: 20px;">
+    <!-- ★Day16 P2: STEP 1 - 確定フロー -->
+    <div style="margin-bottom: 24px;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-left: 4px;">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #2563eb; color: white; border-radius: 50%; font-size: 14px; font-weight: bold;">1</span>
+        <h3 style="margin: 0; font-size: 16px; color: #1e3a8a;">確定フロー</h3>
+        <span style="font-size: 12px; color: #6b7280;">最終チェックを実行し、違反0件であれば「全て確定する」を押してください</span>
+      </div>
+      
+      <!-- 最終チェック結果パネル -->
+      <div id="finalCheckResultPanel" style="padding: 0; display: none;">
+        <div style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #3b82f6; border-radius: 12px; padding: 20px;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
           <span style="font-size: 24px;">📊</span>
           <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">最終チェック結果</h3>
@@ -997,15 +1005,57 @@
         </div>
         
         <div id="finalCheckVerdict" style="padding: 12px; background: white; border-radius: 8px; font-weight: bold; text-align: center;"></div>
-        <div id="finalCheckViolationList" style="margin-top: 12px; max-height: 300px; overflow-y: auto; display: none;"></div>
+          <div id="finalCheckViolationList" style="margin-top: 12px; max-height: 300px; overflow-y: auto; display: none;"></div>
+        </div>
       </div>
     </div>
+    <!-- /STEP 1 -->
     
     <!-- ロック状態バナー -->
     <div id="lockStatusBanner" style="margin-bottom: 16px; display: none;"></div>
     
-    <!-- PDF出力セクション -->
-    <div id="pdfSection" style="margin-bottom: 20px; padding: 16px; background: #f3e8ff; border-radius: 8px; display: none;">
+
+    
+    <!-- ★Day16 P2: STEP 2 - シフトプレビュー -->
+    <div style="margin-bottom: 24px;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-left: 4px;">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #059669; color: white; border-radius: 50%; font-size: 14px; font-weight: bold;">2</span>
+        <h3 style="margin: 0; font-size: 16px; color: #065f46;">シフトプレビュー</h3>
+        <span style="font-size: 12px; color: #6b7280;">現在の配置状況。クリックで折りたたみ可能</span>
+      </div>
+      
+      <!-- サマリー -->
+      <div id="approveSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+      <!-- ★ Phase 5.6: 警告サマリーパネル -->
+      <div id="approveWarningPanel" style="margin-bottom: 16px;"></div>
+      
+      <!-- 処理状態 -->
+      <div id="approveStatus" style="margin-bottom: 16px;"></div>
+      
+      <!-- カレンダー (折りたたみ式) -->
+      <details id="approvePreviewDetails" style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+        <summary style="padding: 12px 16px; cursor: pointer; user-select: none; font-weight: 600; color: #374151; background: #f9fafb; list-style: none; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12px; color: #6b7280;">▶</span>
+          <span>📋 詳細シフト表を表示</span>
+          <span style="margin-left: auto; font-size: 11px; color: #9ca3af; font-weight: normal;">夜勤 + 日勤すべてのシフト一覧</span>
+        </summary>
+        <div id="approveCalendarWrapper" style="overflow-x: auto; border-top: 1px solid #e5e7eb;">
+          <div id="approveCalendar" style="padding: 20px; color: #6b7280;">対象月を選択してください</div>
+        </div>
+      </details>
+    </div>
+    <!-- /STEP 2 -->
+    
+    <!-- ★Day16 P2: STEP 3 - 出力 -->
+    <div id="step3Wrapper" style="margin-bottom: 24px; display: none;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-left: 4px;">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #7c3aed; color: white; border-radius: 50%; font-size: 14px; font-weight: bold;">3</span>
+        <h3 style="margin: 0; font-size: 16px; color: #5b21b6;">出力</h3>
+        <span style="font-size: 12px; color: #6b7280;">確定後のシフトを印刷用PDFで出力します</span>
+      </div>
+      
+      <!-- PDF出力セクション -->
+      <div id="pdfSection" style="margin-bottom: 12px; padding: 16px; background: #f3e8ff; border-radius: 8px; display: none;">
       <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #4a148c;">📄 PDF出力 (印刷用シフト表)</h3>
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <select id="pdfFacilitySelect" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; min-width: 200px;">
@@ -1021,8 +1071,8 @@
       </div>
     </div>
 
-    <!-- 日勤PDF出力セクション -->
-    <div id="dsPdfSection" style="margin-bottom: 20px; padding: 16px; background: #fef3c7; border-radius: 8px; display: none;">
+      <!-- 日勤PDF出力セクション -->
+      <div id="dsPdfSection" style="margin-bottom: 12px; padding: 16px; background: #fef3c7; border-radius: 8px; display: none;">
       <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #92400e;">☀️ 日勤PDF出力 (印刷用シフト表)</h3>
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <select id="dsPdfJigyoshoSelect" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; min-width: 220px;">
@@ -1034,22 +1084,11 @@
         <button onclick="openAllDsPdf()" style="padding: 8px 16px; background: #d97706; color: white; border: none; border-radius: 6px; cursor: pointer;">
           📚 全事業所まとめて表示
         </button>
-        <span style="font-size: 11px; color: #6b7280;">夜勤B/Cの朝部分も繰越として表示</span>
+          <span style="font-size: 11px; color: #6b7280;">夜勤B/Cの朝部分も繰越として表示</span>
+        </div>
       </div>
     </div>
-
-    <!-- サマリー -->
-    <div id="approveSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
-    <!-- ★ Phase 5.6: 警告サマリーパネル -->
-    <div id="approveWarningPanel" style="margin-bottom: 16px;"></div>
-    
-    <!-- 処理状態 -->
-    <div id="approveStatus" style="margin-bottom: 20px;"></div>
-    
-    <!-- カレンダー -->
-    <div id="approveCalendarWrapper" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: white;">
-      <div id="approveCalendar" style="padding: 20px; color: #6b7280;">対象月を選択してください</div>
-    </div>
+    <!-- /STEP 3 -->
   </div>
 </div>
 <!-- ========== 日勤管理ビュー (view-dayshift) ========== -->
@@ -3836,6 +3875,7 @@ function loadApprovalCalendar() {
     document.getElementById('approveCalendar').innerHTML = '対象月を選択してください';
     document.getElementById('lockStatusBanner').style.display = 'none';
     document.getElementById('pdfSection').style.display = 'none';
+    document.getElementById('step3Wrapper').style.display = 'none';
     return;
   }
   approvalViewState.targetYM = ym;
@@ -3869,6 +3909,7 @@ function loadApprovalCalendar() {
     sel.innerHTML = '<option value="">施設を選択...</option>' +
       facRes.facilities.map(f => `<option value="${escapeAttr(f)}">${escapeHtml(f)}</option>`).join('');
     document.getElementById('pdfSection').style.display = facRes.facilities.length > 0 ? 'block' : 'none';
+      if (facRes.facilities.length > 0) document.getElementById('step3Wrapper').style.display = 'block';
   }).getFacilitiesWithShifts(currentAdmin.staff_id, ym);
 
   loadDsPdfSection();
@@ -6139,6 +6180,7 @@ function loadDsPdfSection() {
     sel.innerHTML = '<option value="">事業所を選択...</option>' +
       res.jigyoshoList.map(j => `<option value="${escapeAttr(j)}">${escapeHtml(j)}</option>`).join('');
     document.getElementById('dsPdfSection').style.display = res.jigyoshoList.length > 0 ? 'block' : 'none';
+      if (res.jigyoshoList.length > 0) document.getElementById('step3Wrapper').style.display = 'block';
   }).getJigyoshoListForPDF(currentAdmin.staff_id, approvalViewState.targetYM);
 }
 
