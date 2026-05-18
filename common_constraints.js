@@ -1042,6 +1042,24 @@ function runFinalValidation(targetYM) {
         workHours: p.hours,
       });
     });
+
+    // ★Day16 H10 E-st仮想キー対応:
+    // M_ユニットD列に "ルーデンス上板橋E-st（板橋北区）" "（板橋北区セカンド）" の2行があるが、
+    // スタッフL列には仮想キー "ルーデンス上板橋E-st" だけが入っているケースがある。
+    // 仮想キーで引いても両事業所がヒットするようマップに登録する。
+    if (typeof ENGINE_COMMON !== 'undefined' && ENGINE_COMMON.EST_VIRTUAL_KEY) {
+      const _estVK = ENGINE_COMMON.EST_VIRTUAL_KEY;
+      const _estReals = ENGINE_COMMON.EST_REAL_FACILITIES || [];
+      if (!facilityToJigyoshos[_estVK]) facilityToJigyoshos[_estVK] = [];
+      _estReals.forEach(function(realFac) {
+        (facilityToJigyoshos[realFac] || []).forEach(function(jig) {
+      if (facilityToJigyoshos[_estVK].indexOf(jig) === -1) {
+            facilityToJigyoshos[_estVK].push(jig);
+          }
+        });
+      });
+        }
+
     
     // 各配置に対して runAllChecks
     // ※ 既存配置を「ある状態」として検証するため、addedHours=0, 自身を含む allPlacements で判定
