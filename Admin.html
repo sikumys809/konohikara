@@ -1806,12 +1806,12 @@ function renderEditForm() {
     .concat(facilities.map(f => `<option value="${escapeAttr(f)}" ${f === s.secondFacility ? 'selected' : ''}>${escapeHtml(f)}</option>`)).join('');
   
   const allShifts = ['夜勤A', '夜勤B', '夜勤C', '早出8h', '早出4h', '遅出8h', '遅出4h'];
-  const currentShifts = s.allowedShifts ? s.allowedShifts.split(',').map(x => x.trim()) : [];
+  const currentShifts = s.allowedShifts ? (Array.isArray(s.allowedShifts) ? s.allowedShifts : String(s.allowedShifts).split(',').map(x => x.trim())) : [];
   
-  const currentRoles = s.role ? s.role.split(',').map(x => x.trim()) : [];
-  const currentMainRoles = s.mainRoles ? s.mainRoles.split(',').map(x => x.trim()).filter(Boolean) : [];
+  const currentRoles = s.role ? (Array.isArray(s.role) ? s.role : String(s.role).split(',').map(x => x.trim())) : [];
+  const currentMainRoles = s.mainRoles ? (Array.isArray(s.mainRoles) ? s.mainRoles : String(s.mainRoles).split(',').map(x => x.trim()).filter(Boolean)) : [];
   
-  const currentSubs = s.subFacilities ? s.subFacilities.split(',').map(f => f.trim()).filter(Boolean) : [];
+  const currentSubs = s.subFacilities ? (Array.isArray(s.subFacilities) ? s.subFacilities : String(s.subFacilities).split(',').map(f => f.trim()).filter(Boolean)) : [];
   
   const retiredWarn = s.isRetired ? '<div class="retired-warning">⚠️ このスタッフは退職済みです</div>' : '';
   
