@@ -1693,7 +1693,29 @@ function getShiftsForApproval(adminStaffId, targetYM) {
         shift_type: shiftType,
         status: status,
         updated: updatedStr,
+        isFromNight: false,
+        dayHours: parseFloat(row[17]) || 0,
       });
+    } else if (NIGHT_SHIFT_SET.has(shiftType)) {
+      // ★Day16: 夜勤の日勤帯貢献 (夜勤B/Cの朝5-7h) も日勤カレンダーに含める
+      const dayHours = parseFloat(row[17]) || 0;
+      if (dayHours > 0) {
+        const jigyosho = String(row[3] || '').trim();
+        const facility = String(row[4] || '').trim();
+        const key = jigyosho + '||' + facility + '||' + dateKey;
+        if (!dayShifts[key]) dayShifts[key] = [];
+        dayShifts[key].push({
+          shift_id: row[0],
+          dateKey: dateKey,
+          staff_id: row[6] ? String(row[6]).trim() : '',
+          staff_name: row[7] || '',
+          shift_type: shiftType,
+          status: status,
+          updated: updatedStr,
+          isFromNight: true,
+          dayHours: dayHours,
+        });
+      }
     }
   }
   

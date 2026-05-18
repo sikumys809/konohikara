@@ -4358,7 +4358,7 @@ function _convertApprovalCellToV2(cell) {
       staff_name: p.staff_name,
       shiftType: p.shift_type || '',
       shift_type: p.shift_type || '',
-      isFromNight: false,         // 確定画面は夜勤加算情報なし
+      isFromNight: p.isFromNight === true,  // ★Day16: 夜勤B/Cの日勤帯貢献を🌙バッジで描画
       isKanrisha: false,          // 同じく管理者情報なし
       assignedRole: p.assignedRole || '',
       status: p.status || '',
