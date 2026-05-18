@@ -2122,6 +2122,16 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
     return { success: false, message: '施設「' + facility + '」のユニットが見つかりません' };
   }
   
+  // ★Day16: 夜勤PDFも新人バッジ用にスタッフ区分マップを構築
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  const staffKubunMap = {};
+  for (let i = 1; i < staffData.length; i++) {
+    const sid = String(staffData[i][0]);
+    const kubun = String(staffData[i][8] || '').trim();
+    staffKubunMap[sid] = kubun;
+  }
+
   const shiftSheet = ss.getSheetByName('T_シフト確定');
   const shiftData = shiftSheet.getDataRange().getValues();
   const shifts = {};
@@ -2144,12 +2154,18 @@ function getShiftsForPDF(adminStaffId, targetYM, facility) {
       ? Utilities.formatDate(endVal, 'Asia/Tokyo', 'HH:mm')
       : String(endVal || '');
     
+    // ★Day16: スタッフ区分から新人バッジ判定
+    const sid = String(row[6] || '');
+    const kubun = staffKubunMap[sid] || '';
+    
     shifts[key] = {
       staff_name: String(row[7] || ''),
       shift_type: String(row[8] || ''),
       start: startStr,
       end: endStr,
       status: String(row[12] || '仮'),
+      isNewbie1: kubun === '新人1ヶ月',
+      isNewbie2: kubun === '新人2ヶ月',
     };
   }
   
@@ -2289,15 +2305,15 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // M_スタッフから職種マップ
+    // ★Day16: M_スタッフからスタッフ区分マップ (新人バッジ用)
     const staffSheet = ss.getSheetByName('M_スタッフ');
     const staffData = staffSheet.getDataRange().getValues();
-    const staffRoleMap = {};
+    const staffKubunMap = {};
     for (let i = 1; i < staffData.length; i++) {
       const sid = String(staffData[i][0]);
-      // T列(index 19)が主職種
-      const mainRoles = String(staffData[i][19] || '').trim();
-      staffRoleMap[sid] = mainRoles;
+      // I列(index 8)がスタッフ区分: 通常/新人1ヶ月/新人2ヶ月
+      const kubun = String(staffData[i][8] || '').trim();
+      staffKubunMap[sid] = kubun;
     }
 
     // M_ユニットから事業所→施設マップ
@@ -2334,6 +2350,8 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
       const shiftType = String(row[8] || '').trim();
       const start = parseTimeToHHMM(row[9]);
       const end = parseTimeToHHMM(row[10]);
+      // ★Day16: T_シフト確定 19列目(index 18)が割当役割 (assignedRole)
+      const assignedRole = String(row[18] || '').trim();
 
       if (!facilities.includes(facility)) continue;
       if (!staffId || !staffName) continue;
@@ -2343,8 +2361,13 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
         : String(dateVal).substring(0, 10);
       if (!dateKey.startsWith(targetYM)) continue;
 
-      const role = staffRoleMap[staffId] || '';
+      // ★Day16: 職種は実際に割り振られた assignedRole を優先 (主職種マスタは使わない)
+      const role = assignedRole;
+      const kubun = staffKubunMap[staffId] || '';
+      const isNewbie1 = kubun === '新人1ヶ月';
+      const isNewbie2 = kubun === '新人2ヶ月';
       const isDayShift = shiftType.indexOf('早出') !== -1 || shiftType.indexOf('遅出') !== -1;
+      const isNightA = shiftType === '夜勤A';
       const isNightBC = shiftType === '夜勤B' || shiftType === '夜勤C';
 
       if (isDayShift) {
@@ -2356,6 +2379,21 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
           start: start,
           end: end,
           isNightCarryover: false,
+          isNewbie1: isNewbie1,
+          isNewbie2: isNewbie2,
+        });
+      } else if (isNightA) {
+        // ★Day16: 夜勤A (20:00-翌5:00) → 同日 20:00-22:00 の2h を日勤帯に表示
+        if (!placements[facility][dateKey]) placements[facility][dateKey] = [];
+        placements[facility][dateKey].push({
+          name: staffName,
+          role: role,
+          shiftType: '(夜勤A繰入)',
+          start: '20:00',
+          end: '22:00',
+          isNightCarryover: true,
+          isNewbie1: isNewbie1,
+          isNewbie2: isNewbie2,
         });
       } else if (isNightBC) {
         // 翌日の朝勤務として登録
@@ -2376,6 +2414,8 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
           start: carryoverStart,
           end: carryoverEnd,
           isNightCarryover: true,
+          isNewbie1: isNewbie1,
+          isNewbie2: isNewbie2,
         });
       }
     }
@@ -3228,4 +3268,45 @@ function debug_count_dayshifts_in_shift_sheet() {
   Logger.log('=== 2026-06 月 ===');
   Logger.log('日勤 2026-06: ' + day202606);
   Logger.log('夜勤 2026-06: ' + night202606);
+}
+
+
+// ★Day16 debug: T_シフト確定 のassignedRole(19列目)サンプル確認用
+function _peekAssignedRole() {
+  const s = SpreadsheetApp.getActive().getSheetByName('T_シフト確定');
+  const lastRow = s.getLastRow();
+  if (lastRow < 2) { Logger.log('empty'); return; }
+  const v = s.getRange(2, 1, Math.min(20, lastRow - 1), 19).getValues();
+  Logger.log('=== 先頭20行 ===');
+  v.forEach(r => Logger.log(r[0] + ' | ' + r[7] + ' | ' + r[8] + ' | assignedRole=[' + r[18] + ']'));
+  
+  // 固定配置(FIXED_)のサンプル
+  Logger.log('=== FIXED_ サンプル ===');
+  const all = s.getRange(2, 1, lastRow - 1, 19).getValues();
+  let fixedCount = 0;
+  let fixedWithRole = 0;
+  for (const r of all) {
+    if (String(r[0]).indexOf('FIXED_') === 0) {
+      fixedCount++;
+      if (r[18]) fixedWithRole++;
+      if (fixedCount <= 5) {
+        Logger.log(r[0] + ' | ' + r[7] + ' | ' + r[8] + ' | assignedRole=[' + r[18] + ']');
+      }
+    }
+  }
+  Logger.log('FIXED total=' + fixedCount + ', with assignedRole=' + fixedWithRole);
+  
+  // DSE-V2_ のサンプル
+  Logger.log('=== DSE-V2 サンプル ===');
+  let dseCount = 0, dseWithRole = 0;
+  for (const r of all) {
+    if (String(r[0]).indexOf('DSE-V2') === 0) {
+      dseCount++;
+      if (r[18]) dseWithRole++;
+      if (dseCount <= 5) {
+        Logger.log(r[0] + ' | ' + r[7] + ' | ' + r[8] + ' | assignedRole=[' + r[18] + ']');
+      }
+    }
+  }
+  Logger.log('DSE-V2 total=' + dseCount + ', with assignedRole=' + dseWithRole);
 }
