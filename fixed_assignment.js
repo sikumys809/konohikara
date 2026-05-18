@@ -144,9 +144,191 @@ function addFixedAssignment(params) {
     now
   ];
   
+  // ★Day15 P1-P4: H1-H14 違反チェック (登録前)
+  // チェック対象月の決定:
+  //   日付指定 → params.target_ym
+  //   曜日指定 → params.target_ym があればそれ、無ければ次月
+  let _checkYM = params.target_ym;
+  if (!_checkYM) {
+    const _now = new Date();
+    _now.setMonth(_now.getMonth() + 1);
+    _checkYM = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0');
+  }
+  
+  try {
+    const _violations = _validateFixedAssignmentH(params, _checkYM);
+    if (_violations.length > 0) {
+      // 違反あり: 登録拒否
+      const _msgs = _violations.slice(0, 5).map(function(v) {
+        return '[' + v.ruleId + '] ' + v.date + ': ' + v.message;
+      }).join('\n');
+      const _suffix = _violations.length > 5 ? '\n他' + (_violations.length - 5) + '件' : '';
+      return {
+        success: false,
+        message: 'H制約違反のため登録できません (' + _violations.length + '件):\n' + _msgs + _suffix,
+        violations: _violations
+      };
+    }
+  } catch (e) {
+    Logger.log('固定配置H違反チェックエラー: ' + e.message);
+    // チェック自体がエラーの場合は登録を続行 (フェイルセーフ)
+  }
+  
   sheet.appendRow(newRow);
   Logger.log('固定配置追加: ' + fixedId + ' / staff=' + params.staff_id);
   return { success: true, fixed_id: fixedId };
+}
+
+
+// ★Day15 P1-P4: 固定配置の H1-H14 違反検証ヘルパー
+// 戻り値: 違反一覧 [{ ruleId, date, message }, ...]
+function _validateFixedAssignmentH(params, targetYM) {
+  const violations = [];
+  
+  // 1. 展開日付の生成
+  const [yearStr, monthStr] = targetYM.split('-');
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  
+  const expandedDates = [];
+  if (params.type === FIXED_ASSIGN_TYPE.DATE) {
+    // 日付指定: "1,5,15" → [1, 5, 15]
+    const dayNums = String(params.dates_or_weekdays).split(',').map(function(s) { return parseInt(s.trim(), 10); }).filter(function(n) { return !isNaN(n) && n >= 1 && n <= daysInMonth; });
+    dayNums.forEach(function(d) {
+      expandedDates.push(targetYM + '-' + String(d).padStart(2, '0'));
+    });
+  } else if (params.type === FIXED_ASSIGN_TYPE.WEEKDAY) {
+    // 曜日指定: "月,水" → 該当月の月曜・水曜全部
+    const wdMap = { '日': 0, '月': 1, '火': 2, '水': 3, '木': 4, '金': 5, '土': 6 };
+    const targetWds = String(params.dates_or_weekdays).split(',').map(function(s) { return wdMap[s.trim()]; }).filter(function(w) { return w !== undefined; });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(year, month - 1, d);
+      if (targetWds.indexOf(dt.getDay()) !== -1) {
+        expandedDates.push(targetYM + '-' + String(d).padStart(2, '0'));
+      }
+    }
+  }
+  
+  if (expandedDates.length === 0) return violations;
+  
+  // 2. M_スタッフ 読込 (staff オブジェクト構築)
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const staffData = staffSheet.getDataRange().getValues();
+  let staffForCheck = null;
+  const sid = String(params.staff_id).trim();
+  for (let i = 1; i < staffData.length; i++) {
+    if (String(staffData[i][0]).trim() === sid) {
+      const _subRaw = String(staffData[i][11] || '').trim();
+      const _allowedRaw = String(staffData[i][13] || '').trim();
+      staffForCheck = {
+        staff_id: sid,
+        name: staffData[i][1],
+        mainFac: String(staffData[i][9] || '').trim(),
+        secondFac: String(staffData[i][10] || '').trim(),
+        subFacs: _subRaw ? _subRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+        allowedShifts: _allowedRaw ? _allowedRaw.split(',').map(function(s) { return s.trim(); }) : [],
+        kubun: String(staffData[i][8] || '').trim(),
+      };
+      break;
+    }
+  }
+  if (!staffForCheck) {
+    violations.push({ ruleId: 'STAFF', date: '-', message: 'スタッフID見つからず: ' + sid });
+    return violations;
+  }
+  
+  // 3. T_シフト確定 読込 → staffAssignedDates 構築 (target月のみ)
+  const cfSheet = ss.getSheetByName('T_シフト確定');
+  const cfLast = cfSheet.getLastRow();
+  const staffAssignedDates = {};
+  if (cfLast > 1) {
+    const cfData = cfSheet.getRange(2, 1, cfLast - 1, 19).getValues();
+    cfData.forEach(function(row) {
+      const rowDate = row[1] instanceof Date
+        ? Utilities.formatDate(row[1], 'Asia/Tokyo', 'yyyy-MM-dd')
+        : String(row[1]);
+      if (rowDate.indexOf(targetYM) !== 0) return;
+      const _sid = String(row[6]);
+      if (!_sid) return;
+      const _shift = String(row[8]);
+      const _jig = String(row[3]);
+      const _fac = String(row[4]);
+      const _wh = (parseFloat(row[17]) || 0) + (parseFloat(row[16]) || 0);
+      if (!staffAssignedDates[_sid]) staffAssignedDates[_sid] = {};
+      if (!staffAssignedDates[_sid][rowDate]) staffAssignedDates[_sid][rowDate] = [];
+      staffAssignedDates[_sid][rowDate].push({ shift: _shift, jigyosho: _jig, facility: _fac, workHours: _wh });
+    });
+  }
+  
+  // 4. facilityToJigyoshos 構築 + unit_id → facility/jigyosho 解決
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  const unitData = unitSheet.getDataRange().getValues();
+  const facilityToJigyoshos = {};
+  const unitMap = {};
+  for (let i = 1; i < unitData.length; i++) {
+    const _unitId = String(unitData[i][0] || '').trim();
+    const _jig = String(unitData[i][1] || '').trim();
+    const _fac = String(unitData[i][3] || '').trim();
+    if (_unitId) unitMap[_unitId] = { jigyosho: _jig, facility: _fac };
+    if (_jig && _fac) {
+      if (!facilityToJigyoshos[_fac]) facilityToJigyoshos[_fac] = [];
+      if (facilityToJigyoshos[_fac].indexOf(_jig) === -1) facilityToJigyoshos[_fac].push(_jig);
+    }
+  }
+  
+  // 5. シフトの想定勤務時間
+  const SHIFT_HOURS = { '早出8h': 8, '早出4h': 4, '遅出8h': 8, '遅出4h': 4, '夜勤A': 2, '夜勤B': 2, '夜勤C': 2 };
+  
+  // 6. 展開日ごとに runAllChecks
+  // unit_id → facility/jigyosho を解決
+  let resolvedFacility = '';
+  let resolvedJigyosho = '';
+  if (params.unit_id && unitMap[params.unit_id]) {
+    resolvedFacility = unitMap[params.unit_id].facility;
+    resolvedJigyosho = unitMap[params.unit_id].jigyosho;
+  } else {
+    // 日勤で unit_id 無し → スタッフのメイン施設を仮想で使う
+    resolvedFacility = staffForCheck.mainFac || '';
+    const _facJigs = facilityToJigyoshos[resolvedFacility] || [];
+    resolvedJigyosho = _facJigs[0] || '';
+  }
+  
+  const ctx = { staffAssignedDates: staffAssignedDates, facilityToJigyoshos: facilityToJigyoshos };
+  
+  // ★Day15 P1-P4: 展開日を順次 ctx.staffAssignedDates に追加していき、
+  // 同月内の自身同士の累積チェック(週40h超など)も検出可能にする
+  if (!ctx.staffAssignedDates[sid]) ctx.staffAssignedDates[sid] = {};
+  
+  expandedDates.forEach(function(dateKey) {
+    const slot = {
+      date: dateKey,
+      shift: params.shift_type,
+      facility: resolvedFacility,
+      jigyosho: resolvedJigyosho,
+      hours: SHIFT_HOURS[params.shift_type] || 0,
+    };
+    try {
+      const checkResult = runAllChecks(staffForCheck, slot, ctx);
+      (checkResult.violations || []).filter(function(v) { return v.level === 'block'; }).forEach(function(v) {
+        violations.push({ ruleId: v.ruleId, date: dateKey, message: v.message });
+      });
+    } catch (e) {
+      Logger.log('runAllChecks エラー date=' + dateKey + ': ' + e.message);
+    }
+    
+    // ★この日の配置を ctx に追加 (次の日のチェック時に累積される)
+    if (!ctx.staffAssignedDates[sid][dateKey]) ctx.staffAssignedDates[sid][dateKey] = [];
+    ctx.staffAssignedDates[sid][dateKey].push({
+      shift: params.shift_type,
+      jigyosho: resolvedJigyosho,
+      facility: resolvedFacility,
+      workHours: SHIFT_HOURS[params.shift_type] || 0,
+    });
+  });
+  
+  return violations;
 }
 
 // ============================================================
@@ -713,4 +895,104 @@ function _calcFixedAssignedRole(staffId, staffSheet) {
   if (!isSewa && isSeikatsu) return '生活支援員';
   if (isSewa && isSeikatsu) return '世話人';  // 両方持ちは世話人(書込時点では不足扱い)
   return '';
+}
+
+
+// ★Day15 P1-P4 テスト: 固定配置のH違反検証
+function debug_test_validateFixedAssignmentH() {
+  // テストケース1: 水野惠子(ID:2) に 月曜遅出8h を仮想登録 → 既存配置と H1/H7 違反するはず
+  Logger.log('=== テスト1: 水野惠子 月曜遅出8h固定 (2026-06) ===');
+  const params1 = {
+    staff_id: '2',
+    type: '曜日指定',
+    target_ym: '2026-06',
+    dates_or_weekdays: '月',
+    shift_type: '遅出8h',
+    unit_id: '',
+  };
+  try {
+    const violations1 = _validateFixedAssignmentH(params1, '2026-06');
+    Logger.log('違反数: ' + violations1.length);
+    violations1.slice(0, 10).forEach(function(v) {
+      Logger.log('  [' + v.ruleId + '] ' + v.date + ': ' + v.message);
+    });
+  } catch (e) {
+    Logger.log('エラー: ' + e.message);
+  }
+  
+  // テストケース2: 阿部佳小里(ID:383) に リフレ要町の早出8h固定 → H10違反するはず
+  Logger.log('=== テスト2: 阿部佳小里 リフレ要町 早出8h固定 (2026-06) ===');
+  const params2 = {
+    staff_id: '383',
+    type: '日付指定',
+    target_ym: '2026-06',
+    dates_or_weekdays: '1,5,10',
+    shift_type: '早出8h',
+    unit_id: '',  // unit_id なしでスタッフメイン施設使用
+  };
+  try {
+    const violations2 = _validateFixedAssignmentH(params2, '2026-06');
+    Logger.log('違反数: ' + violations2.length);
+    violations2.slice(0, 10).forEach(function(v) {
+      Logger.log('  [' + v.ruleId + '] ' + v.date + ': ' + v.message);
+    });
+  } catch (e) {
+    Logger.log('エラー: ' + e.message);
+  }
+  
+  // テストケース3: 違反しないはずのパターン (水野惠子の遅出8hを月単位で既存と被らない日に)
+  Logger.log('=== テスト3: 水野惠子 6/15日付固定 (既存と被らない) ===');
+  const params3 = {
+    staff_id: '2',
+    type: '日付指定',
+    target_ym: '2026-06',
+    dates_or_weekdays: '15',  // 1日だけ
+    shift_type: '遅出8h',
+    unit_id: '',
+  };
+  try {
+    const violations3 = _validateFixedAssignmentH(params3, '2026-06');
+    Logger.log('違反数: ' + violations3.length);
+    violations3.slice(0, 5).forEach(function(v) {
+      Logger.log('  [' + v.ruleId + '] ' + v.date + ': ' + v.message);
+    });
+  } catch (e) {
+    Logger.log('エラー: ' + e.message);
+  }
+}
+
+
+// ★Day15 P1-P4 デバッグ: 高橋竜太(ID:12) 全曜日 早出8h リフレ要町 で違反検証
+function debug_test_takahashi_ryuta_validation() {
+  const params = {
+    staff_id: '12',
+    type: '曜日指定',
+    target_ym: '',  // 空のまま (実際の登録と同じ条件)
+    dates_or_weekdays: '日,月,火,水,木,金,土',
+    shift_type: '早出8h',
+    unit_id: '',  // 実際の登録に合わせる
+  };
+  
+  Logger.log('=== params ===');
+  Logger.log(JSON.stringify(params));
+  
+  // target_ym 計算ロジック (addFixedAssignmentと同じ)
+  let _checkYM = params.target_ym;
+  if (!_checkYM) {
+    const _now = new Date();
+    _now.setMonth(_now.getMonth() + 1);
+    _checkYM = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0');
+  }
+  Logger.log('check月: ' + _checkYM);
+  
+  try {
+    const violations = _validateFixedAssignmentH(params, _checkYM);
+    Logger.log('違反数: ' + violations.length);
+    violations.slice(0, 10).forEach(function(v) {
+      Logger.log('  [' + v.ruleId + '] ' + v.date + ': ' + v.message);
+    });
+  } catch (e) {
+    Logger.log('★エラー: ' + e.message);
+    Logger.log('stack: ' + e.stack);
+  }
 }
