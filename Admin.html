@@ -4198,6 +4198,36 @@ function updateApprovalButtons(data) {
 }
 
 
+// ★Day16 P3: 確定画面の日勤セルデータを _renderDsCellV2 用に変換
+// 旧形式 (shift_type, status のみ) → 新形式 (shiftType, isFromNight, 集計, fulfillmentLevel)
+function _convertApprovalCellToV2(cell) {
+  const placements = (cell.placements || []).map(function(p) {
+    return {
+      staff_name: p.staff_name,
+      shiftType: p.shift_type || '',
+      shift_type: p.shift_type || '',
+      isFromNight: false,         // 確定画面は夜勤加算情報なし
+      isKanrisha: false,          // 同じく管理者情報なし
+      assignedRole: p.assignedRole || '',
+      status: p.status || '',
+    };
+  });
+  const morning = placements.filter(function(p) { return p.shiftType.indexOf('早出') !== -1; }).length;
+  const evening = placements.filter(function(p) { return p.shiftType.indexOf('遅出') !== -1; }).length;
+  // 確定画面の充足判定: 全員確定なら good、それ以外は partial
+  const allConfirmed = placements.length > 0 && placements.every(function(p) { return p.status === '確定'; });
+  const fulfillmentLevel = placements.length === 0 ? 'warn' : (allConfirmed ? 'good' : 'partial');
+  return {
+    dateKey: cell.dateKey,
+    count: cell.count || placements.length,
+    placements: placements,
+    morningCount: morning,
+    eveningCount: evening,
+    nightAddonCount: 0,
+    fulfillmentLevel: fulfillmentLevel,
+  };
+}
+
 function renderApprovalCalendar(data) {
   let html = '';
   
@@ -4246,12 +4276,12 @@ function renderApprovalCalendar(data) {
     html += '</div>';
   }
   
-  // ============ ☀️ 日勤カレンダー ============
+  // ============ ☀️ 日勤カレンダー (Day16 P3: 新UI _renderDsCellV2 流用) ============
   if (data.dayCalendar && data.dayCalendar.length > 0 && data.days) {
     html += '<div>';
     html += '<div style="background: #f59e0b; color: white; padding: 10px 16px; font-weight: 700; font-size: 14px; border-radius: 8px 8px 0 0;">☀️ 日勤シフト</div>';
     
-    html += '<table class="ds-cal-table" style="border-radius: 0 0 8px 8px;"><thead><tr>';
+    html += '<table class="ds-cal-table ds-cal-v2" style="border-radius: 0 0 8px 8px;"><thead><tr>';
     html += '<th class="ds-fac-col">事業所 / 施設</th>';
     for (const d of data.days) {
       const cls = d.dow === 0 ? 'ds-day-sun' : d.dow === 6 ? 'ds-day-sat' : '';
@@ -4259,6 +4289,9 @@ function renderApprovalCalendar(data) {
       html += `<th class="${cls}">${d.day}<br><span style="font-size: 10px;">${dowChar}</span></th>`;
     }
     html += '</tr></thead><tbody>';
+    
+    // ★Day16 P3: 確定画面では警告マーク無し
+    const _noWmark = function() { return ''; };
     
     for (const row of data.dayCalendar) {
       // 事業所ヘッダ行
@@ -4269,22 +4302,10 @@ function renderApprovalCalendar(data) {
         html += '<tr>';
         html += `<td class="ds-fac-col" style="padding-left: 20px;"><span style="font-size: 12px;">📍 ${escapeHtml(b.facility)}</span></td>`;
         for (const cell of b.cells) {
-          if (cell.count === 0) {
-            html += `<td class="ds-cell ds-cell-empty" title="${cell.dateKey} (未配置)">－</td>`;
-          } else {
-            const early = cell.placements.filter(p => p.shift_type.indexOf('早出') !== -1).length;
-            const late = cell.placements.filter(p => p.shift_type.indexOf('遅出') !== -1).length;
-            const subParts = [];
-            if (early > 0) subParts.push(`🌅${early}`);
-            if (late > 0) subParts.push(`🌆${late}`);
-            
-            // 全件確定なら緑、それ以外は黄色
-            const allConfirmed = cell.placements.every(p => p.status === '確定');
-            const cellExtraCls = allConfirmed ? 'ds-cell-good' : '';
-            
-            const tooltipNames = cell.placements.map(p => `${p.staff_name} ${p.shift_type} (${p.status})`).join('\n');
-            html += `<td class="ds-cell ${cellExtraCls}" title="${cell.dateKey} ${b.facility}\n${tooltipNames}"><div class="ds-cell-count">${cell.count}</div><div class="ds-cell-sub">${subParts.join(' ')}</div></td>`;
-          }
+          // ★Day16 P3: 確定画面用にデータ形式変換 (旧→新)
+          const cellV2 = _convertApprovalCellToV2(cell);
+          // _renderDsCellV2 を readOnly=true で呼出 (クリック編集不可)
+          html += _renderDsCellV2(cellV2, row.jigyosho, b.facility, _noWmark, true);
         }
         html += '</tr>';
       }
@@ -5790,9 +5811,10 @@ function toggleDsLegendModal() {
 
 
 // ★Day15: 日勤カレンダーセル描画 v2 (氏名チップ表示版)
-function _renderDsCellV2(cell, jigyosho, facility, wmarkFn) {
+function _renderDsCellV2(cell, jigyosho, facility, wmarkFn, readOnly) {
   const facEsc = facility.replace(/'/g, "\\'");
-  const onclickAttr = `onclick="openDsCellEditorV2('${facEsc}', '${cell.dateKey}')"`;
+  // ★Day16 P3: readOnly モード時はクリック無効
+  const onclickAttr = readOnly ? '' : `onclick="openDsCellEditorV2('${facEsc}', '${cell.dateKey}')"`;
   
   // 空セル(配置なし)
   if (cell.count === 0) {

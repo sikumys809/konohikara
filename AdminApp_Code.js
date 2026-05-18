@@ -3147,3 +3147,64 @@ function _debug_fixed003() {
   }
   return null;
 }
+
+
+// ★Day16 P3 デバッグ: T_シフト確定 の日勤データ件数を確認
+function debug_count_dayshifts_in_shift_sheet() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const sheet = ss.getSheetByName('T_シフト確定');
+  const data = sheet.getDataRange().getValues();
+  
+  const DAY_SHIFT_SET = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
+  const NIGHT_SHIFT_SET = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  
+  let dayCount = 0;
+  let nightCount = 0;
+  let other = 0;
+  let day202606 = 0;
+  let night202606 = 0;
+  const dayByShift = {};
+  const dayByJigyosho = {};
+  const dayByStatus = { '仮': 0, '確定': 0 };
+  
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    let date = row[1];
+    if (typeof date === 'string') date = new Date(date);
+    if (!(date instanceof Date) || isNaN(date.getTime())) continue;
+    
+    const shiftType = String(row[8] || '').trim();
+    const status = String(row[12] || '仮').trim();
+    const jig = String(row[3] || '').trim();
+    
+    if (DAY_SHIFT_SET.has(shiftType)) {
+      dayCount++;
+      dayByShift[shiftType] = (dayByShift[shiftType] || 0) + 1;
+      dayByJigyosho[jig] = (dayByJigyosho[jig] || 0) + 1;
+      if (status === '確定') dayByStatus['確定']++;
+      else dayByStatus['仮']++;
+      
+      const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+      if (ym === '2026-06') day202606++;
+    } else if (NIGHT_SHIFT_SET.has(shiftType)) {
+      nightCount++;
+      const ym = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM');
+      if (ym === '2026-06') night202606++;
+    } else {
+      other++;
+    }
+  }
+  
+  Logger.log('=== T_シフト確定 全期間集計 ===');
+  Logger.log('総行数: ' + (data.length - 1));
+  Logger.log('日勤(早出/遅出) 全期間: ' + dayCount);
+  Logger.log('  内訳: ' + JSON.stringify(dayByShift));
+  Logger.log('  事業所別: ' + JSON.stringify(dayByJigyosho));
+  Logger.log('  確定/仮: ' + JSON.stringify(dayByStatus));
+  Logger.log('夜勤(A/B/C) 全期間: ' + nightCount);
+  Logger.log('その他: ' + other);
+  Logger.log('');
+  Logger.log('=== 2026-06 月 ===');
+  Logger.log('日勤 2026-06: ' + day202606);
+  Logger.log('夜勤 2026-06: ' + night202606);
+}
