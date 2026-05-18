@@ -933,26 +933,43 @@
     <p style="color: #6b7280; margin: 8px 0 16px 0;">仮シフトを確定する最終承認プロセスです。確定後は編集不可になります。</p>
     
     <!-- コントロール -->
-    <div style="display: flex; gap: 12px; align-items: center; margin: 20px 0; flex-wrap: wrap;">
-      <label>対象月:</label>
-      <select id="approveTargetYM" onchange="loadApprovalCalendar()" style="padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;">
-        <option value="">選択してください</option>
-      </select>
-      <button id="approveBtn" onclick="confirmApproval()" style="padding: 8px 20px; background: #059669; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; display: none;">
-        ✓ 全て確定する
-      </button>
-      <button id="revertBtn" onclick="confirmRevert()" style="padding: 8px 20px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; display: none;">
-        ↶ 確定解除
-      </button>
-      <button id="unlockBtn" onclick="confirmUnlock()" style="padding: 8px 20px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; display: none;">
-        🔓 ロック解除(修正用)
-      </button>
-      <button onclick="loadApprovalCalendar()" style="padding: 8px 20px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
-        🔄 再読込
-      </button>
-      <button id="runFinalCheckBtn" onclick="runFinalCheckForApproval()" style="padding: 8px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
-        🔍 最終チェック実行
-      </button>
+    <!-- ★Day16 P2: ヘッダーカード再設計 -->
+    <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 20px;">
+      <!-- 上段: 対象月 + 状態バッジ -->
+      <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 14px; color: #6b7280; font-weight: 500;">📅 対象月</span>
+          <select id="approveTargetYM" onchange="loadApprovalCalendar()" style="padding: 8px 14px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 14px; min-width: 140px; background: white;">
+            <option value="">選択してください</option>
+          </select>
+        </div>
+        <div id="approvalStatusBadge" style="margin-left: auto;"></div>
+      </div>
+      
+      <!-- 区切り線 -->
+      <div style="height: 1px; background: #e5e7eb; margin: 16px 0;"></div>
+      
+      <!-- 下段: 主要アクション(STEP1のチェック→確定はここに) -->
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button id="runFinalCheckBtn" onclick="runFinalCheckForApproval()" style="padding: 10px 22px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 1px 3px rgba(37,99,235,0.3);">
+          🔍 最終チェック実行
+        </button>
+        <button id="approveBtn" onclick="confirmApproval()" style="padding: 10px 22px; background: #059669; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; display: none; box-shadow: 0 1px 3px rgba(5,150,105,0.3);">
+          ✓ 全て確定する
+        </button>
+        <button onclick="loadApprovalCalendar()" style="padding: 10px 18px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; font-size: 13px;">
+          🔄 再読込
+        </button>
+        <!-- 確定後アクションは右側に分離 -->
+        <div style="margin-left: auto; display: flex; gap: 8px;">
+          <button id="revertBtn" onclick="confirmRevert()" style="padding: 10px 18px; background: white; color: #dc2626; border: 1px solid #fca5a5; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; display: none;">
+            ↶ 確定解除
+          </button>
+          <button id="unlockBtn" onclick="confirmUnlock()" style="padding: 10px 18px; background: white; color: #d97706; border: 1px solid #fcd34d; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; display: none;">
+            🔓 ロック解除
+          </button>
+        </div>
+      </div>
     </div>
     
     <!-- 最終チェック結果パネル -->
@@ -3987,17 +4004,53 @@ function renderWarningStatus(summary) {
 }
 
 function renderLockBanner(lockRes) {
+  // ★Day16 P2: 古いバナーは非表示固定 (新ヘッダーバッジに統合)
   const banner = document.getElementById('lockStatusBanner');
-  if (!lockRes.locked) {
-    banner.style.display = 'none';
-    return;
+  if (banner) banner.style.display = 'none';
+  
+  // 新ヘッダーバッジ更新
+  _updateApprovalStatusBadge(lockRes, null);
+}
+
+// ★Day16 P2: ヘッダー右上の状態バッジを更新
+// 呼出元: renderLockBanner (ロック情報) / updateApprovalButtons (summary)
+function _updateApprovalStatusBadge(lockRes, summary) {
+  const badge = document.getElementById('approvalStatusBadge');
+  if (!badge) return;
+  
+  // 既存の lockRes / summary を window に保持して、後から呼ばれても整合性維持
+  if (lockRes !== null) window._lastLockRes = lockRes;
+  if (summary !== null) window._lastSummary = summary;
+  const _lockRes = window._lastLockRes || {};
+  const _summary = window._lastSummary || {};
+  
+  let html = '';
+  if (_lockRes.locked) {
+    // 🔒 ロック中
+    html = '<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 20px; color: #92400e; font-size: 13px; font-weight: 600;">'
+         + '<span>🔒</span> ロック中'
+         + (_lockRes.lockedAt ? '<span style="font-weight: normal; color: #b45309; font-size: 12px;">(' + _lockRes.lockedAt + ' ' + (_lockRes.lockedBy || '') + ')</span>' : '')
+         + '</span>';
+  } else if (_summary.draft > 0 && _summary.confirmed > 0) {
+    // 🟡 編集中 (一部確定)
+    html = '<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #dbeafe; border: 1px solid #3b82f6; border-radius: 20px; color: #1e40af; font-size: 13px; font-weight: 600;">'
+         + '<span>🟡</span> 編集中 <span style="font-weight: normal; font-size: 12px;">(仮 ' + _summary.draft + ' / 確定 ' + _summary.confirmed + ')</span>'
+         + '</span>';
+  } else if (_summary.draft > 0) {
+    // 🟢 仮シフトあり
+    html = '<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 20px; color: #92400e; font-size: 13px; font-weight: 600;">'
+         + '<span>🟢</span> 仮シフトあり <span style="font-weight: normal; font-size: 12px;">(' + _summary.draft + '件)</span>'
+         + '</span>';
+  } else if (_summary.confirmed > 0) {
+    // 🔓 確定済 (解除可)
+    html = '<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #d1fae5; border: 1px solid #10b981; border-radius: 20px; color: #065f46; font-size: 13px; font-weight: 600;">'
+         + '<span>🔓</span> 確定済 <span style="font-weight: normal; font-size: 12px;">(' + _summary.confirmed + '件)</span>'
+         + '</span>';
+  } else {
+    // 配置なし
+    html = '<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 20px; color: #6b7280; font-size: 13px;">配置なし</span>';
   }
-  banner.style.display = 'block';
-  banner.innerHTML = `
-    <div style="padding: 12px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; color: #92400e;">
-      🔒 <strong>ロック中</strong> - ${lockRes.lockedBy}さんが ${lockRes.lockedAt} に確定化しました。編集するには「ロック解除」ボタンを押してください。
-    </div>
-  `;
+  badge.innerHTML = html;
 }
 
 
@@ -4087,6 +4140,9 @@ function updateApprovalButtons(data) {
   const approveBtn = document.getElementById('approveBtn');
   const revertBtn = document.getElementById('revertBtn');
   const currentYM = document.getElementById('approveTargetYM').value;
+  
+  // ★Day16 P2: 状態バッジ更新 (summary側)
+  _updateApprovalStatusBadge(null, s);
   
   if (!data.canApprove) {
     approveBtn.style.display = 'none';
