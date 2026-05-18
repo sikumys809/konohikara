@@ -5091,6 +5091,22 @@ function _dsV2CandidateRow(c) {
     warnBadges += '<span style="background:' + wBg + ';padding:2px 7px;border-radius:10px;font-size:11px;" title="' + escapeHtml(w.message) + '">' + wLabel + '</span>';
   });
   
+  // ★Day15 P1-P4: ハードブロック違反バッジ (runAllChecks 結果)
+  const hardBlockLabels = {
+    'H1': '⛔H1時間重複',
+    'H6': '⛔H6連続7日',
+    'H7': '⛔H7週40h超',
+    'H9': '⛔H9許可シフト外',
+    'H10': '⛔H10許可施設外',
+    'H11': '⛔H11事業所跨ぎ',
+    'H13': '⛔H13前夜勤→翌早出',
+    'H14': '⛔H14 1日8h超',
+  };
+  (c.hardBlockViolations || []).forEach(v => {
+    const lbl = hardBlockLabels[v.ruleId] || ('⛔' + v.ruleId);
+    warnBadges += '<span style="background:#7F1D1D;color:white;padding:2px 7px;border-radius:10px;font-size:11px;" title="' + escapeHtml(v.message) + '">' + lbl + '</span>';
+  });
+  
   const isDisabled = c.alreadyAssigned || c.hasBlockWarning;
   const opacity = isDisabled ? '0.5' : '1';
   const disabledMsg = c.alreadyAssigned ? '<span style="background:#FCEBEB;color:#501313;padding:2px 7px;border-radius:10px;font-size:11px;">⚠同日既配置</span>' : '';

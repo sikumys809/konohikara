@@ -564,15 +564,31 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
     // 同日 全配置を集計 (W2/N2 判定用)
     const sameDayPlacements = {};   // staff_id → [{shift, facility, jigyosho}, ...]
     const sameDayJigPlacements = {}; // jigyosho → [{staff_id, kubun, ...}, ...]  N2判定用
+    // ★Day15 P1-P4: staffAssignedDates 構築 (月全体、runAllChecks用)
+    const staffAssignedDates = {};
     cfData.forEach(row => {
       const rowDate = row[1] instanceof Date
         ? Utilities.formatDate(row[1], 'Asia/Tokyo', 'yyyy-MM-dd')
         : String(row[1]);
+      const sid = String(row[6]);
+      const shift = String(row[8]);
+      const fac = String(row[4]);
+      const jig = String(row[3]);
+      const dayH = parseFloat(row[17]) || 0;
+      const nightH = parseFloat(row[16]) || 0;
+      const workHours = dayH + nightH;
+      
+      // 月全体: staffAssignedDates
+      if (rowDate && sid) {
+        if (!staffAssignedDates[sid]) staffAssignedDates[sid] = {};
+        if (!staffAssignedDates[sid][rowDate]) staffAssignedDates[sid][rowDate] = [];
+        staffAssignedDates[sid][rowDate].push({
+          shift: shift, jigyosho: jig, facility: fac, workHours: workHours
+        });
+      }
+      
+      // 同日判定用 (既存のW2/N2用)
       if (rowDate === dateKey) {
-        const sid = String(row[6]);
-        const shift = String(row[8]);
-        const fac = String(row[4]);
-        const jig = String(row[3]);
         if (!sameDayPlacements[sid]) sameDayPlacements[sid] = [];
         sameDayPlacements[sid].push({ shift: shift, facility: fac, jigyosho: jig });
         if (!sameDayJigPlacements[jig]) sameDayJigPlacements[jig] = [];
@@ -582,6 +598,27 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
         });
       }
     });
+    
+    // ★Day15 P1-P4: facilityToJigyoshos 構築 (M_ユニットから)
+    const unitSheet = ss.getSheetByName('M_ユニット');
+    const unitData = unitSheet.getDataRange().getValues();
+    const facilityToJigyoshos = {};
+    for (let i = 1; i < unitData.length; i++) {
+      const jig = String(unitData[i][1] || '').trim();
+      const fac = String(unitData[i][3] || '').trim();
+      if (jig && fac) {
+        if (!facilityToJigyoshos[fac]) facilityToJigyoshos[fac] = [];
+        if (facilityToJigyoshos[fac].indexOf(jig) === -1) {
+          facilityToJigyoshos[fac].push(jig);
+        }
+      }
+    }
+    
+    // ★Day15 P1-P4: シフトの想定勤務時間 (runAllChecks の hours 引数用)
+    const SHIFT_HOURS = {
+      '早出8h': 8, '早出4h': 4, '遅出8h': 8, '遅出4h': 4,
+      '夜勤A': 2, '夜勤B': 2, '夜勤C': 2  // 日勤帯への加算分
+    };
 
     // ★ Phase 5.1.2: 対象事業所の通常スタッフ数を計算 (N2 判定用)
     // facility パラメータが事業所名 (GHコノヒカラ等) の前提
@@ -703,6 +740,41 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
             }
           }
         }
+        // ★Day15 P1-P4: runAllChecks 呼出でハードブロック判定
+        // M_スタッフ から subFacs を取得 (L列 = カンマ区切り)
+        const _subRaw = String(row[11] || '').trim();
+        const _staffForCheck = {
+          staff_id: sid,
+          name: name,
+          mainFac: mainFac,
+          secondFac: String(row[10] || '').trim(),
+          subFacs: _subRaw ? _subRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+          allowedShifts: allowedShifts,
+          kubun: kubun,
+        };
+        // ★Day15 P1-P4 バグ修正: facility は施設名なので、facilityToJigyoshos で事業所名を引く
+        const _facJigyoshos = facilityToJigyoshos[facility] || [];
+        const _resolvedJigyosho = _facJigyoshos[0] || facility;  // 取れなければfacilityそのまま(フォールバック)
+        const _slotForCheck = {
+          date: dateKey,
+          shift: shiftType,
+          facility: facility,
+          jigyosho: _resolvedJigyosho,
+          hours: SHIFT_HOURS[shiftType] || 0,
+        };
+        const _ctxForCheck = {
+          staffAssignedDates: staffAssignedDates,
+          facilityToJigyoshos: facilityToJigyoshos,
+        };
+        let _hardBlockViolations = [];
+        try {
+          const _checkResult = runAllChecks(_staffForCheck, _slotForCheck, _ctxForCheck);
+          _hardBlockViolations = (_checkResult.violations || []).filter(v => v.level === 'block');
+        } catch (e) {
+          // runAllChecks エラーは握りつぶす (UI 表示優先)
+          Logger.log('runAllChecks エラー staff=' + sid + ': ' + e.message);
+        }
+        
         return {
           staff_id: sid,
           name: name,
@@ -713,12 +785,13 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
           alreadyAssigned: existingPlacements.length > 0,
           existingPlacements: existingPlacements,
           isFacilityMatch: mainFac === facility,
-          hasWish: _wishCategory === 'A1',  // 互換: A1のみtrue
-          wishCategory: _wishCategory,  // ★Day15: A1/A2/A3/A4/B
+          hasWish: _wishCategory === 'A1',
+          wishCategory: _wishCategory,
           wishMsg: _wishMsg,
           warnings: warnings,
-          hasBlockWarning: warnings.some(w => w.level === 'warning_block'),
-          hasOnlyWarning: warnings.some(w => w.level === 'warning_only')
+          hasBlockWarning: warnings.some(w => w.level === 'warning_block') || _hardBlockViolations.length > 0,
+          hasOnlyWarning: warnings.some(w => w.level === 'warning_only'),
+          hardBlockViolations: _hardBlockViolations,  // ★Day15 P1-P4: H6/H7/H9/H10/H11/H13/H14 違反一覧
         };
       })
       .sort((a, b) => {
@@ -1020,4 +1093,35 @@ function _replaceDayShiftWarnings(staffId, dateKey, jigyosho, ym, newWarnings) {
   } catch (e) {
     Logger.log('_replaceDayShiftWarnings エラー: ' + e.message);
   }
+}
+
+
+// ★Day15 P1-P4 テスト: hardBlockViolations 動作確認
+function debug_test_hardBlockViolations() {
+  // 2026-06-01 リフレ要町 早出8h の候補を全部取って違反内訳出す
+  const adminId = '13';  // えいちゃん
+  const res = getDayShiftCandidateStaff(adminId, '2026-06', '2026-06-01', 'リフレ要町', '早出8h');
+  
+  if (!res.success) {
+    Logger.log('FAILED: ' + res.message);
+    return;
+  }
+  
+  Logger.log('=== 候補数: ' + res.candidates.length + ' ===');
+  
+  // hardBlockViolations が空でない候補だけ表示
+  const withViolations = res.candidates.filter(c => c.hardBlockViolations && c.hardBlockViolations.length > 0);
+  Logger.log('ハードブロック違反者: ' + withViolations.length + '名');
+  
+  withViolations.slice(0, 10).forEach(c => {
+    Logger.log('  ' + c.name + ' (ID:' + c.staff_id + '): ' + 
+      c.hardBlockViolations.map(v => v.ruleId + ':' + v.message).join(' / '));
+  });
+  
+  // 違反なしのサンプル
+  const noViolations = res.candidates.filter(c => !c.hardBlockViolations || c.hardBlockViolations.length === 0);
+  Logger.log('違反なし: ' + noViolations.length + '名 (先頭3名)');
+  noViolations.slice(0, 3).forEach(c => {
+    Logger.log('  ' + c.name + ' wishCategory=' + c.wishCategory + ' alreadyAssigned=' + c.alreadyAssigned);
+  });
 }
