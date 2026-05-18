@@ -247,3 +247,75 @@ function runFinalValidationFromAdmin(adminStaffId, yearMonth) {
     return { success: false, message: e.message };
   }
 }
+
+
+// ============================================================
+// ★Day16: シフト確定画面用サマリー取得
+// - 夜勤: 配置件数 / 期待枠 (= ユニット数 × 月日数)
+// - 日勤: V_日勤充足 から事業所別充足率を取得 (既存 _extractFulfillmentSummary 流用)
+// ============================================================
+function getApprovalSummary(yearMonth) {
+  try {
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return { success: false, message: 'yearMonth形式不正 (YYYY-MM)' };
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const [yStr, mStr] = yearMonth.split('-');
+    const year = parseInt(yStr, 10);
+    const month = parseInt(mStr, 10);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // ① ユニット数 (M_ユニットのヘッダー除いた行数)
+    const unitSheet = ss.getSheetByName('M_ユニット');
+    const unitCount = unitSheet ? Math.max(0, unitSheet.getLastRow() - 1) : 0;
+    const nightExpected = unitCount * daysInMonth;
+
+    // ② T_シフト確定 から対象月の夜勤A/B/C件数を集計
+    const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+    const shiftSheet = ss.getSheetByName('T_シフト確定');
+    let nightPlaced = 0;
+    let nightConfirmed = 0;
+    if (shiftSheet) {
+      const last = shiftSheet.getLastRow();
+      if (last > 1) {
+        const data = shiftSheet.getRange(2, 1, last - 1, 19).getValues();
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          const date = row[1];
+          if (!(date instanceof Date)) continue;
+          if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
+          const shiftType = String(row[8] || '');
+          if (NIGHT_SHIFTS.indexOf(shiftType) === -1) continue;
+          nightPlaced++;
+          if (String(row[12] || '') === '確定') nightConfirmed++;
+        }
+      }
+    }
+    const nightRate = nightExpected > 0
+      ? Math.round((nightPlaced / nightExpected) * 1000) / 10
+      : 0;
+
+    // ③ 日勤: 既存関数で V_日勤充足 から事業所別サマリ取得
+    const dayFulfillment = _extractFulfillmentSummary(yearMonth);
+
+    return {
+      success: true,
+      yearMonth: yearMonth,
+      night: {
+        placed: nightPlaced,
+        confirmed: nightConfirmed,
+        expected: nightExpected,
+        rate: nightRate,
+        unitCount: unitCount,
+        daysInMonth: daysInMonth
+      },
+      day: {
+        fulfillment: dayFulfillment
+      }
+    };
+  } catch (e) {
+    Logger.log('getApprovalSummary error: ' + e.message + '\n' + e.stack);
+    return { success: false, message: e.message };
+  }
+}

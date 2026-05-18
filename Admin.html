@@ -1026,6 +1026,8 @@
       
       <!-- サマリー -->
       <div id="approveSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+      <!-- ★Day16: 夜勤/日勤分離サマリー -->
+      <div id="approveSummaryV2"></div>
       <!-- ★ Phase 5.6: 警告サマリーパネル -->
       <div id="approveWarningPanel" style="margin-bottom: 16px;"></div>
       
@@ -3893,6 +3895,13 @@ function loadApprovalCalendar() {
     renderApprovalCalendar(res);
     updateApprovalButtons(res);
   }).getShiftsForApproval(currentAdmin.staff_id, ym);
+
+  // ★Day16: 夜勤/日勤分離サマリー取得 (並列)
+  google.script.run.withSuccessHandler(function(sumRes) {
+    renderApprovalSummaryV2(sumRes);
+  }).withFailureHandler(function(err) {
+    renderApprovalSummaryV2({ success: false, message: String(err) });
+  }).getApprovalSummary(ym);
   
   // ロック状態取得
   google.script.run.withSuccessHandler(lockRes => {
@@ -4144,16 +4153,13 @@ function confirmUnlock() {
 
 
 function renderApprovalSummary(data) {
+  // ★Day16: 既存サマリー(混在表示)を最小化 + 状態カード1枚に集約
+  //         夜勤/日勤の詳細は renderApprovalSummaryV2 で別途レンダリング
   const s = data.summary;
   const confirmColor = s.confirmRate >= 95 ? '#059669' : s.confirmRate >= 50 ? '#ca8a04' : '#6b7280';
   const lastUpStr = s.lastUpdated ? `<div style="font-size: 11px; color: #6b7280; margin-top: 4px;">最終更新: ${s.lastUpdated}</div>` : '';
-  
+
   document.getElementById('approveSummary').innerHTML = `
-    <div class="stat-card">
-      <div class="stat-label">配置総数</div>
-      <div class="stat-value">${s.assigned}</div>
-      <div class="stat-sub">枠 / ${s.totalSlots}</div>
-    </div>
     <div class="stat-card">
       <div class="stat-label">仮</div>
       <div class="stat-value" style="color: ${s.draft > 0 ? '#2563eb' : '#6b7280'};">${s.draft}</div>
@@ -4168,6 +4174,81 @@ function renderApprovalSummary(data) {
       <div class="stat-label">確定率</div>
       <div class="stat-value" style="color: ${confirmColor};">${s.confirmRate}%</div>
       ${lastUpStr}
+    </div>
+  `;
+}
+
+// ★Day16: 夜勤/日勤分離サマリーレンダラー (getApprovalSummary レスポンスから)
+function renderApprovalSummaryV2(res) {
+  const host = document.getElementById('approveSummaryV2');
+  if (!host) return;
+  if (!res || !res.success) {
+    host.innerHTML = '<div style="padding:12px;color:#991b1b;font-size:13px;">サマリー取得エラー: ' + (res && res.message || '不明') + '</div>';
+    return;
+  }
+  const n = res.night || {};
+  const nightRate = n.rate || 0;
+  const nightColor = nightRate >= 100 ? '#059669' : nightRate >= 90 ? '#ca8a04' : '#dc2626';
+  const fulfillment = (res.day && res.day.fulfillment) || [];
+
+  const getColor = function(rate) {
+    const num = parseFloat(String(rate || '').replace('%', '')) || 0;
+    if (num >= 100) return '#059669';
+    if (num >= 80) return '#ca8a04';
+    return '#dc2626';
+  };
+
+  const dayRows = fulfillment.map(function(f) {
+    const nurseColor = f.nurseJudge === 'OK' ? '#059669' : '#dc2626';
+    return `
+      <tr>
+        <td style="padding:6px 8px;font-weight:500;">${escapeHtml(f.facility || '')}</td>
+        <td style="padding:6px 8px;text-align:right;">${escapeHtml(f.tokuteiActual)}/${escapeHtml(f.tokuteiNeed)}h</td>
+        <td style="padding:6px 8px;text-align:right;color:${getColor(f.tokuteiRate)};font-weight:600;">${escapeHtml(f.tokuteiRate)}</td>
+        <td style="padding:6px 8px;text-align:right;">${escapeHtml(f.sewaActual)}/${escapeHtml(f.sewaNeed)}h</td>
+        <td style="padding:6px 8px;text-align:right;color:${getColor(f.sewaRate)};">${escapeHtml(f.sewaRate)}</td>
+        <td style="padding:6px 8px;text-align:right;">${escapeHtml(f.sabikanActual)}/${escapeHtml(f.sabikanNeed)}h</td>
+        <td style="padding:6px 8px;text-align:right;color:${getColor(f.sabikanRate)};">${escapeHtml(f.sabikanRate)}</td>
+        <td style="padding:6px 8px;text-align:center;">${escapeHtml(f.nurseActual)}/${escapeHtml(f.nurseNeed)}</td>
+        <td style="padding:6px 8px;text-align:center;color:${nurseColor};font-weight:600;">${escapeHtml(f.nurseJudge)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  host.innerHTML = `
+    <div style="margin-top:8px;padding:14px 16px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:18px;">🌙</span>
+        <strong style="color:#3730a3;">夜勤</strong>
+        <span style="font-size:18px;font-weight:700;color:${nightColor};">${n.placed} / ${n.expected} 枠</span>
+        <span style="color:${nightColor};font-weight:600;">(${nightRate}%)</span>
+        <span style="margin-left:auto;font-size:11px;color:#6b7280;">${n.unitCount}ユニット × ${n.daysInMonth}日</span>
+      </div>
+    </div>
+    <div style="padding:14px 16px;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="font-size:18px;">☀️</span>
+        <strong style="color:#92400e;">日勤 - 事業所別 充足率</strong>
+      </div>
+      ${fulfillment.length === 0 ? '<div style="color:#6b7280;font-size:13px;">V_日勤充足 シートにデータがありません。日勤エンジン実行後に表示されます。</div>' : `
+      <div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:6px;background:white;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:#4a148c;color:white;">
+              <th style="padding:8px;text-align:left;">事業所</th>
+              <th style="padding:8px;">特定(世+生)</th>
+              <th style="padding:8px;">充足率</th>
+              <th style="padding:8px;">世話人</th>
+              <th style="padding:8px;">充足率</th>
+              <th style="padding:8px;">サビ管</th>
+              <th style="padding:8px;">充足率</th>
+              <th style="padding:8px;">看護</th>
+              <th style="padding:8px;">判定</th>
+            </tr>
+          </thead>
+          <tbody>${dayRows}</tbody>
+        </table>
+      </div>`}
     </div>
   `;
 }
