@@ -950,6 +950,38 @@
       <button onclick="loadApprovalCalendar()" style="padding: 8px 20px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
         🔄 再読込
       </button>
+      <button id="runFinalCheckBtn" onclick="runFinalCheckForApproval()" style="padding: 8px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+        🔍 最終チェック実行
+      </button>
+    </div>
+    
+    <!-- 最終チェック結果パネル -->
+    <div id="finalCheckResultPanel" style="margin: 16px 0; padding: 0; display: none;">
+      <div style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #3b82f6; border-radius: 12px; padding: 20px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+          <span style="font-size: 24px;">📊</span>
+          <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">最終チェック結果</h3>
+          <span id="finalCheckTargetYMBadge" style="margin-left: auto; padding: 4px 12px; background: #1e40af; color: white; border-radius: 12px; font-size: 12px;"></span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+          <div id="finalCheckHardBlock" style="padding: 12px; background: white; border-radius: 8px; border-left: 4px solid #dc2626;">
+            <div style="font-size: 12px; color: #6b7280;">⛔ ハード違反 (H1-H14)</div>
+            <div style="font-size: 24px; font-weight: bold; margin-top: 4px;" id="finalCheckHardCount">-</div>
+          </div>
+          <div id="finalCheckSoftWarn" style="padding: 12px; background: white; border-radius: 8px; border-left: 4px solid #f59e0b;">
+            <div style="font-size: 12px; color: #6b7280;">⚠️ block警告 (V_警告チェック)</div>
+            <div style="font-size: 24px; font-weight: bold; margin-top: 4px;" id="finalCheckSoftCount">-</div>
+          </div>
+          <div id="finalCheckUnapproved" style="padding: 12px; background: white; border-radius: 8px; border-left: 4px solid #ef4444;">
+            <div style="font-size: 12px; color: #6b7280;">🚫 未承認警告</div>
+            <div style="font-size: 24px; font-weight: bold; margin-top: 4px;" id="finalCheckUnapprovedCount">-</div>
+          </div>
+        </div>
+        
+        <div id="finalCheckVerdict" style="padding: 12px; background: white; border-radius: 8px; font-weight: bold; text-align: center;"></div>
+        <div id="finalCheckViolationList" style="margin-top: 12px; max-height: 300px; overflow-y: auto; display: none;"></div>
+      </div>
     </div>
     
     <!-- ロック状態バナー -->
@@ -3618,7 +3650,170 @@ function loadApprovalView() {
 }
 
 
+// ★Day16: 最終チェック実行 (シフト確定画面用)
+// runFinalValidation (ハード違反) + getPendingWarnings (block警告) を並行取得 → UI更新
+function runFinalCheckForApproval() {
+  const targetYM = document.getElementById('approveTargetYM').value;
+  if (!targetYM) {
+    alert('対象月を選択してください');
+    return;
+  }
+  
+  const btn = document.getElementById('runFinalCheckBtn');
+  const panel = document.getElementById('finalCheckResultPanel');
+  
+  btn.disabled = true;
+  btn.textContent = '⏳ チェック中...';
+  panel.style.display = 'block';
+  document.getElementById('finalCheckTargetYMBadge').textContent = targetYM;
+  document.getElementById('finalCheckHardCount').textContent = '...';
+  document.getElementById('finalCheckSoftCount').textContent = '...';
+  document.getElementById('finalCheckUnapprovedCount').textContent = '...';
+  document.getElementById('finalCheckVerdict').innerHTML = '⏳ チェック実行中...';
+  document.getElementById('finalCheckVerdict').style.background = '#f3f4f6';
+  document.getElementById('finalCheckViolationList').style.display = 'none';
+  document.getElementById('finalCheckViolationList').innerHTML = '';
+  
+  // 並行取得: ハード違反 + block警告
+  let hardResult = null;
+  let warnResult = null;
+  
+  function _maybeFinish() {
+    if (hardResult === null || warnResult === null) return;
+    _renderFinalCheckResult(targetYM, hardResult, warnResult);
+    btn.disabled = false;
+    btn.innerHTML = '🔍 最終チェック実行';
+  }
+  
+  google.script.run.withSuccessHandler(res => {
+    hardResult = res;
+    _maybeFinish();
+  }).withFailureHandler(err => {
+    hardResult = { success: false, message: err.message || String(err) };
+    _maybeFinish();
+  }).runFinalValidationFromAdmin(currentAdmin.staff_id, targetYM);
+  
+  google.script.run.withSuccessHandler(res => {
+    warnResult = res;
+    _maybeFinish();
+  }).withFailureHandler(err => {
+    warnResult = { success: false, message: err.message || String(err) };
+    _maybeFinish();
+  }).getPendingWarnings(currentAdmin.staff_id, targetYM, null, 'block');
+}
+
+function _renderFinalCheckResult(targetYM, hardResult, warnResult) {
+  // ハード違反数
+  let hardCount = 0;
+  let hardViolations = [];
+  if (hardResult && hardResult.success) {
+    hardViolations = hardResult.violations || [];
+    hardCount = hardViolations.length;
+  }
+  document.getElementById('finalCheckHardCount').textContent = hardCount;
+  document.getElementById('finalCheckHardCount').style.color = hardCount === 0 ? '#059669' : '#dc2626';
+  
+  // block警告数 + 未承認数
+  let softCount = 0;
+  let unapprovedCount = 0;
+  let softWarnings = [];
+  if (warnResult && warnResult.success) {
+    softWarnings = warnResult.warnings || [];
+    softCount = softWarnings.length;
+    unapprovedCount = softWarnings.filter(w => w.status !== '承認済').length;
+  }
+  document.getElementById('finalCheckSoftCount').textContent = softCount;
+  document.getElementById('finalCheckSoftCount').style.color = softCount === 0 ? '#059669' : '#f59e0b';
+  document.getElementById('finalCheckUnapprovedCount').textContent = unapprovedCount;
+  document.getElementById('finalCheckUnapprovedCount').style.color = unapprovedCount === 0 ? '#059669' : '#dc2626';
+  
+  // 判定
+  const verdict = document.getElementById('finalCheckVerdict');
+  const violationList = document.getElementById('finalCheckViolationList');
+  const approveBtn = document.getElementById('approveBtn');
+  
+  if (hardCount === 0 && unapprovedCount === 0) {
+    // ✅ 確定可能
+    verdict.innerHTML = '✅ 確定可能です。違反0件、未承認警告0件。<br><span style="font-size: 12px; font-weight: normal;">下の「✓ 全て確定する」ボタンで確定処理を実行してください。</span>';
+    verdict.style.background = '#d1fae5';
+    verdict.style.color = '#065f46';
+    violationList.style.display = 'none';
+    // ★合格を記憶 → 確定ボタン表示
+    _finalCheckPassedYM = targetYM;
+    if (approveBtn) {
+      approveBtn.style.display = 'inline-block';
+      approveBtn.disabled = false;
+      approveBtn.style.opacity = '1';
+      approveBtn.style.cursor = 'pointer';
+    }
+  } else {
+    // 🚫 確定不可
+    let msg = '🚫 確定できません: ';
+    const reasons = [];
+    if (hardCount > 0) reasons.push(`ハード違反 ${hardCount}件`);
+    if (unapprovedCount > 0) reasons.push(`未承認警告 ${unapprovedCount}件`);
+    msg += reasons.join(' / ');
+    verdict.innerHTML = msg;
+    verdict.style.background = '#fee2e2';
+    verdict.style.color = '#7f1d1d';
+    
+    // 違反一覧表示
+    let listHtml = '';
+    if (hardCount > 0) {
+      listHtml += '<div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; margin-bottom: 8px;">';
+      listHtml += '<div style="font-weight: bold; color: #7f1d1d; margin-bottom: 8px;">⛔ ハード違反一覧 (' + hardCount + '件)</div>';
+      hardViolations.slice(0, 30).forEach(v => {
+        listHtml += '<div style="font-size: 12px; padding: 4px 0; border-bottom: 1px solid #fee2e2;">';
+        listHtml += '<span style="display: inline-block; background: #7f1d1d; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 6px;">' + (v.ruleId || v.rule_id || '?') + '</span>';
+        listHtml += '<span style="color: #4b5563;">' + (v.date || '-') + '</span> ';
+        listHtml += '<span>' + (v.staffName || v.staff_name || '') + '</span> ';
+        listHtml += '<span style="color: #6b7280;">' + (v.message || '') + '</span>';
+        listHtml += '</div>';
+      });
+      if (hardCount > 30) {
+        listHtml += '<div style="padding: 4px 0; color: #6b7280; font-size: 11px;">他 ' + (hardCount - 30) + '件...</div>';
+      }
+      listHtml += '</div>';
+    }
+    if (unapprovedCount > 0) {
+      listHtml += '<div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px;">';
+      listHtml += '<div style="font-weight: bold; color: #92400e; margin-bottom: 8px;">⚠️ 未承認block警告 (' + unapprovedCount + '件)</div>';
+      listHtml += '<div style="font-size: 12px; color: #4b5563; margin-bottom: 8px;">承認画面で各警告を承認してください。</div>';
+      softWarnings.filter(w => w.status !== '承認済').slice(0, 20).forEach(w => {
+        listHtml += '<div style="font-size: 12px; padding: 4px 0; border-bottom: 1px solid #fde68a;">';
+        listHtml += '<span style="display: inline-block; background: #f59e0b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 6px;">' + (w.rule_id || '?') + '</span>';
+        listHtml += '<span style="color: #4b5563;">' + (w.date || '-') + '</span> ';
+        listHtml += '<span>' + (w.staff_name || '') + '</span> ';
+        listHtml += '<span style="color: #6b7280;">' + (w.message || '') + '</span>';
+        listHtml += '</div>';
+      });
+      listHtml += '</div>';
+    }
+    violationList.innerHTML = listHtml;
+    violationList.style.display = 'block';
+    
+    // ★確定不可: 合格記憶クリア → 確定ボタン非表示
+    _finalCheckPassedYM = null;
+    if (approveBtn) {
+      approveBtn.style.display = 'none';
+    }
+  }
+  
+  // エラー時のメッセージ
+  if (hardResult && !hardResult.success) {
+    verdict.innerHTML += '<br><span style="color: #dc2626; font-size: 12px;">⚠ 検証エラー: ' + (hardResult.message || '') + '</span>';
+  }
+  if (warnResult && !warnResult.success) {
+    verdict.innerHTML += '<br><span style="color: #dc2626; font-size: 12px;">⚠ 警告取得エラー: ' + (warnResult.message || '') + '</span>';
+  }
+}
+
 function loadApprovalCalendar() {
+  // ★Day16: 月変更時は最終チェック合格記憶をクリア + 結果パネル隠す
+  _finalCheckPassedYM = null;
+  const _panel = document.getElementById('finalCheckResultPanel');
+  if (_panel) _panel.style.display = 'none';
+
   const ym = document.getElementById('approveTargetYM').value;
   if (!ym) {
     document.getElementById('approveCalendar').innerHTML = '対象月を選択してください';
@@ -3884,10 +4079,14 @@ function renderApprovalSummary(data) {
 }
 
 
+// ★Day16: 最終チェック合格した対象月を記憶 (確定ボタン表示条件)
+let _finalCheckPassedYM = null;
+
 function updateApprovalButtons(data) {
   const s = data.summary;
   const approveBtn = document.getElementById('approveBtn');
   const revertBtn = document.getElementById('revertBtn');
+  const currentYM = document.getElementById('approveTargetYM').value;
   
   if (!data.canApprove) {
     approveBtn.style.display = 'none';
@@ -3895,7 +4094,9 @@ function updateApprovalButtons(data) {
     return;
   }
   
-  approveBtn.style.display = s.draft > 0 ? 'inline-block' : 'none';
+  // 確定ボタンは「draft>0 かつ 最終チェック合格済」のときだけ表示
+  const finalCheckOK = (_finalCheckPassedYM === currentYM);
+  approveBtn.style.display = (s.draft > 0 && finalCheckOK) ? 'inline-block' : 'none';
   revertBtn.style.display = s.confirmed > 0 ? 'inline-block' : 'none';
 }
 
