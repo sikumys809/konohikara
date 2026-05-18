@@ -1028,6 +1028,8 @@
       <div id="approveSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
       <!-- ★Day16: 夜勤/日勤分離サマリー -->
       <div id="approveSummaryV2"></div>
+      <!-- ★Day16: 看護師配置詳細 -->
+      <div id="approveNurseDetails"></div>
       <!-- ★ Phase 5.6: 警告サマリーパネル -->
       <div id="approveWarningPanel" style="margin-bottom: 16px;"></div>
       
@@ -1124,6 +1126,8 @@
     <div id="dsFulfillmentCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 20px;">
       <div class="stat-card"><div class="stat-label">データ読込中...</div></div>
     </div>
+    <!-- ★Day16: 看護師配置詳細 -->
+    <div id="dsNurseDetails" style="margin-bottom: 20px;"></div>
     
     <!-- カレンダー -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 8px;">
@@ -3902,6 +3906,13 @@ function loadApprovalCalendar() {
   }).withFailureHandler(function(err) {
     renderApprovalSummaryV2({ success: false, message: String(err) });
   }).getApprovalSummary(ym);
+
+  // ★Day16: 看護師配置詳細 (並列)
+  google.script.run.withSuccessHandler(function(r) {
+    renderNurseAssignmentDetails('approveNurseDetails', r);
+  }).withFailureHandler(function(err) {
+    renderNurseAssignmentDetails('approveNurseDetails', { success: false, message: String(err) });
+  }).getNurseAssignmentDetails(ym);
   
   // ロック状態取得
   google.script.run.withSuccessHandler(lockRes => {
@@ -4256,6 +4267,62 @@ function renderApprovalSummaryV2(res) {
     </div>
   `;
 }
+
+// ★Day16: 看護師配置詳細レンダラー (日勤画面・確定画面 共用)
+//         hostId: 描画先要素ID / res: getNurseAssignmentDetails の戻り値
+function renderNurseAssignmentDetails(hostId, res) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  if (!res || !res.success) {
+    host.innerHTML = '<div style="padding:12px;color:#991b1b;font-size:13px;">看護師配置取得エラー: ' + (res && res.message || '不明') + '</div>';
+    return;
+  }
+  const list = res.jigyoshoList || [];
+  if (list.length === 0) {
+    host.innerHTML = '<div style="padding:12px;color:#6b7280;font-size:13px;">看護師配置データがありません。</div>';
+    return;
+  }
+  const cards = list.map(function(j) {
+    const judgeColor = j.judge === 'OK' ? '#059669' : '#dc2626';
+    const judgeBg = j.judge === 'OK' ? '#ecfdf5' : '#fef2f2';
+    const nursesHtml = j.nurses.length === 0
+      ? '<div style="color:#6b7280;font-size:12px;padding:8px 12px;">配置なし</div>'
+      : j.nurses.map(function(n) {
+          const dayChips = n.days.map(function(d) {
+            return `<span style="display:inline-block;padding:2px 6px;margin:2px;background:#dbeafe;border-radius:4px;font-size:11px;color:#1e40af;">${escapeHtml(d.date)} ${escapeHtml(d.facility)} <span style="color:#6b7280;">${escapeHtml(d.shift)}</span></span>`;
+          }).join('');
+          return `
+            <div style="padding:8px 12px;border-top:1px solid #f3f4f6;">
+              <div style="font-weight:600;font-size:13px;color:#374151;margin-bottom:4px;">
+                ${escapeHtml(n.staff_name)} <span style="color:#6b7280;font-weight:normal;font-size:11px;">(${n.days.length}日)</span>
+              </div>
+              <div>${dayChips}</div>
+            </div>
+          `;
+        }).join('');
+    return `
+      <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:white;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${judgeBg};border-bottom:1px solid #e5e7eb;">
+          <strong style="color:#1f2937;">${escapeHtml(j.jigyosho)}</strong>
+          <span style="font-size:13px;color:#374151;">配置 <strong>${j.nurseCount}</strong> / 必要 ${j.required} 人</span>
+          <span style="margin-left:auto;color:${judgeColor};font-weight:600;font-size:13px;">${escapeHtml(j.judge)}</span>
+        </div>
+        ${nursesHtml}
+      </div>
+    `;
+  }).join('');
+  host.innerHTML = `
+    <div style="padding:14px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="font-size:18px;">🩺</span>
+        <strong style="color:#166534;">看護師 配置状況 (事業所別)</strong>
+        <span style="font-size:11px;color:#6b7280;margin-left:auto;">日勤帯(dayHours>0)に勤務した看護師資格保有者</span>
+      </div>
+      ${cards}
+    </div>
+  `;
+}
+
 
 
 // ★Day16: 最終チェック合格した対象月を記憶 (確定ボタン表示条件)
@@ -5181,6 +5248,13 @@ function loadDayShiftCalendar() {
     console.error('充足率取得失敗:', err);
     document.getElementById('dsFulfillmentCards').innerHTML = '<div class="banner banner-info">⚠️ 充足率データ未生成。「⚡自動割当実行」してください。</div>';
   }).getDayShiftFulfillmentSummary(currentAdmin.staff_id, ym);
+
+  // ★Day16: 看護師配置詳細 (並列)
+  google.script.run.withSuccessHandler(function(r) {
+    renderNurseAssignmentDetails('dsNurseDetails', r);
+  }).withFailureHandler(function(err) {
+    renderNurseAssignmentDetails('dsNurseDetails', { success: false, message: String(err) });
+  }).getNurseAssignmentDetails(ym);
   
   // ロック状態取得 + UIガード
   google.script.run.withSuccessHandler(lockRes => {

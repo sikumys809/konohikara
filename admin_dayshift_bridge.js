@@ -319,3 +319,124 @@ function getApprovalSummary(yearMonth) {
     return { success: false, message: e.message };
   }
 }
+
+
+// ============================================================
+// ★Day16: 看護師の事業所別配置詳細を取得
+// - F列(国家資格)に「看護師」を含むスタッフを抽出
+// - T_シフト確定 から対象月の dayHours>0 レコードを集計
+// - 必要人数は M_事業所配置基準 G列
+// 戻り値:
+//   { success, yearMonth, jigyoshoList: [{ jigyosho, required, nurseCount, judge,
+//     nurses: [{ staff_id, staff_name, days: [{ date, facility, shift }] }] }] }
+// ============================================================
+function getNurseAssignmentDetails(yearMonth) {
+  try {
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return { success: false, message: 'yearMonth形式不正 (YYYY-MM)' };
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const [yStr, mStr] = yearMonth.split('-');
+    const year = parseInt(yStr, 10);
+    const month = parseInt(mStr, 10);
+
+    // ① M_スタッフ から看護師 (F列に「看護師」含む) を抽出
+    const staffSheet = ss.getSheetByName('M_スタッフ');
+    if (!staffSheet) return { success: false, message: 'M_スタッフが見つかりません' };
+    const sLast = staffSheet.getLastRow();
+    const staffData = sLast > 1 ? staffSheet.getRange(2, 1, sLast - 1, 6).getValues() : [];
+    const nurseMap = {};  // staff_id → name
+    staffData.forEach(function(row) {
+      const sid = String(row[0] || '').trim();
+      const name = String(row[1] || '').trim();
+      const qual = String(row[5] || '');  // F列(0始まり=5)
+      if (sid && qual.indexOf('看護師') !== -1) {
+        nurseMap[sid] = name;
+      }
+    });
+
+    // ② M_事業所配置基準 から事業所 + 必要看護師数 (G列=6)
+    const basisSheet = ss.getSheetByName('M_事業所配置基準');
+    const basisLast = basisSheet ? basisSheet.getLastRow() : 0;
+    const basisData = basisLast > 1 ? basisSheet.getRange(2, 1, basisLast - 1, 8).getValues() : [];
+    const jigyoshoOrder = [];
+    const requiredMap = {};  // jigyosho → required
+    basisData.forEach(function(row) {
+      const jig = String(row[0] || '').trim();
+      const required = Number(row[6]) || 0;
+      if (jig) {
+        jigyoshoOrder.push(jig);
+        requiredMap[jig] = required;
+      }
+    });
+
+    // ③ T_シフト確定 から対象月の dayHours>0 レコードを集計
+    const shiftSheet = ss.getSheetByName('T_シフト確定');
+    const accum = {};  // jigyosho → staff_id → { name, days: [{date,facility,shift}] }
+    const uniqueNursesByJig = {};  // jigyosho → Set<staff_id>
+    if (shiftSheet) {
+      const last = shiftSheet.getLastRow();
+      if (last > 1) {
+        const data = shiftSheet.getRange(2, 1, last - 1, 19).getValues();
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          const date = row[1];
+          if (!(date instanceof Date)) continue;
+          if (date.getFullYear() !== year || date.getMonth() !== month - 1) continue;
+          const dayHours = parseFloat(row[17]) || 0;
+          if (dayHours <= 0) continue;  // 日勤帯貢献なし → スキップ
+          const sid = String(row[6] || '').trim();
+          if (!nurseMap[sid]) continue;  // 看護師でなければスキップ
+          const jig = String(row[3] || '').trim();
+          const facility = String(row[4] || '').trim();
+          const shift = String(row[8] || '').trim();
+          const dateKey = Utilities.formatDate(date, 'Asia/Tokyo', 'M/d');
+
+          if (!accum[jig]) accum[jig] = {};
+          if (!accum[jig][sid]) {
+            accum[jig][sid] = { staff_id: sid, staff_name: nurseMap[sid], days: [] };
+          }
+          accum[jig][sid].days.push({ date: dateKey, facility: facility, shift: shift });
+
+          if (!uniqueNursesByJig[jig]) uniqueNursesByJig[jig] = {};
+          uniqueNursesByJig[jig][sid] = true;
+        }
+      }
+    }
+
+    // ④ 結果整形 (M_事業所配置基準の順序を保つ)
+    const jigyoshoList = jigyoshoOrder.map(function(jig) {
+      const nurses = accum[jig] ? Object.keys(accum[jig]).map(function(sid) {
+        const obj = accum[jig][sid];
+        // 日付昇順 (M/d を数値化)
+        obj.days.sort(function(a, b) {
+          const pa = a.date.split('/').map(Number);
+          const pb = b.date.split('/').map(Number);
+          return pa[0] !== pb[0] ? pa[0] - pb[0] : pa[1] - pb[1];
+        });
+        return obj;
+      }) : [];
+      // 配置日数の多い順に並べる
+      nurses.sort(function(a, b) { return b.days.length - a.days.length; });
+      const required = requiredMap[jig] || 0;
+      const nurseCount = uniqueNursesByJig[jig] ? Object.keys(uniqueNursesByJig[jig]).length : 0;
+      return {
+        jigyosho: jig,
+        required: required,
+        nurseCount: nurseCount,
+        judge: nurseCount >= required ? 'OK' : '不足',
+        nurses: nurses
+      };
+    });
+
+    return {
+      success: true,
+      yearMonth: yearMonth,
+      jigyoshoList: jigyoshoList
+    };
+  } catch (e) {
+    Logger.log('getNurseAssignmentDetails error: ' + e.message + '\n' + e.stack);
+    return { success: false, message: e.message };
+  }
+}
