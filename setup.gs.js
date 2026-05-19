@@ -183,21 +183,11 @@ function setupValidations(sheet) {
   // M列: シフト区分
   setPulldown(sheet, 13, maxRow, ['夜勤のみ', '日勤のみ', '両方']);
   
-  // N列: 許可シフト種別(🆕 プルダウン追加)
-  const shiftPatterns = [
-    '夜勤A',
-    '夜勤B',
-    '夜勤C',
-    '夜勤A,夜勤B',
-    '夜勤A,夜勤C',
-    '夜勤B,夜勤C',
-    '夜勤A,夜勤B,夜勤C',
-    '日勤早出',
-    '日勤遅出',
-    '日勤早出,日勤遅出',
-    '夜勤A,夜勤B,夜勤C,日勤早出,日勤遅出',
-  ];
-  setPulldown(sheet, 14, maxRow, shiftPatterns);
+  // N列: 許可シフト種別 (★Day17 A-G拡張: プルダウン廃止)
+  // 旧仕様は組み合わせプリセット8パターンだったが、A-G 7種類 + 日勤4種で 2^11=2048通り、非現実的。
+  // → チェックボックス方式に統一: 管理画面のスタッフ編集モーダルのチップUIで設定 (自由カンマ区切り)
+  // 例: '夜勤A,夜勤D,夜勤G,早出8h,遅出8h'
+  sheet.getRange(2, 14, maxRow - 1, 1).setDataValidation(null);
   
   // O列: 保護フラグ
   setPulldown(sheet, 15, maxRow, ['TRUE', 'FALSE']);
@@ -553,35 +543,26 @@ function cleanRebuildStaffSheet() {
 // ============================================
 // N列のプルダウンだけ即時反映（自己完結版）
 // ============================================
-function updateAllowedShiftsPulldown() {
-  Logger.log('🔧 許可シフト種別プルダウン設定');
+// ★Day17 A-G拡張: プルダウン設定 → データ検証クリア関数にrename
+// 旧関数 (updateAllowedShiftsPulldown) は組み合わせプリセット11パターンを設定していたが、
+// A-G 7種類 + 日勤4種で組み合わせ非現実的のためチェックボックス方式に移行。
+// 既存スタッフ141名分のN列に残ってる旧プルダウン制約を一括クリアするための関数。
+function clearAllowedShiftsPulldown() {
+  Logger.log('🧹 ★Day17 A-G拡張: 許可シフト種別のデータ検証クリア (プルダウン廃止)');
   
   try {
     const ss = SpreadsheetApp.openById(STAFF_SS_ID);
     const sheet = ss.getSheetByName('M_スタッフ');
     const maxRow = Math.max(sheet.getLastRow(), 100);
     
-    const shiftPatterns = [
-      '夜勤A', '夜勤B', '夜勤C',
-      '夜勤A,夜勤B', '夜勤A,夜勤C', '夜勤B,夜勤C',
-      '夜勤A,夜勤B,夜勤C',
-      '日勤早出', '日勤遅出', '日勤早出,日勤遅出',
-      '夜勤A,夜勤B,夜勤C,日勤早出,日勤遅出',
-    ];
+    // N列 (列番号 14) のデータ検証をクリア
+    sheet.getRange(2, 14, maxRow - 1, 1).setDataValidation(null);
     
-    // 直接データ検証を作成（setPulldown呼び出さない）
-    const range = sheet.getRange(2, 14, maxRow - 1, 1);
-    const rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(shiftPatterns, true)
-      .setAllowInvalid(false)
-      .build();
-    range.setDataValidation(rule);
+    Logger.log('✅ N列のプルダウン制約をクリアしました');
+    Logger.log('💡 今後は管理画面のスタッフ編集モーダルのチップUIで設定 (自由カンマ区切り)');
+    Logger.log('   例: 夜勤A,夜勤D,夜勤G,早出8h,遅出8h');
     
-    Logger.log('✅ プルダウン設定完了: ' + shiftPatterns.length + 'パターン');
-    Logger.log('📋 パターン一覧:');
-    shiftPatterns.forEach((p, i) => Logger.log('  ' + (i+1) + '. ' + p));
-    
-    return { success: true, patterns: shiftPatterns };
+    return { success: true, message: 'N列のプルダウン制約をクリア完了' };
     
   } catch (error) {
     Logger.log('❌ エラー: ' + error.toString());
