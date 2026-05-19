@@ -10,7 +10,7 @@ function debug_audit_master_v1() {
   const data = sheet.getDataRange().getValues();
 
   const ALLOWED_ROLES = ['サビ管', '世話人', '生活支援員', '管理者'];
-  const ALLOWED_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h', '夜勤A', '夜勤B', '夜勤C'];
+  const ALLOWED_SHIFTS = ['早出8h', '早出4h', '遅出8h', '遅出4h', '夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
 
   const issues = {
     missingRequired: [],
@@ -981,7 +981,7 @@ function debug_audit_allowed_shifts() {
   };
   const samples = { night_only: [], day_only: [], both: [], none: [] };
   
-  const nightSet = ['夜勤A', '夜勤B', '夜勤C'];
+  const nightSet = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const daySet = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
   
   for (let i = 1; i < data.length; i++) {
@@ -1033,7 +1033,7 @@ function debug_audit_allowed_shifts() {
   };
   const samples = { night_only: [], day_only: [], both: [], none: [] };
   
-  const nightSet = ['夜勤A', '夜勤B', '夜勤C'];
+  const nightSet = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const daySet = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
   
   for (let i = 1; i < data.length; i++) {
@@ -1087,7 +1087,7 @@ function inject_realistic_test_wishes_2026_06() {
   const TARGET_YEAR = 2026;
   const TARGET_MONTH = 6;
   const DAYS_IN_MONTH = 30;
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const DAY_SHIFTS_8H = ['早出8h', '遅出8h'];
   const DAY_SHIFTS_4H = ['早出4h', '遅出4h'];
   
@@ -1356,7 +1356,7 @@ function debug_check_night_assignments_2026_06() {
   const sheet = ss.getSheetByName('T_シフト確定');
   const data = sheet.getDataRange().getValues();
   
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const stats = {};
   let totalNight = 0;
   let estNight = 0;
@@ -1407,7 +1407,7 @@ function debug_analyze_unassigned_2026_06() {
   
   // 1. T_希望提出から夜勤希望のみ抽出
   const reqData = ss.getSheetByName('T_希望提出').getDataRange().getValues();
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const wishesByDay = {};  // dateKey -> [{staff_id, name, shift, mainFac, secondFac, subFac}, ...]
   
   for (let i = 1; i < reqData.length; i++) {
@@ -1537,7 +1537,7 @@ function debug_analyze_unassigned_2026_06() {
 function debug_deepdive_unassigned_2026_06() {
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const TARGET_YM = '2026-06';
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   
   // 希望取得
   const reqData = ss.getSheetByName('T_希望提出').getDataRange().getValues();
@@ -1740,7 +1740,7 @@ function debug_count_shift_dist_2026_06() {
     Logger.log('  ' + s + ': ' + shiftCounts[s] + '件');
   });
   
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   let night = 0, day = 0;
   Object.keys(shiftCounts).forEach(function(s) {
     if (NIGHT.indexOf(s) !== -1) night += shiftCounts[s];
@@ -1794,7 +1794,7 @@ function debug_check_shift_kakutei_2026_06() {
   const data = sheet.getDataRange().getValues();
   
   let total = 0, nightTotal = 0;
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   
   for (let i = 1; i < data.length; i++) {
     const dateVal = data[i][1];
@@ -1831,7 +1831,7 @@ function debug_analyze_shift_kakutei_structure() {
   const sheet = ss.getSheetByName('T_シフト確定');
   const data = sheet.getDataRange().getValues();
   
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const slotKeys = {};       // date_unitId_shift → count
   const dateShiftCounts = {};  // date_shift → count (シフト別)
   const dateCounts = {};       // date → 配置総数
@@ -1951,7 +1951,7 @@ function debug_audit_test_data_quality() {
   // M_スタッフから稼働141名の許可施設をマップ化
   const staffData = staffSheet.getDataRange().getValues();
   const staffInfo = {};  // sid → {mainFac, secondFac, subFacs, allowedNight, allowedDay, name}
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const DAY = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
   
   for (let i = 1; i < staffData.length; i++) {
@@ -2244,7 +2244,7 @@ function debug_phase5_pick_sample_staff() {
   const sheet = ss.getSheetByName('T_希望提出');
   const data = sheet.getDataRange().getValues();
   
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const counts = {};  // sid → 夜勤希望件数
   
   for (let i = 1; i < data.length; i++) {
@@ -2577,7 +2577,7 @@ function debug_phase6_staff_assignment_distribution() {
   // スタッフごとの希望件数 (夜勤/日勤別)
   const wishData = wishSheet.getDataRange().getValues();
   const staffWish = {};  // sid → {night, day}
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const DAY = ['早出8h', '早出4h', '遅出8h', '遅出4h'];
   
   for (let i = 1; i < wishData.length; i++) {
@@ -2688,7 +2688,7 @@ function debug_phase6_check_night_dayhours() {
   const sheet = ss.getSheetByName('T_シフト確定');
   const data = sheet.getDataRange().getValues();
   
-  const NIGHT = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const jigNightStats = {};  // 事業所 → {totalNightDayH, recordCount, byShift}
   
   for (let i = 1; i < data.length; i++) {
@@ -3400,7 +3400,7 @@ function inject_full_test_wishes_2026_06_v2() {
   const wishSheet = ss.getSheetByName('T_希望提出');
   const fixedSheet = ss.getSheetByName('M_固定配置');
   
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];  // 前日夜勤→NG
   
   // 1. 固定配置スタッフのstaff_id取得
@@ -3572,7 +3572,7 @@ function debug_check_assigned_role_filled() {
     if (ymStr !== '2026-06') continue;
     
     const shift = String(data[i][6] || '').trim();
-    if (['夜勤A', '夜勤B', '夜勤C'].indexOf(shift) !== -1) continue;  // 日勤のみ
+    if (['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'].indexOf(shift) !== -1) continue;  // 日勤のみ
     
     total++;
     const assignedRole = String(data[i][18] || '').trim();
@@ -3662,7 +3662,7 @@ function debug_check_assigned_role_v2() {
     const shift = String(data[i][8] || '').trim();  // シフト種別はどこ?
     const assignedRole = String(data[i][18] || '').trim();
     const isFixed = shiftId.indexOf('FIXED_') === 0;
-    const isNight = ['夜勤A','夜勤B','夜勤C'].indexOf(shift) !== -1;
+    const isNight = ['夜勤A','夜勤B','夜勤C','夜勤D','夜勤E','夜勤F','夜勤G'].indexOf(shift) !== -1;
     
     if (isFixed) fixedTotal++;
     else if (isNight) nightTotal++;
@@ -3693,7 +3693,7 @@ function debug_assigned_role_distribution() {
   const sheet = ss.getSheetByName('T_シフト確定');
   const data = sheet.getDataRange().getValues();
   
-  const NIGHT = ['夜勤A','夜勤B','夜勤C'];
+  const NIGHT = ['夜勤A','夜勤B','夜勤C','夜勤D','夜勤E','夜勤F','夜勤G'];
   const distAll = {};
   const distByJig = {};
   const fixedRoleDist = {};
@@ -3737,7 +3737,7 @@ function debug_role_hours_by_jig() {
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const sheet = ss.getSheetByName('T_シフト確定');
   const data = sheet.getDataRange().getValues();
-  const NIGHT = ['夜勤A','夜勤B','夜勤C'];
+  const NIGHT = ['夜勤A','夜勤B','夜勤C','夜勤D','夜勤E','夜勤F','夜勤G'];
   
   const result = {};
   
@@ -3829,7 +3829,7 @@ function debug_call_calcRoleHoursV2() {
         if (a.assignedRole !== '生活支援員') return;
         seikatsuCount++;
         const h = a.workHours || 0;
-        const isNight = a.isNight || (['夜勤A','夜勤B','夜勤C'].indexOf(a.shift) !== -1);
+        const isNight = a.isNight || (['夜勤A','夜勤B','夜勤C','夜勤D','夜勤E','夜勤F','夜勤G'].indexOf(a.shift) !== -1);
         let dayH = h;
         if (isNight) dayH = 0;
         seikatsuHours += dayH;

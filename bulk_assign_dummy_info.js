@@ -16,7 +16,7 @@ function bulkAssignDummyInfo() {
   // ダミー値
   const DUMMY_MAIN = 'GHコノヒカラ';
   const DUMMY_SHIFT_KUBUN = '両方';
-  const DUMMY_ALLOWED_SHIFTS = '夜勤A,夜勤B,夜勤C,早出8h,早出4h,遅出8h,遅出4h';
+  const DUMMY_ALLOWED_SHIFTS = '夜勤A,夜勤B,夜勤C,夜勤D,夜勤E,夜勤F,夜勤G,早出8h,早出4h,遅出8h,遅出4h';
   const DUMMY_MAIN_ROLE = '世話人';
 
   Logger.log(`========== ダミー情報一括割当 ==========`);

@@ -1009,7 +1009,7 @@ function getShiftCalendar(adminStaffId, targetYM) {
   
   // ★Day 15: 夜勤画面の契約 - 夜勤レコードのみ集計 (日勤の固定配置は別画面の責務)
   // 詳細: https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458
-  const NIGHT_SHIFTS_FOR_CALENDAR = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS_FOR_CALENDAR = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   
   for (let i = 1; i < shiftData.length; i++) {
     const row = shiftData[i];
@@ -1120,7 +1120,7 @@ function getStaffMonthlySummary(adminStaffId, targetYM) {
   
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const [year, month] = targetYM.split('-').map(Number);
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   
   // M_スタッフ読込
   const staffSheet = ss.getSheetByName('M_スタッフ');
@@ -1144,7 +1144,7 @@ function getStaffMonthlySummary(adminStaffId, targetYM) {
       mainFac: String(row[9] || '').trim(),
       experienceCategory: String(row[8] || '通常').trim() || '通常',
       placedCount: 0,
-      placedByShift: { '夜勤A': 0, '夜勤B': 0, '夜勤C': 0 },
+      placedByShift: { '夜勤A': 0, '夜勤B': 0, '夜勤C': 0, '夜勤D': 0, '夜勤E': 0, '夜勤F': 0, '夜勤G': 0 },
       placedByFacility: {},
       wishCount: 0,
       wishUnassigned: 0,
@@ -1600,7 +1600,7 @@ function getShiftsForApproval(adminStaffId, targetYM) {
   const [year, month] = targetYM.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   
-  const NIGHT_SHIFT_SET = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const NIGHT_SHIFT_SET = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
   const DAY_SHIFT_SET = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
   
   // ===== M_ユニット (夜勤用) =====
@@ -3222,7 +3222,7 @@ function debug_count_dayshifts_in_shift_sheet() {
   const data = sheet.getDataRange().getValues();
   
   const DAY_SHIFT_SET = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
-  const NIGHT_SHIFT_SET = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const NIGHT_SHIFT_SET = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
   
   let dayCount = 0;
   let nightCount = 0;

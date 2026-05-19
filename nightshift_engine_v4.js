@@ -70,9 +70,9 @@ const NSE_V4 = {
   COL_CONF_STATUS: 12,
   
   // シフト分類
-  NIGHT_SHIFTS: ['夜勤A', '夜勤B', '夜勤C'],
+  NIGHT_SHIFTS: ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'],
   DAY_SHIFTS: ['早出8h', '早出4h', '遅出8h', '遅出4h'],
-  ALL_SHIFTS: ['夜勤A', '夜勤B', '夜勤C', '早出8h', '早出4h', '遅出8h', '遅出4h'],
+  ALL_SHIFTS: ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G', '早出8h', '早出4h', '遅出8h', '遅出4h'],
   
   // スコア係数
   SCORE: {
@@ -566,7 +566,7 @@ function testSlotsAndCandidatesV4() {
   Logger.log('\n--- findCandidatesV4 (希望が0なので候補も0が期待値) ---');
   if (ctx.slots.length > 0) {
     const slot = ctx.slots[0];
-    ['夜勤A', '夜勤B', '夜勤C'].forEach(function(shift) {
+    ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'].forEach(function(shift) {
       const cands = findCandidatesV4(ctx, slot, shift);
       Logger.log(slot.dateKey + ' / ' + slot.unit_name + ' / ' + shift + ' → 候補: ' + cands.length + '件');
     });
@@ -968,7 +968,7 @@ function testAssignByScoreV4() {
     const date = new Date(dateKey + 'T00:00:00');
     
     staffIds.forEach(function(sid, idx) {
-      const shift = ['夜勤A', '夜勤B', '夜勤C'][idx % 3];
+      const shift = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'][idx % 3];
       const staff = ctx.staffMap[sid];
       
       // allowedShifts に当該シフトが含まれてるスタッフだけ

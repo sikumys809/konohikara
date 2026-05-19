@@ -68,7 +68,7 @@ function initFixedAssignmentSheet() {
   
   // 入力規則: shift_type 列
   const shiftRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['早出8h', '早出4h', '遅出8h', '遅出4h', '夜勤A', '夜勤B', '夜勤C'], true).build();
+    .requireValueInList(['早出8h', '早出4h', '遅出8h', '遅出4h', '夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'], true).build();
   sheet.getRange('F2:F').setDataValidation(shiftRule);
   
   // 入力規則: is_active 列

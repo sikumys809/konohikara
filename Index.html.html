@@ -821,7 +821,7 @@ function updateField(idx, field, value) {
 
 // ★Day 14: H13 グレーアウト判定 (前日夜勤<->翌日早出)
 function isShiftBlockedByH13(targetDate, targetShift, allRequests) {
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];
   
   function _addDaysLocal(dateKey, delta) {
@@ -906,7 +906,7 @@ function formatDateJP(dateStr) {
 // ============================================================
 function validateWishesFront(requests) {
   // ★Day 14: H13 + H15 統合版 (旧RULE1-6を統合)
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];
   
   const wishes = [];

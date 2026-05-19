@@ -129,7 +129,7 @@ function testTimeJudgement() {
   Logger.log('03:00跨日 -> ' + parseTimeToMinutes('03:00', true) + ' (期待:1620)');
   
   Logger.log('--- getEffectiveWorkBlocks ---');
-  ['夜勤A', '夜勤B', '夜勤C', '早出8h', '早出4h', '遅出8h', '遅出4h'].forEach(function(s) {
+  ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G', '早出8h', '早出4h', '遅出8h', '遅出4h'].forEach(function(s) {
     const blocks = getEffectiveWorkBlocks(s);
     const totalH = blocks.reduce(function(sum, b) { return sum + (b.end - b.start); }, 0) / 60;
     Logger.log(s + ': ' + JSON.stringify(blocks) + ' = 合計 ' + totalH + 'h');
@@ -665,7 +665,7 @@ function checkH15(wish, sameDayWishes) {
 // H13: 前日夜勤 <-> 翌日早出 双方向NG (Day 14: 双方向化)
 // 旧RULE4/5 を包含
 function checkH13(wish, byDate) {
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
   const EARLY_SHIFTS = ['早出8h', '早出4h'];
   
   // 翌日早出 < - > 前日夜勤

@@ -56,7 +56,7 @@ function _expandAllowedShiftsForAll() {
 
   // 全員のN列値とQ列値を取得
   const range = sheet.getRange(2, 1, lastRow - 1, qCol).getValues();
-  const allShifts = '夜勤A,夜勤B,夜勤C,早出8h,早出4h,遅出8h,遅出4h';
+  const allShifts = '夜勤A,夜勤B,夜勤C,夜勤D,夜勤E,夜勤F,夜勤G,早出8h,早出4h,遅出8h,遅出4h';
 
   const updates = [];
   let activeCount = 0;

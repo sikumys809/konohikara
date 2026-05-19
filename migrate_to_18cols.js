@@ -87,7 +87,7 @@ function diagnoseAfterMigration() {
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 18).getValues();
   
   const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
-  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
   
   const stats = { 
     夜勤: { 仮: 0, 確定: 0, 日時: 0, 空: 0, その他: 0 }, 
@@ -129,7 +129,7 @@ function fixNightShiftStatusToDraft() {
   }
 
   const data = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
-  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
   
   Logger.log('========== 夜勤ステータス修正 ==========');
   

@@ -4,7 +4,7 @@ function diagnoseShiftConfirmState() {
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 19).getValues();
   
   const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
-  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
   
   const stats = { 
     夜勤: { 仮: 0, 確定: 0, その他: 0 }, 
@@ -43,7 +43,7 @@ function diagnoseStatusValues() {
   const sheet = ss.getSheetByName('T_シフト確定');
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 19).getValues();
   
-  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
   const statusValues = {};
   
   data.forEach(row => {

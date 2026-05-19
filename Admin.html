@@ -1899,7 +1899,7 @@ function renderEditForm() {
   const facilityOptsSecond = ['<option value="">(未選択)</option>']
     .concat(facilities.map(f => `<option value="${escapeAttr(f)}" ${f === s.secondFacility ? 'selected' : ''}>${escapeHtml(f)}</option>`)).join('');
   
-  const allShifts = ['夜勤A', '夜勤B', '夜勤C', '早出8h', '早出4h', '遅出8h', '遅出4h'];
+  const allShifts = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G', '早出8h', '早出4h', '遅出8h', '遅出4h'];
   const currentShifts = s.allowedShifts ? (Array.isArray(s.allowedShifts) ? s.allowedShifts : String(s.allowedShifts).split(',').map(x => x.trim())) : [];
   
   const currentRoles = s.role ? (Array.isArray(s.role) ? s.role : String(s.role).split(',').map(x => x.trim())) : [];

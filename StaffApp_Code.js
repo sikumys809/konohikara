@@ -163,9 +163,9 @@ function normalizeYM(val) {
 }
 
 function getDefaultAllowedShifts(kubun) {
-  if (kubun === '夜勤のみ') return ['夜勤A','夜勤B','夜勤C'];
+  if (kubun === '夜勤のみ') return ['夜勤A','夜勤B','夜勤C','夜勤D','夜勤E','夜勤F','夜勤G'];
   if (kubun === '日勤のみ') return ['早出8h','遅出8h'];
-  return ['夜勤A','夜勤B','夜勤C','早出8h','遅出8h'];
+  return ['夜勤A','夜勤B','夜勤C','夜勤D','夜勤E','夜勤F','夜勤G','早出8h','遅出8h'];
 }
 
 function calcMonthsSinceHire(hireDate) {
@@ -878,7 +878,7 @@ function getMyShifts(staffId, yearMonth) {
     }
   }
 
-  const isNightShift = (st) => st === '夜勤A' || st === '夜勤B' || st === '夜勤C';
+  const isNightShift = (st) => st === '夜勤A' || st === '夜勤B' || st === '夜勤C' || st === '夜勤D' || st === '夜勤E' || st === '夜勤F' || st === '夜勤G';
 
   const targetSid = String(staffId);
   const result = [];
@@ -2011,7 +2011,7 @@ function _peekUnitAndShift() {
   let nightCount = 0;
   for (let i = 1; i < sv.length && nightCount < 2; i++) {
     const t = String(sv[i][8]).trim();
-    if (t === '夜勤A' || t === '夜勤B' || t === '夜勤C') {
+    if (t === '夜勤A' || t === '夜勤B' || t === '夜勤C' || t === '夜勤D' || t === '夜勤E' || t === '夜勤F' || t === '夜勤G') {
       Logger.log(JSON.stringify(sv[i].slice(0, 12)));
       nightCount++;
     }

@@ -66,7 +66,7 @@ function getDayShiftCalendarData(adminStaffId, yearMonth) {
     const cfData = cfLast > 1 ? cfSheet.getRange(2, 1, cfLast - 1, 19).getValues() : [];
 
     const dayShiftSet = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
-    const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C']);  // ★Day13: 夜勤も日勤カレンダーに表示
+    const nightShiftSet = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);  // ★Day13: 夜勤も日勤カレンダーに表示
 
     const matrix = {};
     facilities.forEach(f => {
@@ -646,7 +646,7 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
       return p.kubun !== '新人1ヶ月' && p.kubun !== '新人2ヶ月';
     }).length;
 
-    const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+    const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
 
     // ★Day15: T_希望提出から このdateKey の全希望情報を取得 (A1〜A4判定用)
     const reqYM = dateKey.substring(0, 7);
@@ -948,7 +948,7 @@ function testGetCandidates() {
  */
 function _evaluateDayShiftWarnings(staffId, dateKey, jigyosho, facility, shift, ym) {
   const warnings = [];
-  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+  const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();

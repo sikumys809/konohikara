@@ -290,7 +290,7 @@ function checkTestDayRequests() {
   const data = reqSheet.getRange(2, 1, lastRow - 1, 13).getValues();
   const TARGET_YM = '2026-05';
   const dayShifts = new Set(['早出8h', '早出4h', '遅出8h', '遅出4h']);
-  const nightShifts = new Set(['夜勤A', '夜勤B', '夜勤C']);
+  const nightShifts = new Set(['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G']);
 
   let dayCount = 0, nightCount = 0, other = 0;
   const dayByShift = {};

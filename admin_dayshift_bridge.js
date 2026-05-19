@@ -272,7 +272,7 @@ function getApprovalSummary(yearMonth) {
     const nightExpected = unitCount * daysInMonth;
 
     // ② T_シフト確定 から対象月の夜勤A/B/C件数を集計
-    const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C'];
+    const NIGHT_SHIFTS = ['夜勤A', '夜勤B', '夜勤C', '夜勤D', '夜勤E', '夜勤F', '夜勤G'];
     const shiftSheet = ss.getSheetByName('T_シフト確定');
     let nightPlaced = 0;
     let nightConfirmed = 0;
