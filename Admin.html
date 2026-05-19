@@ -403,6 +403,10 @@
             <option value="夜勤A">夜勤A</option>
             <option value="夜勤B">夜勤B</option>
             <option value="夜勤C">夜勤C</option>
+            <option value="夜勤D">夜勤D</option>
+            <option value="夜勤E">夜勤E</option>
+            <option value="夜勤F">夜勤F</option>
+            <option value="夜勤G">夜勤G</option>
             <option value="早出8h">早出8h (07:00-16:00)</option>
             <option value="早出4h">早出4h (07:00-11:00)</option>
             <option value="遅出8h">遅出8h (13:00-22:00)</option>
@@ -1088,7 +1092,7 @@
         <button onclick="openAllDsPdf()" style="padding: 8px 16px; background: #d97706; color: white; border: none; border-radius: 6px; cursor: pointer;">
           📚 全事業所まとめて表示
         </button>
-          <span style="font-size: 11px; color: #6b7280;">夜勤B/Cの朝部分も繰越として表示</span>
+          <span style="font-size: 11px; color: #6b7280;">夜勤の朝部分も繰越として表示</span>
         </div>
       </div>
     </div>
@@ -1242,7 +1246,7 @@
           <ol style="margin: 8px 0 0 20px; padding: 0;">
             <li>対象月の日勤希望（早出8h/早出4h/遅出8h/遅出4h）を取得</li>
             <li>既存の日勤配置データを削除</li>
-            <li>物理NG検証（夜勤衝突・8h上限・前日夜勤B/C連続）</li>
+            <li>物理NG検証（夜勤衝突・8h上限・前日夜勤連続）</li>
             <li>メイン施設に配置（M_ユニットで事業所変換）</li>
             <li>事業所別・職種別充足率レポート生成（V_日勤充足）</li>
           </ol>
@@ -1289,7 +1293,7 @@
           <ol style="margin: 8px 0 0 20px; padding: 0;">
             <li>対象月の日勤希望（早出8h/早出4h/遅出8h/遅出4h）を取得</li>
             <li>既存の日勤配置データを削除</li>
-            <li>物理NG検証（夜勤衝突・8h上限・前日夜勤B/C連続）</li>
+            <li>物理NG検証（夜勤衝突・8h上限・前日夜勤連続）</li>
             <li>メイン施設に配置（M_ユニットで事業所変換）</li>
             <li>事業所別・職種別充足率レポート生成（V_日勤充足）</li>
           </ol>
@@ -3066,7 +3070,7 @@ function renderStaffSummary(data) {
               <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">氏名</th>
               <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e5e7eb;">配置/希望</th>
               <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e5e7eb;">未配置希望</th>
-              <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">内訳(夜勤A/B/C)</th>
+              <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">内訳(夜勤A-G)</th>
               <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb;">配置先</th>
             </tr>
           </thead>
@@ -3096,7 +3100,7 @@ function renderStaffSummary(data) {
           ${s.wishUnassigned}
         </td>
         <td style="padding: 6px 8px;">
-          A:${s.placedByShift['夜勤A']} / B:${s.placedByShift['夜勤B']} / C:${s.placedByShift['夜勤C']}
+          A:${s.placedByShift['夜勤A']} / B:${s.placedByShift['夜勤B']} / C:${s.placedByShift['夜勤C']} / D:${s.placedByShift['夜勤D']} / E:${s.placedByShift['夜勤E']} / F:${s.placedByShift['夜勤F']} / G:${s.placedByShift['夜勤G']}
         </td>
         <td style="padding: 6px 8px; color: #6b7280;">${facList}</td>
       </tr>
@@ -3257,7 +3261,7 @@ function openSlotEditor(dateKey, unitId, unitName, facility) {
     currentSlot: currentSlot,
   };
   shiftViewState.selectedCandidate = currentSlot ? currentSlot.staff_id : null;
-  shiftViewState.selectedShiftType = currentSlot ? currentSlot.shift_type : '夜勤B';
+  shiftViewState.selectedShiftType = currentSlot ? currentSlot.shift_type : '夜勤G';
   
   document.getElementById('slotEditTitle').innerText = 
     `${dateKey} ${unitName} (${facility})`;
@@ -3283,7 +3287,7 @@ function renderSlotEditor(candidates) {
   
   // ★Day 15 P5 確定: 5段階優先順位 + 配置不可は最下部
   // A1 > A2 > A3 > A4 > B > 配置不可(同日既配置/許可シフト外/許可施設外)
-  const _currentShiftForSort = shiftViewState.selectedShiftType || '夜勤B';
+  const _currentShiftForSort = shiftViewState.selectedShiftType || '夜勤G';
   const _targetFacilityForSort = shiftViewState.editingSlot ? shiftViewState.editingSlot.facility : '';
   
   function _calcWishRank(c) {
@@ -3323,9 +3327,13 @@ function renderSlotEditor(candidates) {
     <div style="margin-bottom: 12px;">
       <label style="display: block; font-weight: 600; margin-bottom: 6px;">シフト種別</label>
       <select id="slotEditShiftType" onchange="shiftViewState.selectedShiftType = this.value; rerenderCandidateList();" style="padding: 6px; border-radius: 6px; border: 1px solid #d1d5db; width: 150px;">
-        <option value="夜勤A" ${shiftViewState.selectedShiftType === '夜勤A' ? 'selected' : ''}>夜勤A (20-05)</option>
-        <option value="夜勤B" ${shiftViewState.selectedShiftType === '夜勤B' ? 'selected' : ''}>夜勤B (22-07)</option>
-        <option value="夜勤C" ${shiftViewState.selectedShiftType === '夜勤C' ? 'selected' : ''}>夜勤C (22-08)</option>
+        <option value="夜勤A" ${shiftViewState.selectedShiftType === '夜勤A' ? 'selected' : ''}>夜勤A (17:30-05)</option>
+        <option value="夜勤B" ${shiftViewState.selectedShiftType === '夜勤B' ? 'selected' : ''}>夜勤B (20-05)</option>
+        <option value="夜勤C" ${shiftViewState.selectedShiftType === '夜勤C' ? 'selected' : ''}>夜勤C (20-06:30)</option>
+        <option value="夜勤D" ${shiftViewState.selectedShiftType === '夜勤D' ? 'selected' : ''}>夜勤D (20-07:30)</option>
+        <option value="夜勤E" ${shiftViewState.selectedShiftType === '夜勤E' ? 'selected' : ''}>夜勤E (22-07)</option>
+        <option value="夜勤F" ${shiftViewState.selectedShiftType === '夜勤F' ? 'selected' : ''}>夜勤F (22-08)</option>
+        <option value="夜勤G" ${shiftViewState.selectedShiftType === '夜勤G' ? 'selected' : ''}>夜勤G (22-09:30)</option>
       </select>
     </div>
     <div style="margin-bottom: 8px;">
@@ -3345,7 +3353,7 @@ function renderSlotEditor(candidates) {
     //   A3: この施設で他シフト希望 → [💡他種別希望:◯◯]
     //   A4: 他施設で他シフト希望 → [💡他施設・他種別希望:施設名で◯◯]
     //   B : 完全に希望なし → [希望なし](薄灰)
-    const _currentShift = shiftViewState.selectedShiftType || '夜勤B';
+    const _currentShift = shiftViewState.selectedShiftType || '夜勤G';
     const _targetFacility = shiftViewState.editingSlot ? shiftViewState.editingSlot.facility : '';
     const _wishes = c.wishes || [];
     
@@ -3429,7 +3437,7 @@ function renderSlotEditor(candidates) {
     //  1) 同日既配置
     //  2) 許可シフト外 (H9相当): allowedShifts に現在のシフト種別が含まれない
     //  3) 許可施設外 (H10相当): facilityMatch が 'none'
-    const currentShift = shiftViewState.selectedShiftType || '夜勤B';
+    const currentShift = shiftViewState.selectedShiftType || '夜勤G';
     const isShiftNotAllowed = !(c.allowedShifts && c.allowedShifts.indexOf(currentShift) >= 0);
     const isFacilityNotAllowed = c.facilityMatch === 'none';
     const isDisabled = c.alreadyAssignedToday || isShiftNotAllowed || isFacilityNotAllowed;
@@ -3584,9 +3592,13 @@ function toggleLegendModal() {
       
       <h3 style="font-size:14px;color:#374151;">⏰ シフト種別</h3>
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
-        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;width:100px;"><strong>夜勤A</strong></td><td style="padding:6px 8px;">20:00 - 翌05:00(朝5時で終了、朝サポートなし)</td></tr>
-        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤B</strong></td><td style="padding:6px 8px;">22:00 - 翌07:00(朝7時で終了)</td></tr>
-        <tr><td style="padding:6px 8px;"><strong>夜勤C</strong></td><td style="padding:6px 8px;">22:00 - 翌08:00(朝8時で終了、朝の忙しい時間をカバー)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;width:100px;"><strong>夜勤A</strong></td><td style="padding:6px 8px;">17:30 - 翌05:00 (実労8h、朝5時で終了)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤B</strong></td><td style="padding:6px 8px;">20:00 - 翌05:00 (実労5.5h、朝5時で終了)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤C</strong></td><td style="padding:6px 8px;">20:00 - 翌06:30 (実労7h、朝6:30まで)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤D</strong></td><td style="padding:6px 8px;">20:00 - 翌07:30 (実労8h、朝7:30まで)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤E</strong></td><td style="padding:6px 8px;">22:00 - 翌07:00 (実労5.5h、朝7時まで)</td></tr>
+        <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px 8px;"><strong>夜勤F</strong></td><td style="padding:6px 8px;">22:00 - 翌08:00 (実労6.5h、朝8時まで)</td></tr>
+        <tr><td style="padding:6px 8px;"><strong>夜勤G</strong></td><td style="padding:6px 8px;">22:00 - 翌09:30 (実労8h、朝9:30まで、朝サポート最長)</td></tr>
       </table>
       
       <p style="font-size:11px;color:#6b7280;margin:0;border-top:1px solid #e5e7eb;padding-top:12px;">詳細仕様: <a href="https://www.notion.so/362ec81ceecf814d9c88d7c16f41c458" target="_blank">配置経路の制約ルール統合仕様 (Notion)</a></p>
@@ -5473,7 +5485,7 @@ function _renderDsV2Body() {
 
 function _dsV2PlacementCard(p, isNightAddon) {
   const bgColor = isNightAddon ? '#F7F5F0' : '#ffffff';
-  const shortShiftMap = {'早出8h':'早8','早出4h':'早4','遅出8h':'遅8','遅出4h':'遅4','夜勤A':'夜A加算(+2h)','夜勤B':'夜B加算(+2h)','夜勤C':'夜C加算(+2h)'};
+  const shortShiftMap = {'早出8h':'早8','早出4h':'早4','遅出8h':'遅8','遅出4h':'遅4','夜勤A':'夜A加算(+4.5h)','夜勤B':'夜B加算(+2h)','夜勤C':'夜C加算(+3.5h)','夜勤D':'夜D加算(+4.5h)','夜勤E':'夜E加算(+2h)','夜勤F':'夜F加算(+3h)','夜勤G':'夜G加算(+4.5h)'};
   const shortShift = shortShiftMap[p.shiftType] || p.shiftType;
   let shiftBg, shiftCol;
   if (p.isFromNight) { shiftBg='#EEEDFE'; shiftCol='#3C3489'; }
@@ -5887,22 +5899,46 @@ function toggleDsLegendModal() {
           <td style="padding:6px 8px;">遅出4時間</td>
         </tr>
         <tr style="border-bottom:1px solid #e5e7eb;">
-          <td style="padding:6px 8px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜A</span></td>
-          <td style="padding:6px 8px;">20-翌05</td>
-          <td style="padding:6px 8px;">+2h</td>
-          <td style="padding:6px 8px;">夜勤Aから日勤帯(20-22)へ2h加算</td>
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜A</span></td>
+          <td style="padding:6px 8px;">17:30-翌05</td>
+          <td style="padding:6px 8px;">+4.5h</td>
+          <td style="padding:6px 8px;">夜勤Aから日勤帯(17:30-22)へ4.5h加算</td>
         </tr>
         <tr style="border-bottom:1px solid #e5e7eb;">
-          <td style="padding:6px 8px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜B</span></td>
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜B</span></td>
+          <td style="padding:6px 8px;">20-翌05</td>
+          <td style="padding:6px 8px;">+2h</td>
+          <td style="padding:6px 8px;">夜勤Bから日勤帯(20-22)へ2h加算</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜C</span></td>
+          <td style="padding:6px 8px;">20-翌06:30</td>
+          <td style="padding:6px 8px;">+3.5h</td>
+          <td style="padding:6px 8px;">夜勤Cから日勤帯(20-22の2h+翌5-6:30の1.5h)へ3.5h加算</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜D</span></td>
+          <td style="padding:6px 8px;">20-翌07:30</td>
+          <td style="padding:6px 8px;">+4.5h</td>
+          <td style="padding:6px 8px;">夜勤Dから日勤帯(20-22の2h+翌5-7:30の2.5h)へ4.5h加算</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜E</span></td>
           <td style="padding:6px 8px;">22-翌07</td>
           <td style="padding:6px 8px;">+2h</td>
-          <td style="padding:6px 8px;">夜勤Bから翌朝の日勤帯(05-07)へ2h加算</td>
+          <td style="padding:6px 8px;">夜勤Eから翌朝の日勤帯(05-07)へ2h加算</td>
+        </tr>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜F</span></td>
+          <td style="padding:6px 8px;">22-翌08</td>
+          <td style="padding:6px 8px;">+3h</td>
+          <td style="padding:6px 8px;">夜勤Fから翌朝の日勤帯(05-08)へ3h加算</td>
         </tr>
         <tr>
-          <td style="padding:6px 8px;"><span style="background:#EEEDFE;color:#3C3489;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜C</span></td>
-          <td style="padding:6px 8px;">22-翌08</td>
-          <td style="padding:6px 8px;">+2h</td>
-          <td style="padding:6px 8px;">夜勤Cから翌朝の日勤帯(06-08)へ2h加算</td>
+          <td style="padding:6px 8px;"><span style="background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;">夜G</span></td>
+          <td style="padding:6px 8px;">22-翌09:30</td>
+          <td style="padding:6px 8px;">+4.5h</td>
+          <td style="padding:6px 8px;">夜勤Gから翌朝の日勤帯(05-09:30)へ4.5h加算</td>
         </tr>
       </table>
       
@@ -5930,7 +5966,7 @@ function toggleDsLegendModal() {
         </tr>
         <tr>
           <td style="padding:6px 8px;"><strong>🌙+N</strong></td>
-          <td style="padding:6px 8px;">夜勤からの加算人数(夜A/B/Cから日勤帯に+2hずつ寄与)</td>
+          <td style="padding:6px 8px;">夜勤からの加算人数(夜A-Gから日勤帯にdayHours分寄与)</td>
         </tr>
       </table>
       
@@ -6016,8 +6052,8 @@ function _renderDsCellV2(cell, jigyosho, facility, wmarkFn, readOnly) {
   // シフト種別の略号
   function _shortShift(shiftType, isFromNight) {
     if (isFromNight) {
-      // 夜勤A=夜A、夜勤B=夜B、夜勤C=夜C
-      const m = shiftType.match(/夜勤([A-C])/);
+      // ★Day17 A-G拡張: 夜勤A=夜A、夜勤B=夜B、...夜勤G=夜G
+      const m = shiftType.match(/夜勤([A-G])/);
       return m ? '夜' + m[1] : '夜';
     }
     if (shiftType === '早出8h') return '早8';
