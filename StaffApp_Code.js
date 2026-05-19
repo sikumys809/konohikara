@@ -2053,17 +2053,30 @@ function getMyContactInfo(staffId) {
 }
 
 // ★Day17: 勤務先施設タブ用 - 施設→部屋番号リスト
+// E-st問題対応: M_ユニット側の施設名から「（…）」サフィックスを除いた正規化名で集約。
+// 例: 「ルーデンス上板橋E-st（板橋北区）」と「ルーデンス上板橋E-st（板橋北区セカンド）」
+//     を「ルーデンス上板橋E-st」に集約し、部屋101と102を両方持たせる。
 function getMyWorkplaceFacilities(staffId) {
   const ss = SpreadsheetApp.openById(STAFF_SS_ID);
   const unitSheet = ss.getSheetByName('M_ユニット');
   const uData = unitSheet.getDataRange().getValues();
   const facilityToRooms = {};
   for (let i = 1; i < uData.length; i++) {
-    const fac = String(uData[i][3] || '').trim();
+    const facRaw = String(uData[i][3] || '').trim();
     const room = String(uData[i][5] || '').trim();
-    if (!fac || !room) continue;
+    if (!facRaw || !room) continue;
+    // 「（…）」「(...)」サフィックスを除去してスタッフ側表示名に正規化
+    const fac = facRaw.replace(/[（(][^）)]*[）)]\s*$/, '').trim();
     if (!facilityToRooms[fac]) facilityToRooms[fac] = [];
     if (facilityToRooms[fac].indexOf(room) === -1) facilityToRooms[fac].push(room);
   }
+  // 部屋番号を昇順ソート
+  Object.keys(facilityToRooms).forEach(k => {
+    facilityToRooms[k].sort((a, b) => {
+      const na = parseInt(a, 10), nb = parseInt(b, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return String(a).localeCompare(String(b));
+    });
+  });
   return { success: true, facilityToRooms: facilityToRooms };
 }
