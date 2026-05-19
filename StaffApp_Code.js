@@ -835,6 +835,29 @@ function getMyShifts(staffId, yearMonth) {
   const data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
 
+  // ★Day17: M_ユニット から部屋番号マップを構築
+  // - unitIdToRoom[unit_id] = 部屋番号 (夜勤用: 自分の配置unit_idから1つ)
+  // - facilityToRooms[施設名] = [部屋番号,...] (日勤用: 施設全部屋)
+  const unitIdToRoom = {};
+  const facilityToRooms = {};
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  if (unitSheet) {
+    const uv = unitSheet.getDataRange().getValues();
+    for (let i = 1; i < uv.length; i++) {
+      const uid = String(uv[i][0] || '').trim();
+      const fac = String(uv[i][3] || '').trim();
+      const room = String(uv[i][5] || '').trim();
+      if (!uid || !room) continue;
+      unitIdToRoom[uid] = room;
+      if (fac) {
+        if (!facilityToRooms[fac]) facilityToRooms[fac] = [];
+        if (facilityToRooms[fac].indexOf(room) === -1) facilityToRooms[fac].push(room);
+      }
+    }
+  }
+
+  const isNightShift = (st) => st === '夜勤A' || st === '夜勤B' || st === '夜勤C';
+
   const targetSid = String(staffId);
   const result = [];
 
@@ -864,10 +887,25 @@ function getMyShifts(staffId, yearMonth) {
       return s;
     };
 
+    // ★Day17: 部屋番号を組み立て
+    const shiftType = String(row[COL_SHIFT.SHIFT_TYPE] || '').trim();
+    const facility = String(row[COL_SHIFT.FACILITY] || '').trim();
+    const unitId = String(row[2] || '').trim();  // T_シフト確定 index 2 = unit_id
+    let rooms = '';
+    if (isNightShift(shiftType)) {
+      // 夜勤: 自分の配置ユニットの部屋番号 (1つ)
+      rooms = unitIdToRoom[unitId] || '';
+    } else {
+      // 日勤: 施設にある全部屋番号
+      const list = facilityToRooms[facility] || [];
+      rooms = list.join(' / ');
+    }
+
     result.push({
       date: dateStr,
-      facility: String(row[COL_SHIFT.FACILITY] || ''),
-      shift: String(row[COL_SHIFT.SHIFT_TYPE] || ''),
+      facility: facility,
+      rooms: rooms,
+      shift: shiftType,
       start: parseTime(row[COL_SHIFT.START]),
       end: parseTime(row[COL_SHIFT.END]),
     });
@@ -1905,5 +1943,55 @@ function debug_trace_candidate_59() {
     candidates.forEach(function(c) {
       Logger.log('  staff_id=' + c.staff.staff_id + ' / ' + c.staff.name);
     });
+  }
+}
+
+function _peekUnitColumns() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const s = ss.getSheetByName('M_ユニット');
+  const v = s.getDataRange().getValues();
+  Logger.log('=== M_ユニット ヘッダー ===');
+  Logger.log(JSON.stringify(v[0]));
+  Logger.log('=== 最初の3行 ===');
+  for (let i = 1; i <= 3 && i < v.length; i++) {
+    Logger.log('行' + i + ': ' + JSON.stringify(v[i]));
+  }
+}
+function _peekUnitColumns() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const s = ss.getSheetByName('M_ユニット');
+  const v = s.getDataRange().getValues();
+  Logger.log('=== M_ユニット ヘッダー ===');
+  Logger.log(JSON.stringify(v[0]));
+  Logger.log('=== 最初の3行 ===');
+  for (let i = 1; i <= 3 && i < v.length; i++) {
+    Logger.log('行' + i + ': ' + JSON.stringify(v[i]));
+  }
+}
+
+function _peekUnitAndShift() {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  
+  const u = ss.getSheetByName('M_ユニット');
+  const uv = u.getDataRange().getValues();
+  Logger.log('=== M_ユニット ヘッダー ===');
+  Logger.log(JSON.stringify(uv[0]));
+  Logger.log('=== M_ユニット 最初の3行 ===');
+  for (let i = 1; i <= 3 && i < uv.length; i++) {
+    Logger.log(JSON.stringify(uv[i]));
+  }
+  
+  const s = ss.getSheetByName('T_シフト確定');
+  const sv = s.getDataRange().getValues();
+  Logger.log('=== T_シフト確定 ヘッダー ===');
+  Logger.log(JSON.stringify(sv[0]));
+  Logger.log('=== 夜勤行サンプル ===');
+  let nightCount = 0;
+  for (let i = 1; i < sv.length && nightCount < 2; i++) {
+    const t = String(sv[i][8]).trim();
+    if (t === '夜勤A' || t === '夜勤B' || t === '夜勤C') {
+      Logger.log(JSON.stringify(sv[i].slice(0, 12)));
+      nightCount++;
+    }
   }
 }

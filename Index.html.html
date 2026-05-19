@@ -1160,7 +1160,7 @@ function renderMyShifts(shifts, monthLabel, prefixHtml) {
         </div>
         <div style="font-size:13px;color:#6366f1;font-weight:600;">${escapeHtml(s.shift)}${timeStr ? ' <span style="color:#6b7280;font-weight:400;">' + escapeHtml(timeStr) + '</span>' : ''}</div>
       </div>
-      <div style="font-size:12px;color:#6b7280;margin-top:4px;">📍 ${escapeHtml(s.facility)}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px;">📍 ${escapeHtml(s.facility)}${s.rooms ? ' <span style="color:#374151;font-weight:500;">' + escapeHtml(s.rooms) + '号室</span>' : ''}</div>
     </div>`;
   }
 
