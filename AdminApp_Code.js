@@ -2372,8 +2372,20 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
       const isNewbie1 = kubun === '新人1ヶ月';
       const isNewbie2 = kubun === '新人2ヶ月';
       const isDayShift = shiftType.indexOf('早出') !== -1 || shiftType.indexOf('遅出') !== -1;
-      const isNightA = shiftType === '夜勤A';
-      const isNightBC = shiftType === '夜勤B' || shiftType === '夜勤C';
+      // ★Day17 A-G拡張: 夜勤シフトの日勤帯繰入/繰越定義
+      // startDay: 始業日繰入 (始業時刻〜22:00) - 日勤帯後半に表示
+      // nextDay:  翌日繰越   (翌日5:00〜終了時刻) - 翌日朝に繰越表示
+      // 注: 休憩は01:00-04:30で完全に夜勤帯内のため、翌日5:00以降は休憩無し
+      const NIGHT_CARRYOVER_MAP = {
+        '夜勤A': { startDay: { start: '17:30', end: '22:00' }, nextDay: null },
+        '夜勤B': { startDay: { start: '20:00', end: '22:00' }, nextDay: null },
+        '夜勤C': { startDay: { start: '20:00', end: '22:00' }, nextDay: { start: '05:00', end: '06:30' } },
+        '夜勤D': { startDay: { start: '20:00', end: '22:00' }, nextDay: { start: '05:00', end: '07:30' } },
+        '夜勤E': { startDay: null, nextDay: { start: '05:00', end: '07:00' } },
+        '夜勤F': { startDay: null, nextDay: { start: '05:00', end: '08:00' } },
+        '夜勤G': { startDay: null, nextDay: { start: '05:00', end: '09:30' } },
+      };
+      const isNight = shiftType.indexOf('夜勤') === 0;
 
       if (isDayShift) {
         if (!placements[facility][dateKey]) placements[facility][dateKey] = [];
@@ -2387,41 +2399,42 @@ function getDayShiftsForPDF(adminStaffId, targetYM, jigyosho) {
           isNewbie1: isNewbie1,
           isNewbie2: isNewbie2,
         });
-      } else if (isNightA) {
-        // ★Day16: 夜勤A (20:00-翌5:00) → 同日 20:00-22:00 の2h を日勤帯に表示
-        if (!placements[facility][dateKey]) placements[facility][dateKey] = [];
-        placements[facility][dateKey].push({
-          name: staffName,
-          role: role,
-          shiftType: '(夜勤A繰入)',
-          start: '20:00',
-          end: '22:00',
-          isNightCarryover: true,
-          isNewbie1: isNewbie1,
-          isNewbie2: isNewbie2,
-        });
-      } else if (isNightBC) {
-        // 翌日の朝勤務として登録
-        const nextDate = new Date(dateKey + 'T00:00:00+09:00');
-        nextDate.setDate(nextDate.getDate() + 1);
-        const nextDateKey = Utilities.formatDate(nextDate, 'Asia/Tokyo', 'yyyy-MM-dd');
-        if (!nextDateKey.startsWith(targetYM)) continue;
-        if (!placements[facility][nextDateKey]) placements[facility][nextDateKey] = [];
+      } else if (isNight) {
+        const carryover = NIGHT_CARRYOVER_MAP[shiftType];
+        if (!carryover) continue;
 
-        // 夜勤B: 05:00-07:00 / 夜勤C: 06:00-08:00 (5-6時は休憩のため)
-        const carryoverStart = shiftType === '夜勤B' ? '05:00' : '06:00';
-        const carryoverEnd = shiftType === '夜勤B' ? '07:00' : '08:00';
+        if (carryover.startDay) {
+          if (!placements[facility][dateKey]) placements[facility][dateKey] = [];
+          placements[facility][dateKey].push({
+            name: staffName,
+            role: role,
+            shiftType: '(' + shiftType + '繰入)',
+            start: carryover.startDay.start,
+            end: carryover.startDay.end,
+            isNightCarryover: true,
+            isNewbie1: isNewbie1,
+            isNewbie2: isNewbie2,
+          });
+        }
 
-        placements[facility][nextDateKey].push({
-          name: staffName,
-          role: role,
-          shiftType: '(' + shiftType + '繰越)',
-          start: carryoverStart,
-          end: carryoverEnd,
-          isNightCarryover: true,
-          isNewbie1: isNewbie1,
-          isNewbie2: isNewbie2,
-        });
+        if (carryover.nextDay) {
+          const nextDate = new Date(dateKey + 'T00:00:00+09:00');
+          nextDate.setDate(nextDate.getDate() + 1);
+          const nextDateKey = Utilities.formatDate(nextDate, 'Asia/Tokyo', 'yyyy-MM-dd');
+          if (nextDateKey.startsWith(targetYM)) {
+            if (!placements[facility][nextDateKey]) placements[facility][nextDateKey] = [];
+            placements[facility][nextDateKey].push({
+              name: staffName,
+              role: role,
+              shiftType: '(' + shiftType + '繰越)',
+              start: carryover.nextDay.start,
+              end: carryover.nextDay.end,
+              isNightCarryover: true,
+              isNewbie1: isNewbie1,
+              isNewbie2: isNewbie2,
+            });
+          }
+        }
       }
     }
 
