@@ -1995,3 +1995,75 @@ function _peekUnitAndShift() {
     }
   }
 }
+
+// ============================================
+// ★Day17: 困った時の連絡先 (マイページ用)
+// ============================================
+const JIGYOSHO_CONTACTS_DAY17 = {
+  'GHコノヒカラ': '水野・千葉',
+  'GHコノヒカラ品川': '季武',
+  'GHコノヒカラ練馬': '水野',
+  'GHコノヒカラ板橋北区': '大内',
+  'GHコノヒカラ板橋北区セカンド': '伊藤'
+};
+
+function getMyContactInfo(staffId) {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  
+  // スタッフの登録施設(メイン/セカンド/サブ)を取得
+  const staffSheet = ss.getSheetByName('M_スタッフ');
+  const sData = staffSheet.getDataRange().getValues();
+  let mainFac = '', secondFac = '', subFacs = [];
+  const targetSid = String(staffId);
+  for (let i = 1; i < sData.length; i++) {
+    if (String(sData[i][COL_STAFF.ID]) === targetSid) {
+      mainFac = String(sData[i][COL_STAFF.MAIN_FAC] || '').trim();
+      secondFac = String(sData[i][COL_STAFF.SECOND_FAC] || '').trim();
+      const subStr = String(sData[i][COL_STAFF.SUB_FACS] || '').trim();
+      subFacs = subStr ? subStr.split(',').map(s => s.trim()).filter(s => s) : [];
+      break;
+    }
+  }
+  
+  const myFacilities = new Set();
+  if (mainFac) myFacilities.add(mainFac);
+  if (secondFac) myFacilities.add(secondFac);
+  subFacs.forEach(f => myFacilities.add(f));
+  
+  // M_ユニットから 施設→事業所 マッピングを作って事業所を抽出
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  const uData = unitSheet.getDataRange().getValues();
+  const myJigyoshos = new Set();
+  for (let i = 1; i < uData.length; i++) {
+    const jig = String(uData[i][1] || '').trim();
+    const fac = String(uData[i][3] || '').trim();
+    if (!jig || !fac) continue;
+    if (myFacilities.has(fac)) myJigyoshos.add(jig);
+  }
+  
+  const contacts = [];
+  Array.from(myJigyoshos).sort().forEach(jig => {
+    contacts.push({
+      jigyosho: jig,
+      tantosha: JIGYOSHO_CONTACTS_DAY17[jig] || '管理者'
+    });
+  });
+  
+  return { success: true, contacts: contacts };
+}
+
+// ★Day17: 勤務先施設タブ用 - 施設→部屋番号リスト
+function getMyWorkplaceFacilities(staffId) {
+  const ss = SpreadsheetApp.openById(STAFF_SS_ID);
+  const unitSheet = ss.getSheetByName('M_ユニット');
+  const uData = unitSheet.getDataRange().getValues();
+  const facilityToRooms = {};
+  for (let i = 1; i < uData.length; i++) {
+    const fac = String(uData[i][3] || '').trim();
+    const room = String(uData[i][5] || '').trim();
+    if (!fac || !room) continue;
+    if (!facilityToRooms[fac]) facilityToRooms[fac] = [];
+    if (facilityToRooms[fac].indexOf(room) === -1) facilityToRooms[fac].push(room);
+  }
+  return { success: true, facilityToRooms: facilityToRooms };
+}

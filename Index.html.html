@@ -153,6 +153,7 @@
   <div class="tab-bar">
     <div class="tab active" onclick="switchTab(event, 'submit')">希望提出</div>
     <div id="shiftsTab" class="tab" onclick="switchTab(event, 'shifts')">確定シフト</div>
+    <div class="tab" onclick="switchTab(event, 'workplace')">勤務先施設</div>
     <div class="tab" onclick="switchTab(event, 'attendance')">打刻</div>
     <div class="tab" onclick="switchTab(event, 'profile')">マイページ</div>
   </div>
@@ -286,6 +287,15 @@
     </div>
   </div>
 
+  <!-- ★Day17: マイページ (困った時の連絡先) -->
+  <div id="tab-profile" class="hidden">
+    <h2 style="margin-bottom: 12px;">📞 困った時の連絡先</h2>
+    <div id="contactCards"></div>
+    <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:14px;border-radius:6px;margin-top:16px;font-size:13px;color:#92400e;line-height:1.6;">
+      💡 困った時の連絡先は<strong>採用時に作成されたカカオトークのグループ</strong>で問い合わせください。
+    </div>
+  </div>
+
   <div id="tab-attendance" class="hidden">
     <div class="card">
       <h2>今日の出退勤</h2>
@@ -300,8 +310,8 @@
     </div>
   </div>
 
-  <div id="tab-profile" class="hidden">
-    <h2 style="margin-bottom: 12px;">登録施設の住所</h2>
+  <div id="tab-workplace" class="hidden">
+    <h2 style="margin-bottom: 12px;">勤務先施設</h2>
     <div id="profileInfo">読み込み中...</div>
   </div>
 </div>
@@ -1022,12 +1032,14 @@ function _goToSubmitTab() {
 function switchTab(event, name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
-  ['submit', 'shifts', 'attendance', 'profile'].forEach(t => {
-    document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+  ['submit', 'shifts', 'workplace', 'attendance', 'profile'].forEach(t => {
+    const el = document.getElementById('tab-' + t);
+    if (el) el.classList.toggle('hidden', t !== name);
   });
   if (name === 'shifts') loadMyShifts();
+  else if (name === 'workplace') loadWorkplace();
   else if (name === 'attendance') loadAttendance();
-  else if (name === 'profile') loadProfile();
+  else if (name === 'profile') loadContactInfo();
 }
 
 function loadMyShifts() {
@@ -1195,7 +1207,19 @@ function doClockOut() {
   }).clockOut(currentUser.staff_id);
 }
 
-function loadProfile() {
+// ★Day17: 勤務先施設タブのロード (旧loadProfile)
+function loadWorkplace() {
+  // 部屋番号マップを先に取得してから既存ロジックを呼ぶ
+  google.script.run.withSuccessHandler(res => {
+    window._facilityToRooms = (res && res.success) ? res.facilityToRooms : {};
+    _loadWorkplaceRender();
+  }).withFailureHandler(() => {
+    window._facilityToRooms = {};
+    _loadWorkplaceRender();
+  }).getMyWorkplaceFacilities(currentUser.staff_id);
+}
+
+function _loadWorkplaceRender() {
   google.script.run.withSuccessHandler(info => {
     const box = document.getElementById('profileInfo');
     if (!info.success) {
@@ -1217,6 +1241,8 @@ function loadProfile() {
       const addrLine = f.address ? `<div class="fac-card-addr">📍 ${f.address}</div>` : '<div class="fac-card-addr" style="color:#9ca3af;">住所未登録</div>';
       const stationLine = f.station ? `<div class="fac-card-station">🚃 ${f.station}</div>` : '';
       const mapBtn = f.mapUrl ? `<a href="${f.mapUrl}" target="_blank" class="fac-card-map">🗺️ Google Mapsで開く</a>` : '';
+      const rooms = (window._facilityToRooms && window._facilityToRooms[f.name]) ? window._facilityToRooms[f.name] : [];
+      const roomLine = rooms.length > 0 ? `<div style="margin-top:6px;font-size:13px;color:#374151;">🚪 部屋: ${rooms.map(r => r + '号室').join(' / ')}</div>` : '';
 
       return `
         <div class="fac-card ${cardClass}">
@@ -1228,6 +1254,7 @@ function loadProfile() {
           ${addrLine}
           ${stationLine}
           ${mapBtn}
+          ${roomLine}
         </div>
       `;
     }).join('');
@@ -1536,6 +1563,38 @@ function applyTemplateToMonth(templateId) {
   } else {
     _updateSubmitPeriodDisplay();
   }
+
+
+// ★Day17: マイページ(連絡先)のロード
+function loadContactInfo() {
+  const box = document.getElementById('contactCards');
+  if (!box) return;
+  box.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:20px;">読込中...</div>';
+  google.script.run.withSuccessHandler(res => {
+    if (!res || !res.success) {
+      box.innerHTML = '<div style="color:#dc2626;padding:12px;">エラー: 連絡先情報を取得できませんでした</div>';
+      return;
+    }
+    const list = res.contacts || [];
+    if (list.length === 0) {
+      box.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:20px;background:#f9fafb;border-radius:8px;">登録された事業所がありません。管理者にご連絡ください。</div>';
+      return;
+    }
+    let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+    list.forEach(c => {
+      html += `<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid #6366f1;border-radius:8px;padding:14px 16px;">
+        <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">事業所</div>
+        <div style="font-size:15px;font-weight:600;color:#111827;margin-bottom:10px;">${escapeHtml(c.jigyosho)}</div>
+        <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">担当者</div>
+        <div style="font-size:14px;color:#374151;">${escapeHtml(c.tantosha)}</div>
+      </div>`;
+    });
+    html += '</div>';
+    box.innerHTML = html;
+  }).withFailureHandler(err => {
+    box.innerHTML = '<div style="color:#dc2626;padding:12px;">通信エラー: ' + err + '</div>';
+  }).getMyContactInfo(currentUser.staff_id);
+}
 
 </script>
 </body>
