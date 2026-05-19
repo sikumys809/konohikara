@@ -512,6 +512,17 @@ function loadPeriodInfo() {
 
 function loadMyRequests() {
   if (!window.currentYM) return setTimeout(loadMyRequests, 300);
+  // ★Day17: 月次ロック状態を先に取得
+  google.script.run.withSuccessHandler(lockRes => {
+    window.isMonthLocked = !!(lockRes && lockRes.locked);
+    _loadMyRequestsAfterLockCheck();
+  }).withFailureHandler(() => {
+    window.isMonthLocked = false;
+    _loadMyRequestsAfterLockCheck();
+  }).checkMonthLockForStaff(window.currentYM);
+}
+
+function _loadMyRequestsAfterLockCheck() {
   google.script.run.withSuccessHandler(data => {
     const validData = data.filter(r => r.date && r.date.substring(0, 7) === window.currentYM);
 
@@ -547,6 +558,17 @@ function loadMyRequests() {
 
 function updateSubmittedBanner() {
   const banner = document.getElementById('submittedBanner');
+  // ★Day17: 確定済みなら専用バナー表示
+  if (window.isMonthLocked === true) {
+    banner.innerHTML = `
+      <div style="background:#fef2f2; border:2px solid #dc2626; border-radius:8px; padding:14px 16px; color:#991b1b;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:4px;">🔒 シフト確定済み</div>
+        <div style="font-size:13px;">この月のシフトは既に確定しています。修正が必要な場合は管理者にご連絡ください。</div>
+      </div>
+    `;
+    banner.classList.remove('hidden');
+    return;
+  }
   if (hasSubmitted && requests.length > 0) {
     const totalShifts = requests.reduce((sum, r) => sum + r.shifts.length, 0);
     const main = selectedFacilities.main;
@@ -606,7 +628,20 @@ function checkConfirmedShiftsAndHideSubmission() {
 
 function updateSubmitButton() {
   const btn = document.getElementById('submitBtn');
-  btn.textContent = hasSubmitted ? '内容を更新して再提出する' : '希望を提出する';
+  // ★Day17: 確定済み(月次ロック)ならボタンを無効化
+  if (window.isMonthLocked === true) {
+    btn.textContent = '🔒 シフト確定済み 修正不可';
+    btn.disabled = true;
+    btn.style.background = '#9ca3af';
+    btn.style.cursor = 'not-allowed';
+    btn.style.opacity = '0.7';
+  } else {
+    btn.textContent = hasSubmitted ? '内容を更新して再提出する' : '希望を提出する';
+    btn.disabled = false;
+    btn.style.background = '';
+    btn.style.cursor = '';
+    btn.style.opacity = '';
+  }
 }
 
 function renderFacilityPicker() {
