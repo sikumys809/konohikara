@@ -2031,13 +2031,16 @@ function getMyContactInfo(staffId) {
   subFacs.forEach(f => myFacilities.add(f));
   
   // M_ユニットから 施設→事業所 マッピングを作って事業所を抽出
+  // E-st問題対応: M_ユニット側の施設名から「（…）」サフィックスを除いて
+  // スタッフ表示名に正規化してから照合する。
   const unitSheet = ss.getSheetByName('M_ユニット');
   const uData = unitSheet.getDataRange().getValues();
   const myJigyoshos = new Set();
   for (let i = 1; i < uData.length; i++) {
     const jig = String(uData[i][1] || '').trim();
-    const fac = String(uData[i][3] || '').trim();
-    if (!jig || !fac) continue;
+    const facRaw = String(uData[i][3] || '').trim();
+    if (!jig || !facRaw) continue;
+    const fac = facRaw.replace(/[（(][^）)]*[）)]\s*$/, '').trim();
     if (myFacilities.has(fac)) myJigyoshos.add(jig);
   }
   
