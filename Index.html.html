@@ -1045,34 +1045,42 @@ function loadMyShifts() {
   document.getElementById('myShiftsLabel').textContent = monthLabel + 'のシフト';
   document.getElementById('myShiftsList').innerHTML = '<div style="color:#9ca3af;text-align:center;padding:20px;">読込中...</div>';
 
-  // 来月選択時、提出期間内ならまず警告を出す
+  // 来月選択時: ロック状態 + 提出期間 + シフトを取得して分岐
   if (mode === 'next') {
-    google.script.run.withSuccessHandler(periodInfo => {
-      const isOpen = periodInfo && periodInfo.isOpen === true;
-
-      // 来月のシフトを取得
-      google.script.run.withSuccessHandler(shifts => {
-        if (isOpen) {
-          // 提出期間内 → 提出済/未提出で警告内容を分岐
-          let warning;
-          if (hasSubmitted) {
-            warning = '<div style="background:#dbeafe;border-left:4px solid #3b82f6;padding:14px;border-radius:6px;margin-bottom:12px;font-size:13px;color:#1e40af;"><div style="font-weight:700;margin-bottom:4px;">📝 来月分の希望は提出済み</div><div>シフトが確定されるまでお待ちください。期限内なら何度でも修正できます。</div></div>';
-          } else {
-            warning = '<div style="background:#fef2f2;border:2px solid #dc2626;padding:14px;border-radius:8px;margin-bottom:12px;color:#991b1b;"><div style="font-weight:700;font-size:14px;margin-bottom:6px;">⚠️ 来月分の希望がまだ提出されていません</div><div style="font-size:13px;margin-bottom:10px;">「希望提出」タブから来月のシフト希望を提出してください。</div><button class="btn" style="background:#dc2626;color:white;padding:10px 16px;border-radius:6px;border:none;font-weight:600;font-size:14px;cursor:pointer;width:100%;" onclick="_goToSubmitTab()">→ 希望提出へ</button></div>';
+    google.script.run.withSuccessHandler(lockRes => {
+      const isLocked = !!(lockRes && lockRes.locked);
+      google.script.run.withSuccessHandler(periodInfo => {
+        const isOpen = periodInfo && periodInfo.isOpen === true;
+        // 来月のシフトを取得
+        google.script.run.withSuccessHandler(shifts => {
+          let warning = '';
+          let suffix = '';
+          if (isLocked) {
+            // ★Day17: 確定済み → 確定通知のみ (暫定文言は出さない)
+            warning = '<div style="background:#ecfdf5;border:2px solid #10b981;padding:14px;border-radius:8px;margin-bottom:12px;color:#065f46;"><div style="font-weight:700;font-size:14px;margin-bottom:4px;">✅ 来月分のシフトは確定済みです</div><div style="font-size:13px;">以下の内容で確定しています。変更が必要な場合は管理者にご連絡ください。</div></div>';
+            suffix = '';
+          } else if (isOpen) {
+            // 提出期間内 → 提出済/未提出で分岐
+            if (hasSubmitted) {
+              warning = '<div style="background:#dbeafe;border-left:4px solid #3b82f6;padding:14px;border-radius:6px;margin-bottom:12px;font-size:13px;color:#1e40af;"><div style="font-weight:700;margin-bottom:4px;">📝 来月分の希望は提出済み</div><div>シフトが確定されるまでお待ちください。期限内なら何度でも修正できます。</div></div>';
+            } else {
+              warning = '<div style="background:#fef2f2;border:2px solid #dc2626;padding:14px;border-radius:8px;margin-bottom:12px;color:#991b1b;"><div style="font-weight:700;font-size:14px;margin-bottom:6px;">⚠️ 来月分の希望がまだ提出されていません</div><div style="font-size:13px;margin-bottom:10px;">「希望提出」タブから来月のシフト希望を提出してください。</div><button class="btn" style="background:#dc2626;color:white;padding:10px 16px;border-radius:6px;border:none;font-weight:600;font-size:14px;cursor:pointer;width:100%;" onclick="_goToSubmitTab()">→ 希望提出へ</button></div>';
+            }
+            suffix = '<div style="font-size:11px;color:#6b7280;margin-bottom:8px;">※以下は管理者による暫定確定です。最終確定までに変更される可能性があります。</div>';
           }
           if (shifts && shifts.length > 0) {
-            renderMyShifts(shifts, monthLabel, warning + '<div style="font-size:11px;color:#6b7280;margin-bottom:8px;">※以下は管理者による暫定確定です。最終確定までに変更される可能性があります。</div>');
+            renderMyShifts(shifts, monthLabel, warning + suffix);
           } else {
-            document.getElementById('myShiftsList').innerHTML = warning;
+            document.getElementById('myShiftsList').innerHTML = warning || '<div style="color:#9ca3af;text-align:center;padding:30px;background:#f9fafb;border-radius:8px;">' + monthLabel + 'のシフトはまだ確定されていません</div>';
           }
-        } else {
-          // 提出期間外 → 通常表示
-          renderMyShifts(shifts, monthLabel);
-        }
-      }).withFailureHandler(err => {
-        document.getElementById('myShiftsList').innerHTML = '<div style="color:#ef4444;padding:12px;">エラー: ' + err + '</div>';
-      }).getMyShifts(currentUser.staff_id, yearMonth);
-    }).getSubmitPeriodInfo(currentUser.staff_id);
+        }).withFailureHandler(err => {
+          document.getElementById('myShiftsList').innerHTML = '<div style="color:#ef4444;padding:12px;">エラー: ' + err + '</div>';
+        }).getMyShifts(currentUser.staff_id, yearMonth);
+      }).getSubmitPeriodInfo(currentUser.staff_id);
+    }).withFailureHandler(() => {
+      // ロック状態取得失敗時はロック未設定として続行
+      window.isMonthLocked = false;
+    }).checkMonthLockForStaff(yearMonth);
   } else {
     // 今月選択時 → 通常表示
     google.script.run.withSuccessHandler(shifts => {
