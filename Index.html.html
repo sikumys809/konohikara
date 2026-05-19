@@ -213,13 +213,13 @@
     </details>
 
     <!-- 🔁 繰り返しテンプレート起動ボタン -->
-    <div class="tpl-button-wrap">
+    <div class="tpl-button-wrap" id="tplButtonWrap">
       <button class="btn" onclick="openTemplateModal()">🔁 繰り返しテンプレート</button>
       <div class="small" style="margin-top: 4px; text-align: center;">毎月同じパターンで提出する人向け（管理者・サビ管・看護師など）</div>
     </div>
 
     <!-- Step 1: 希望頻度 -->
-    <div class="card">
+    <div class="card" id="sectionFreq">
       <h2>① 希望頻度</h2>
       <div class="row">
         <div>
@@ -237,21 +237,21 @@
     </div>
 
     <!-- Step 2: 希望施設(一括) -->
-    <div class="card">
+    <div class="card" id="sectionFacility">
       <h2>② 希望施設を選択</h2>
       <div id="patternInfo" class="pattern-info"></div>
       <div id="facilityPicker"></div>
     </div>
 
     <!-- Step 3: カレンダー選択 -->
-    <div class="card">
+    <div class="card" id="sectionCalendar">
       <h2>③ 希望日をカレンダーから選択</h2>
       <div id="calendarContainer"></div>
       <div class="cal-hint">💡 日付をタップして選択/解除できます</div>
     </div>
 
     <!-- Step 4: 選択済みリスト & 一括設定 -->
-    <div class="card">
+    <div class="card" id="sectionDateDetail">
       <h2>④ 選択した日程の詳細</h2>
       <div class="bulk-box">
         <h3>一括設定: 全日程に同じシフト種別を適用</h3>
@@ -628,19 +628,25 @@ function checkConfirmedShiftsAndHideSubmission() {
 
 function updateSubmitButton() {
   const btn = document.getElementById('submitBtn');
-  // ★Day17: 確定済み(月次ロック)ならボタンを無効化
+  // ★Day17: 確定済み(月次ロック)ならボタンを無効化 + 編集UIを隠す
+  const lockedIds = ['tplButtonWrap', 'sectionFreq', 'sectionFacility', 'sectionCalendar', 'sectionDateDetail'];
   if (window.isMonthLocked === true) {
-    btn.textContent = '🔒 シフト確定済み 修正不可';
-    btn.disabled = true;
-    btn.style.background = '#9ca3af';
-    btn.style.cursor = 'not-allowed';
-    btn.style.opacity = '0.7';
+    btn.style.display = 'none';
+    lockedIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
   } else {
+    btn.style.display = '';
     btn.textContent = hasSubmitted ? '内容を更新して再提出する' : '希望を提出する';
     btn.disabled = false;
     btn.style.background = '';
     btn.style.cursor = '';
     btn.style.opacity = '';
+    lockedIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = '';
+    });
   }
 }
 
