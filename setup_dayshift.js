@@ -579,9 +579,14 @@ function checkShiftConfirmedStatus() {
  * パターン名 -> { start, end, nightHours, dayHours, breakMinutes }
  */
 const SHIFT_PATTERNS = {
-  '夜勤A':   { start: '20:00', end: '05:00', nightHours: 6, dayHours: 2, breakMinutes: 60 },  // ★Day10訂正: 20:00-22:00の2hを日勤カウント
-  '夜勤B':   { start: '22:00', end: '07:00', nightHours: 6, dayHours: 2, breakMinutes: 60 },
-  '夜勤C':   { start: '22:00', end: '08:00', nightHours: 6, dayHours: 2, breakMinutes: 120 },
+  // ★Day17 A-G拡張: 休憩01:00-04:30共通(3.5h)、夜勤帯3.5h固定
+  '夜勤A':   { start: '17:30', end: '05:00', nightHours: 3.5, dayHours: 4.5, breakMinutes: 210 },
+  '夜勤B':   { start: '20:00', end: '05:00', nightHours: 3.5, dayHours: 2.0, breakMinutes: 210 },
+  '夜勤C':   { start: '20:00', end: '06:30', nightHours: 3.5, dayHours: 3.5, breakMinutes: 210 },
+  '夜勤D':   { start: '20:00', end: '07:30', nightHours: 3.5, dayHours: 4.5, breakMinutes: 210 },
+  '夜勤E':   { start: '22:00', end: '07:00', nightHours: 3.5, dayHours: 2.0, breakMinutes: 210 },
+  '夜勤F':   { start: '22:00', end: '08:00', nightHours: 3.5, dayHours: 3.0, breakMinutes: 210 },
+  '夜勤G':   { start: '22:00', end: '09:30', nightHours: 3.5, dayHours: 4.5, breakMinutes: 210 },
   '早出8h':  { start: '07:00', end: '16:00', nightHours: 0, dayHours: 8, breakMinutes: 60 },
   '早出4h':  { start: '07:00', end: '11:00', nightHours: 0, dayHours: 4, breakMinutes: 0 },
   '遅出8h':  { start: '13:00', end: '22:00', nightHours: 0, dayHours: 8, breakMinutes: 60 },

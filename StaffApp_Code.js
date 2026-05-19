@@ -57,25 +57,47 @@ function _getSubmitDays() {
 
 // シフト時間定義
 const SHIFT_TIMES = {
+  // ★Day17 A-G拡張: 休憩01:00-04:30共通
   '夜勤A': {
-    label: '20:00-05:00',
-    start: '20:00', end: '05:00',
-    breaks: [{ start: '02:00', end: '03:00' }],
+    label: '17:30-05:00',
+    start: '17:30', end: '05:00',
+    breaks: [{ start: '01:00', end: '04:30' }],
     workHours: 8
   },
   '夜勤B': {
-    label: '22:00-07:00',
-    start: '22:00', end: '07:00',
-    breaks: [{ start: '02:00', end: '03:00' }],
-    workHours: 8
+    label: '20:00-05:00',
+    start: '20:00', end: '05:00',
+    breaks: [{ start: '01:00', end: '04:30' }],
+    workHours: 5.5
   },
   '夜勤C': {
+    label: '20:00-06:30',
+    start: '20:00', end: '06:30',
+    breaks: [{ start: '01:00', end: '04:30' }],
+    workHours: 7
+  },
+  '夜勤D': {
+    label: '20:00-07:30',
+    start: '20:00', end: '07:30',
+    breaks: [{ start: '01:00', end: '04:30' }],
+    workHours: 8
+  },
+  '夜勤E': {
+    label: '22:00-07:00',
+    start: '22:00', end: '07:00',
+    breaks: [{ start: '01:00', end: '04:30' }],
+    workHours: 5.5
+  },
+  '夜勤F': {
     label: '22:00-08:00',
     start: '22:00', end: '08:00',
-    breaks: [
-      { start: '02:00', end: '03:00' },
-      { start: '05:00', end: '06:00' }
-    ],
+    breaks: [{ start: '01:00', end: '04:30' }],
+    workHours: 6.5
+  },
+  '夜勤G': {
+    label: '22:00-09:30',
+    start: '22:00', end: '09:30',
+    breaks: [{ start: '01:00', end: '04:30' }],
     workHours: 8
   },
   '早出8h': {

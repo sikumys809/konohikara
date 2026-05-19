@@ -279,7 +279,8 @@ function _validateFixedAssignmentH(params, targetYM) {
   }
   
   // 5. シフトの想定勤務時間
-  const SHIFT_HOURS = { '早出8h': 8, '早出4h': 4, '遅出8h': 8, '遅出4h': 4, '夜勤A': 2, '夜勤B': 2, '夜勤C': 2 };
+  // ★Day17 A-G拡張: 夜勤の日勤帯加算分はパターン毎のdayHours
+  const SHIFT_HOURS = { '早出8h': 8, '早出4h': 4, '遅出8h': 8, '遅出4h': 4, '夜勤A': 4.5, '夜勤B': 2.0, '夜勤C': 3.5, '夜勤D': 4.5, '夜勤E': 2.0, '夜勤F': 3.0, '夜勤G': 4.5 };
   
   // 6. 展開日ごとに runAllChecks
   // unit_id → facility/jigyosho を解決
@@ -710,9 +711,14 @@ function preplaceFixedAssignments(targetYM) {
   
   // Step 2: 新規固定配置レコを書込
   const shiftInfo = {
-    '夜勤A': { start: '20:00', end: '05:00', nightH: 6, dayH: 2 },
-    '夜勤B': { start: '22:00', end: '07:00', nightH: 6, dayH: 2 },
-    '夜勤C': { start: '22:00', end: '08:00', nightH: 6, dayH: 2 },
+    // ★Day17 A-G拡張
+    '夜勤A': { start: '17:30', end: '05:00', nightH: 3.5, dayH: 4.5 },
+    '夜勤B': { start: '20:00', end: '05:00', nightH: 3.5, dayH: 2.0 },
+    '夜勤C': { start: '20:00', end: '06:30', nightH: 3.5, dayH: 3.5 },
+    '夜勤D': { start: '20:00', end: '07:30', nightH: 3.5, dayH: 4.5 },
+    '夜勤E': { start: '22:00', end: '07:00', nightH: 3.5, dayH: 2.0 },
+    '夜勤F': { start: '22:00', end: '08:00', nightH: 3.5, dayH: 3.0 },
+    '夜勤G': { start: '22:00', end: '09:30', nightH: 3.5, dayH: 4.5 },
     '早出8h': { start: '07:00', end: '16:00', nightH: 0, dayH: 8 },
     '早出4h': { start: '07:00', end: '11:00', nightH: 0, dayH: 4 },
     '遅出8h': { start: '13:00', end: '22:00', nightH: 0, dayH: 8 },

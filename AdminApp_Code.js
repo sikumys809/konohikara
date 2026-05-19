@@ -1470,9 +1470,14 @@ function updateShiftSlot(adminStaffId, targetYM, dateKey, unitId, updates) {
   }
   
   const shiftInfo = {
-    '夜勤A': { start: '20:00', end: '05:00' },
-    '夜勤B': { start: '22:00', end: '07:00' },
-    '夜勤C': { start: '22:00', end: '08:00' },
+    // ★Day17 A-G拡張
+    '夜勤A': { start: '17:30', end: '05:00' },
+    '夜勤B': { start: '20:00', end: '05:00' },
+    '夜勤C': { start: '20:00', end: '06:30' },
+    '夜勤D': { start: '20:00', end: '07:30' },
+    '夜勤E': { start: '22:00', end: '07:00' },
+    '夜勤F': { start: '22:00', end: '08:00' },
+    '夜勤G': { start: '22:00', end: '09:30' },
   };
   const si = shiftInfo[updates.shiftType] || { start: '', end: '' };
   

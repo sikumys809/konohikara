@@ -632,9 +632,10 @@ function getDayShiftCandidateStaff(adminStaffId, yearMonth, dateKey, facility, s
     }
     
     // ★Day15 P1-P4: シフトの想定勤務時間 (runAllChecks の hours 引数用)
+    // ★Day17 A-G拡張: 各シフトのdayHours (日勤帯への加算分)
     const SHIFT_HOURS = {
       '早出8h': 8, '早出4h': 4, '遅出8h': 8, '遅出4h': 4,
-      '夜勤A': 2, '夜勤B': 2, '夜勤C': 2  // 日勤帯への加算分
+      '夜勤A': 4.5, '夜勤B': 2.0, '夜勤C': 3.5, '夜勤D': 4.5, '夜勤E': 2.0, '夜勤F': 3.0, '夜勤G': 4.5
     };
 
     // ★ Phase 5.1.2: 対象事業所の通常スタッフ数を計算 (N2 判定用)
